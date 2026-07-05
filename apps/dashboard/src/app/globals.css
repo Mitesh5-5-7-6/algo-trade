@@ -1,0 +1,429 @@
+/*
+ * The Sentinel design system — palette and typography extracted from the
+ * operator-supplied design (plan/06 §4, plan/assets/sentinel-dashboard.pptx).
+ * Dark control-room theme; sans-serif UI text; MONOSPACE for every numeral.
+ */
+:root {
+  /* Surfaces */
+  --bg-page: #15161d;
+  --bg-panel: #1b1d27;
+  --bg-raised: #20232f;
+  --bg-danger-tint: #3a1d22;
+  --border: #2a2d3c;
+
+  /* Text ramp */
+  --text-primary: #eceef8;
+  --text-secondary: #c9cde4;
+  --text-tertiary: #9aa1c0;
+  --text-muted: #656c8a;
+
+  /* Accents */
+  --green: #3ecf8e;
+  --amber: #eeb653;
+  --red: #f16f7b;
+  --indigo: #8f97f9;
+  --indigo-soft: #949edc;
+  --cream: #fdf8ee;
+
+  /* Type */
+  --font-ui: -apple-system, "Segoe UI", Arial, Helvetica, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Every numeric value in the design renders monospace. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.pos {
+  color: var(--green);
+}
+.neg {
+  color: var(--red);
+}
+
+/* Shared panel look */
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+
+/* Shared data table */
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+}
+table.data th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+table.data td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+table.data td.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+table.data th.num {
+  text-align: right;
+}
+
+/* ---------- Shell ---------- */
+.topbar {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+  min-width: 150px;
+}
+.brand-name {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+.mode-badge {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  background: rgba(238, 182, 83, 0.08);
+}
+.mode-badge.live {
+  color: var(--red);
+  border-color: var(--red);
+  background: var(--bg-danger-tint);
+}
+.kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+}
+.kpi-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.kpi-value {
+  font-size: 26px;
+  font-weight: 700;
+}
+.kpi-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.meter {
+  flex: 1;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+}
+.meter-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--amber);
+}
+.meter-fill.critical {
+  background: var(--red);
+}
+.meter-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.warn-chip {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+}
+
+.statusstrip {
+  display: flex;
+  gap: 12px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-page);
+}
+.status-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  font-size: 12px;
+}
+.status-chip .k {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 2px;
+}
+.dot.ok {
+  background: var(--green);
+}
+.dot.warn {
+  background: var(--amber);
+}
+.dot.bad {
+  background: var(--red);
+}
+
+.frame {
+  display: grid;
+  grid-template-columns: 168px 1fr 250px;
+  gap: 0;
+  min-height: calc(100vh - 118px);
+}
+.nav {
+  border-right: 1px solid var(--border);
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav a {
+  padding: 9px 14px;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  font-size: 13px;
+}
+.nav a:hover {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+.nav a.active {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  border-left: 2px solid var(--indigo);
+}
+.content {
+  padding: 20px;
+  min-width: 0;
+}
+.rail {
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.btn-pause {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--amber);
+  background: rgba(238, 182, 83, 0.1);
+  color: var(--amber);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.btn-kill {
+  position: relative;
+  width: 100%;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--red);
+  background: var(--bg-danger-tint);
+  color: var(--red);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  overflow: hidden;
+}
+.btn-kill .hold-progress {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: rgba(241, 111, 123, 0.25);
+}
+.btn-kill.holding .hold-progress {
+  width: 100%;
+  transition: width 1.5s linear;
+}
+.kill-sub {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.rail-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.halted-banner {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--red);
+  background: var(--bg-danger-tint);
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.page-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.activity {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.activity-row {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.activity-ts {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Settings */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+  max-width: 520px;
+}
+.field label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.field input[type="text"] {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  padding: 10px 12px;
+  text-align: right;
+}
+.field input[type="range"] {
+  accent-color: var(--amber);
+}
+.field .hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.stepup-note {
+  font-size: 11px;
+  color: var(--amber);
+}
+.badge-status {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.badge-status.on {
+  color: var(--green);
+  border: 1px solid var(--green);
+  background: rgba(62, 207, 142, 0.08);
+}
+.badge-status.off {
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}

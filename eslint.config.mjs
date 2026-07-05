@@ -14,6 +14,7 @@ export default tseslint.config(
       "**/out/**",
       "**/.turbo/**",
       "**/coverage/**",
+      "**/next-env.d.ts",
     ],
   },
   js.configs.recommended,
@@ -34,6 +35,11 @@ export default tseslint.config(
       "@typescript-eslint/no-misused-promises": "error",
       // plan/25 §5 — no swallowed errors
       "no-empty": ["error", { allowEmptyCatch: false }],
+      // Numbers interpolate deterministically; objects/arrays still error.
+      "@typescript-eslint/restrict-template-expressions": [
+        "error",
+        { allowNumber: true },
+      ],
     },
   },
   {
