@@ -46,6 +46,8 @@ flowchart LR
 
 ## 4. Pages (the operator's surface)
 
+> **Visual design (operator-supplied, 2026-07-05): the "Sentinel" design** — reference captured in [`assets/sentinel-dashboard.pptx`](assets/sentinel-dashboard.pptx) (source: the operator's Claude Design project, "Sentinel Dashboard.dc.html"). Its design language: dark control-room theme (page `#15161D`, panels `#1B1D27`/`#20232F`; text ramp `#ECEEF8→#656C8A`), green `#3ECF8E` / amber `#EEB653` / red `#F16F7B` / indigo `#8F97F9` accents, sans-serif UI text with **monospace numerals**, Indian-format digits (₹, lakh grouping). Its structure honors this chapter exactly: a persistent top bar (brand + PAPER/LIVE mode badge + Day P&L real/unrealized split + **loss-limit meter** captioned "Entries auto-halt at 100%. Exits always allowed." — the Chapter 14 §5 asymmetry as UI copy), a broker/market/engine status strip, and an always-visible **operator rail** (PAUSE ALL TRADING; KILL SWITCH with hold-to-confirm) with the tagline "The machine trades; you supervise." The design adds an **Overview** landing page (system status + day P&L curve) to the table below and folds the Control page's actions into the persistent rail — an approved refinement, since it makes the emergency levers *more* accessible, not less (§3). AI Summaries remains a Phase 2 surface.
+
 Each page maps to an operator concern from Chapter 00 §2 (Principle 3):
 
 | Page | Purpose | Primary data channel |
