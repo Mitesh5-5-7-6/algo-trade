@@ -245,7 +245,7 @@ Every piece of truth has **exactly one owning engine** allowed to write it. Ever
 | Orders | Order Manager | — | `orders` | `ORDER_PLACED`, `ORDER_FILLED` |
 | Positions | Position Engine | Redis cache | `positions` | `POSITION_UPDATED` |
 | Portfolio / capital | Portfolio Engine | Redis cache | `positions` / `settings` | — |
-| PnL | PnL Engine | Redis cache | derived | `PNL_UPDATED` |
+| PnL | PnL Engine | Redis cache | derived; EOD snapshot in `pnl_snapshots` | `PNL_UPDATED` |
 | Broker tokens | Auth/Broker layer | — | `broker_tokens` | `BROKER_CONNECTED/DISCONNECTED` |
 
 > Rule for all contributors: **if you need to change a value you don't own, call its owner or emit an event the owner reacts to — never write it directly.** Direct cross-writes are the number-one cause of "the dashboard says X but the database says Y."

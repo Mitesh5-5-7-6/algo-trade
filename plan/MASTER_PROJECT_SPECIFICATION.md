@@ -83,9 +83,9 @@ Any change weakening one of these is an **architectural regression**, not a feat
 | 02 | Master Architecture | Planes, engines, the two regimes, state ownership, concurrency, failure/kill, **the invariants**. |
 | 03 | Monorepo Structure | apps/ + packages/ layout; one-way dependencies; one-owner-per-external-system. |
 | 04 | Tech Stack | Every technology with its why and its rejected alternative. |
-| 05 | Backend Architecture | The composition root (broker selection); the control-plane request lifecycle; error handling. |
+| 05 | Backend Architecture | The composition root (broker selection); the control-plane request lifecycle + endpoint catalog; error handling. |
 | 06 | Frontend Architecture | The control center: rendering pipeline, REST-vs-socket split, honest staleness. |
-| 07 | Database Design | All **13 collections**: purpose, why, fields, indexes, relationships, lifecycle, retention. |
+| 07 | Database Design | All **14 collections**: purpose, why, fields, indexes, relationships, lifecycle, retention. |
 | 08 | Redis Architecture | The **6 roles** + `risk:` counters; namespaces; durability-per-namespace; fail behavior. |
 | 09 | Event-Driven System | The **14-event catalog**: producer/consumers/trigger/payload/retry/logging; idempotency mandate. |
 | 10 | WebSocket System | The Socket.IO bridge: rooms, handshake auth, throttling, resync-on-reconnect. |
@@ -154,15 +154,16 @@ Each row: the decision, the one-line why, and where the full argument lives. (Th
 
 ## 8. Data model at a glance (07)
 
-13 collections. Append-only ⇒ audit-grade, never updated after write.
+14 collections. Append-only ⇒ audit-grade, never updated after write.
 
 | Collection | Essence | Nature |
 |---|---|---|
-| `users` | Operator accounts (argon2id hashes). | mutable, soft-delete |
+| `users` | Operator accounts (argon2id hashes; created by bootstrap CLI, no signup route). | mutable, soft-delete |
 | `strategies` | Operator's strategy configs + enabled state — *what the machine should run*. | mutable (owner: Strategy Engine) |
 | `signals` | Every decision, incl. HOLD/rejected, with `contextSnapshot` — the decision log. | **append-only** |
 | `orders` | Every order + outcome; `mode: paper/live`; unique `signalId` backstop. | terminal-immutable |
 | `positions` | Holdings + realized/unrealized basis. | mutable (owner: Position Engine) |
+| `pnl_snapshots` | EOD PnL per scope — the durable equity curve. | **append-only**, long retention |
 | `market_ticks` | Raw tick firehose. | append-only, **short TTL** |
 | `candles` | OHLCV bars — indicator warm-up + backtests. | append-only, **long retention** |
 | `trade_logs` | Human-readable pipeline narrative. | append-only, TTL |

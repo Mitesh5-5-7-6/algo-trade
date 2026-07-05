@@ -108,7 +108,7 @@ Changes with **every tick**, so it's recomputed from `hot:price` on a throttle a
 On `MARKET_CLOSE` (Chapter 09), the chain runs a closing pass:
 
 1. Final mark of open positions at the closing price (last valid tick).
-2. Persist the day's realized/unrealized snapshot for history (the PnL curve on the dashboard).
+2. Persist the day's realized/unrealized snapshot per scope to **`pnl_snapshots`** (Chapter 07) — the durable equity curve the dashboard's PnL history reads.
 3. Verify Redis hot state matches Mongo durable state; log any divergence as `SYSTEM_ERROR`.
 
 **Why a daily reconcile:** projections are event-driven, and Pub/Sub is fire-and-forget (Chapter 09 §4) — a reconcile is the scheduled safety net that catches any drift *daily*, instead of letting a missed event compound silently for weeks. Cheap insurance on a system that runs unattended.

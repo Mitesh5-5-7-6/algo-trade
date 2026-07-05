@@ -39,7 +39,7 @@ Each block: **Purpose · Why · Key fields · Indexes · Relationships · Lifecy
 - **Key fields:** `email`, `passwordHash`, `role`, `createdAt`, `lastLoginAt`, `status`.
 - **Indexes:** unique `{ email }`.
 - **Relationships:** referenced by `strategies.ownerId`, `notifications.userId`, `broker_tokens.userId`; sessions live in Redis.
-- **Lifecycle:** created at signup → updated on login → soft-disabled, never hard-deleted (preserves audit links).
+- **Lifecycle:** created via the **bootstrap CLI** (server-side, argon2id hash; there is **no self-service signup endpoint** — a public registration route on a money-moving control plane is pure attack surface for a single-operator system, Chapter 21 §6, Chapter 24) → updated on login → soft-disabled, never hard-deleted (preserves audit links).
 
 ### `strategies`
 - **Purpose:** the operator's strategy configurations and their enabled state.
@@ -55,7 +55,7 @@ Each block: **Purpose · Why · Key fields · Indexes · Relationships · Lifecy
 - **Key fields:** `strategyId`, `symbol`, `side`, `confidence`, `contextSnapshot` (embedded: indicator values + price at the moment), `outcome` (`accepted` | `rejected`), `rejectReason?`, `ts`.
 - **Indexes:** `{ strategyId, ts }`, `{ symbol, ts }`, `{ ts }`.
 - **Relationships:** `strategyId → strategies`; an accepted signal links to an `orders` record.
-- **Lifecycle:** **append-only**; retained for analysis; eligible for archival/TTL after a retention window (§6).
+- **Lifecycle:** **append-only**; retained for analysis. **Retention is split by side** (operator decision, 2026-07-05): `HOLD` rows — the highest-volume, lowest-forensic-value records ("the strategy looked and chose inaction", Chapter 15 §4) — are TTL/archived after ~30 days; `BUY`/`SELL` rows keep full retention, since they are the ones a trade audit reconstructs (§6).
 
 ### `orders`
 - **Purpose:** every order and its execution outcome.
@@ -64,6 +64,14 @@ Each block: **Purpose · Why · Key fields · Indexes · Relationships · Lifecy
 - **Indexes:** `{ status }`, `{ strategyId, createdAt }`, `{ brokerOrderId }`, `{ symbol, createdAt }`.
 - **Relationships:** `signalId → signals`, `strategyId → strategies`; drives `positions`.
 - **Lifecycle:** created `PLACED` → transitions to a terminal status → **immutable once terminal**. `mode` records whether a paper or live broker executed it, so paper and live history are distinguishable in one collection.
+
+### `pnl_snapshots`
+- **Purpose:** end-of-day PnL history — the durable equity curve.
+- **Why:** live PnL is derived state (Chapter 13 §5) and is deliberately not persisted per-update; but the *daily* closing snapshot (Chapter 13 §6) must survive — it is what the dashboard's PnL-over-time curve and per-strategy performance review (Chapter 28 §3 gate) read. It is time-series-shaped, append-only, and read on a completely different cadence than live positions, which is why it is its own collection rather than overloading the mutable `positions` state. *(Added by operator decision, 2026-07-05.)*
+- **Key fields:** `scope` (`global` / `strategy:{id}` / `symbol:{sym}`), `date`, `realizedPnl`, `unrealizedPnl`, `equity`, `tradeCount`, `ts`.
+- **Indexes:** unique `{ scope, date }`; `{ date }`.
+- **Relationships:** `scope` loosely references `strategies`; derived from `positions` and the day's fills.
+- **Lifecycle:** **append-only**, written once per scope per trading day by the PnL Engine during EOD reconciliation (Chapter 13 §6); long retention by default (the equity curve is the product), TTL optional if growth ever demands it.
 
 ### `positions`
 - **Purpose:** current holdings and closed positions with their P&L basis.
@@ -149,6 +157,7 @@ flowchart TD
     S --> SIG["signals"]
     SIG --> O["orders"]
     O --> P["positions"]
+    P -.EOD snapshot.-> PS["pnl_snapshots"]
     SIG --> RL["risk_logs"]
     O --> TL["trade_logs"]
     U --> N["notifications"]
@@ -175,7 +184,8 @@ Solid arrows are stored references (`fieldId`); dotted arrows are logical/data d
 - `market_ticks` — TTL, short retention (the firehose; live value is in Redis anyway).
 - `candles` — long retention (needed for warm-up and backtests; compact).
 - `trade_logs`, `notifications` — TTL/archive after a window.
-- `signals`, `orders`, `positions`, `risk_logs` — retained (audit-critical, comparatively low volume) with optional cold archival later.
+- `signals` — `BUY`/`SELL` retained (audit-critical); `HOLD` rows TTL/archived after ~30 days (§4, operator decision 2026-07-05).
+- `orders`, `positions`, `risk_logs`, `pnl_snapshots` — retained (audit-critical / equity-curve history, comparatively low volume) with optional cold archival later.
 
 **Why retention is a first-class concern:** an autonomous system runs every trading day indefinitely. Without TTLs, the tick collection alone would grow without bound and eventually degrade the whole database. Bounding growth is not cleanup — it's a correctness requirement for a long-lived process.
 

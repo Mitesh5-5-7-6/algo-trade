@@ -73,6 +73,22 @@ flowchart LR
 
 > Contrast with the autonomous path: operator config uses this **request/response** lifecycle because the operator needs confirmation their action succeeded. The trading pipeline does **not** use HTTP at all — it runs on ticks and events. Don't conflate the two: the API configures the machine; the machine trades on its own.
 
+### 4.1 The control-plane endpoint catalog
+
+*(Approved by operator decision, 2026-07-05.)* Every route follows the §4 lifecycle: Zod-validated, authenticated (Chapter 21 §5), uniform response envelope. **Routes marked ⚠ step-up require re-confirmation (password re-entry / typed confirmation) per Chapter 21 §5** — they are the actions where a hijacked-but-live session does maximum damage; leaving them as plain authenticated routes would make the step-up gate an assumption instead of a specification.
+
+| Area | Routes | Notes |
+|---|---|---|
+| Auth | `POST /auth/login`, `POST /auth/logout` | Rate-limited (`ratelimit:auth:*`, Chapter 21 §3). No signup route — the operator account is created by the bootstrap CLI (Chapter 07 `users`). |
+| Strategies | `GET /strategies`, `POST /strategies`, `GET /strategies/:id`, `PATCH /strategies/:id`, `DELETE /strategies/:id` (soft), `POST /strategies/:id/enable`, `POST /strategies/:id/disable` | Params validated against the strategy type's Zod schema (Chapter 15 §4); writes bust `cache:strategies:enabled` (Chapter 08 §4). |
+| Read models | `GET /positions`, `GET /orders`, `GET /signals`, `GET /risk-logs`, `GET /pnl`, `GET /pnl/history` | Snapshot endpoints backing snapshot-then-stream (Chapter 06 §6); `/pnl/history` reads `pnl_snapshots` (Chapter 07). |
+| Settings | `GET /settings`, `PATCH /settings` | ⚠ step-up when the patch changes `capitalAllocation` or **loosens** `globalRiskLimits`; tightening limits is not step-up gated (the safe direction stays frictionless, mirroring Chapter 14 §5's asymmetry). |
+| Control | `GET /control/status`, `POST /control/pause`, `POST /control/kill`, `POST /control/resume` | `pause`/`kill` are deliberately friction-free (stopping must never be gated); `resume` after kill is ⚠ step-up (Chapter 21 §5). All flip `settings.tradingEnabled` via its owner (Chapter 02 §8). |
+| Broker | `GET /broker/status`, `POST /broker/connect` | Initiates/completes the FYERS auth flow (Chapter 19 §3); tokens never transit to the client (Chapter 21 §2). |
+| Notifications | `GET /notifications`, `PATCH /notifications/:id/read` | Chapter 07 `notifications`. |
+| AI (Phase 2) | `GET /ai/summaries` | Read-only; the AI has no mutating surface (Chapter 20 §2). |
+| Health | `GET /health/live`, `GET /health/ready` | **Unauthenticated** (supervisors probe them, Chapter 23 §4); expose no financial state. |
+
 ---
 
 ## 5. Error handling

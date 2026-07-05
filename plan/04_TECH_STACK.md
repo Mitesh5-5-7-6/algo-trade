@@ -20,6 +20,8 @@ To document each technology, the specific job it does, why it was chosen, and th
 
 **Why Node (not Python, despite Python's quant ecosystem):** the system is fundamentally an I/O-bound, event-driven, real-time application — WebSockets in, WebSockets out, Redis, Mongo — which is exactly Node's event-loop sweet spot, and it lets the backend and the React dashboard share one language and one set of type definitions. The heavy-numeric work here (indicators) is light enough to run in-process; genuinely heavy analysis is offloaded to workers (Chapter 02 §9). See the concurrency caveat in §8.
 
+**Version pin (operator decision, 2026-07-05):** **Node 22 LTS** — recorded here so the docs, `.nvmrc`, CI, and the Docker base image agree on one version. Package manager: **pnpm 9**.
+
 ---
 
 ## 3. Backend framework
@@ -84,6 +86,8 @@ To document each technology, the specific job it does, why it was chosen, and th
 
 **Why MongoDB (not PostgreSQL):** the domain has many varied, evolving document shapes — strategy configs whose parameters differ per strategy, heterogeneous log entries, high-volume tick/candle documents. A flexible document model fits this without rigid migrations for every strategy that adds a parameter, and Mongo's write throughput suits the tick/candle firehose. **The honest trade-off:** Postgres gives stronger relational integrity and transactions; we accept weaker cross-document guarantees because the *money-critical* consistency in this system is enforced in-process by the synchronous critical path and single-owner writes (Chapter 02 §6, §8), not by the database. Where strong per-record consistency matters (orders), that's guarded by the Order Manager choke point, not by DB transactions across tables. This trade-off is worth revisiting if the data model becomes highly relational.
 
+**Access layer (operator decision, 2026-07-05): the native `mongodb` driver + Zod-validated repositories — not Mongoose.** Mongoose would introduce a second schema definition per entity alongside the Zod schemas in `core`, which is exactly the hand-duplicated-type drift Chapter 25 §2 bans. The `db` package's repositories validate documents against the `core` Zod schemas at the boundary; the driver stays a thin, typed transport.
+
 ---
 
 ## 8. Concurrency note (why the runtime choice constrains design)
@@ -106,9 +110,9 @@ Node's single-threaded event loop (Chapter 02 §9) is a deliberate constraint, n
 
 | Piece | Choice | Why |
 |---|---|---|
-| Framework | **Nextjs** | Component model fits a dashboard of many independent live panels; huge ecosystem. |
+| Framework | **Next.js, static export (`output: 'export'`)** | Component model fits a dashboard of many independent live panels; static export satisfies Chapter 22's static-assets-behind-proxy deployment — the dashboard is purely client-side talking to the Fastify API (no SSR runtime, no secrets in the bundle), exactly what Chapter 06 §8 wants. *(Pinned 2026-07-05.)* |
 | Server-state / data fetching | **TanStack Query** | Caching, background refetch, and cache invalidation for REST data; pairs cleanly with socket-driven cache updates (Chapter 06 §5). |
-| Charts | **Lightweight financial charting lib** | Price/PnL charts need to render streaming updates smoothly; a purpose-built financial chart library outperforms general charting for candlesticks and live series. |
+| Charts | **TradingView `lightweight-charts`** | Price/PnL charts need to render streaming updates smoothly; a purpose-built financial chart library outperforms general charting for candlesticks and live series. *(Pinned 2026-07-05.)* |
 | Realtime | **Socket.IO client** | Matches the server transport (§5). |
 
 Detailed structure and the reasoning for the REST-vs-socket split are in **[06_FRONTEND_ARCHITECTURE.md](06_FRONTEND_ARCHITECTURE.md)**.
@@ -132,7 +136,7 @@ Detailed structure and the reasoning for the REST-vs-socket split are in **[06_F
 
 | Layer | Tool | Why |
 |---|---|---|
-| Unit / integration | **Vitest (or Jest)** | Fast unit tests colocated per package (Chapter 03 §7); pure functions like indicators and strategy logic are highly testable. |
+| Unit / integration | **Vitest** | Fast unit tests colocated per package (Chapter 03 §7); pure functions like indicators and strategy logic are highly testable. *(Settled per Chapter 27 §6; confirmed 2026-07-05.)* |
 | End-to-end (dashboard) | **Playwright** | Drives the real dashboard in a browser to verify operator workflows end to end. |
 
 Full approach — including how the deterministic pipeline is tested with recorded market data — is in **[27_TESTING.md](27_TESTING.md)**.
