@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# task runner cache
+.turbo/
+
+# test artifacts
+coverage/
+
+# environment — secrets never enter the repo (plan/22 §5, plan/24 §5)
+.env
+.env.*
+!.env.example
+
+# logs & OS noise
+logs/
+*.log
+.DS_Store
+Thumbs.db
