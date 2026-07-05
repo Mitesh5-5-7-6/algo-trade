@@ -13,6 +13,12 @@
     },
     {
       "path": "packages/logger/tsconfig.build.json"
+    },
+    {
+      "path": "packages/redis/tsconfig.build.json"
+    },
+    {
+      "path": "packages/db/tsconfig.build.json"
     }
   ]
 }

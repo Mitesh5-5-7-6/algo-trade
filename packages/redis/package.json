@@ -1,0 +1,31 @@
+{
+  "name": "@neelkanth/redis",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Redis client, namespaced key builders, and the validated event bus (plan/08) — the only package that opens a Redis connection (plan/03 §5)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@neelkanth/contracts": "workspace:*",
+    "ioredis": "^5.4.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
