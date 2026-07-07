@@ -89,6 +89,19 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/node@22.20.0)
 
+  packages/broker:
+    dependencies:
+      '@neelkanth/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/node@22.20.0)
+
   packages/config:
     dependencies:
       zod:

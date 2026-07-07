@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  BrokerOrderRequestSchema,
   CandleSchema,
   ConfidenceSchema,
+  ExecutionOutcomeSchema,
   OrderSchema,
   ORDER_TERMINAL_STATUSES,
   PositionSchema,
@@ -174,6 +176,50 @@ describe("strategy config shapes", () => {
         symbols: ["NSE:RELIANCE-EQ"],
       }).success,
     ).toBe(true);
+  });
+});
+
+describe("broker contract shapes (plan/19 §2)", () => {
+  it("requires clientOrderId on a broker order request (plan/19 §5)", () => {
+    const base = {
+      symbol: "NSE:RELIANCE-EQ",
+      side: "BUY",
+      qty: 10,
+      type: "MARKET",
+    };
+    expect(BrokerOrderRequestSchema.safeParse(base).success).toBe(false);
+    expect(
+      BrokerOrderRequestSchema.safeParse({ ...base, clientOrderId: "ord_1" })
+        .success,
+    ).toBe(true);
+  });
+
+  it("discriminates execution outcomes and requires a fill on FILLED", () => {
+    expect(ExecutionOutcomeSchema.safeParse({ status: "FILLED" }).success).toBe(
+      false,
+    );
+    expect(
+      ExecutionOutcomeSchema.safeParse({
+        status: "FILLED",
+        fill: {
+          clientOrderId: "ord_1",
+          filledPrice: 2990,
+          filledQty: 10,
+          slippage: 0,
+          charges: 0,
+          filledAt: ts,
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects an unknown execution status rather than guessing", () => {
+    expect(
+      ExecutionOutcomeSchema.safeParse({
+        status: "PARTIALLY_FILLED",
+        clientOrderId: "ord_1",
+      }).success,
+    ).toBe(false);
   });
 });
 
