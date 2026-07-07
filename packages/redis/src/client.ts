@@ -19,7 +19,24 @@ export interface RedisConnections {
   quit(): Promise<void>;
 }
 
-export function createRedisConnections(url: string): RedisConnections {
+/**
+ * Called on every connection-level error (e.g. ECONNREFUSED during an outage
+ * while ioredis auto-reconnects). Attaching a handler is MANDATORY: an ioredis
+ * client with no `error` listener emits an unhandled `error` event, which Node
+ * escalates to a process crash. Connection errors are transient by nature, so
+ * the composition root logs them at `warn` and lets ioredis reconnect — the
+ * readiness probe (plan/23 §4) is what turns a persistent outage into
+ * `unready` and halts orders (plan/08 §11).
+ */
+export type RedisErrorHandler = (
+  error: Error,
+  source: "client" | "publisher" | "subscriber",
+) => void;
+
+export function createRedisConnections(
+  url: string,
+  onError?: RedisErrorHandler,
+): RedisConnections {
   const options = {
     // Fail-closed posture (plan/08 §11): commands error out rather than
     // queueing forever against a dead Redis — callers surface the failure.
@@ -31,6 +48,18 @@ export function createRedisConnections(url: string): RedisConnections {
   const client = new Redis(url, options);
   const publisher = new Redis(url, options);
   const subscriber = new Redis(url, options);
+
+  // Always attach a handler — never leave an ioredis `error` event unhandled.
+  const handler = onError ?? (() => undefined);
+  client.on("error", (error: Error) => {
+    handler(error, "client");
+  });
+  publisher.on("error", (error: Error) => {
+    handler(error, "publisher");
+  });
+  subscriber.on("error", (error: Error) => {
+    handler(error, "subscriber");
+  });
 
   return {
     client,

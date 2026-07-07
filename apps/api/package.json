@@ -1,0 +1,26 @@
+{
+  "name": "@neelkanth/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The runtime: composition root hosting the engines + control-plane HTTP API (plan/05)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "start": "node dist/main.js",
+    "dev": "node --env-file=../../.env dist/main.js"
+  },
+  "dependencies": {
+    "@neelkanth/config": "workspace:*",
+    "@neelkanth/db": "workspace:*",
+    "@neelkanth/logger": "workspace:*",
+    "@neelkanth/redis": "workspace:*",
+    "fastify": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
