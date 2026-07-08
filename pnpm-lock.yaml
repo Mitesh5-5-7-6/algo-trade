@@ -166,6 +166,28 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/node@22.20.0)
 
+  packages/engines:
+    dependencies:
+      '@neelkanth/broker':
+        specifier: workspace:*
+        version: link:../broker
+      '@neelkanth/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@neelkanth/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/node@22.20.0)
+
   packages/logger:
     dependencies:
       pino:

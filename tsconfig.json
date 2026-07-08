@@ -24,6 +24,9 @@
       "path": "packages/broker/tsconfig.build.json"
     },
     {
+      "path": "packages/engines/tsconfig.build.json"
+    },
+    {
       "path": "apps/api/tsconfig.build.json"
     }
   ]

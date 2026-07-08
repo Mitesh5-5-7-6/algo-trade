@@ -1,0 +1,31 @@
+{
+  "name": "@neelkanth/engines",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The trading engines: market-data, indicator, context, strategy, risk, order, position, pnl (plan/03 §4)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@neelkanth/broker": "workspace:*",
+    "@neelkanth/contracts": "workspace:*",
+    "@neelkanth/core": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
