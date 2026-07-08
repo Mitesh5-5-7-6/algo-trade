@@ -22,6 +22,7 @@
     "@neelkanth/broker": "workspace:*",
     "@neelkanth/contracts": "workspace:*",
     "@neelkanth/core": "workspace:*",
+    "@neelkanth/indicators": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {

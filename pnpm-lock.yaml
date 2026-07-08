@@ -177,6 +177,9 @@ importers:
       '@neelkanth/core':
         specifier: workspace:*
         version: link:../core
+      '@neelkanth/indicators':
+        specifier: workspace:*
+        version: link:../indicators
       zod:
         specifier: ^3.24.1
         version: 3.25.76
