@@ -14,11 +14,11 @@ import {
 } from "./index.js";
 
 /**
- * Integration tests against REAL Redis (plan/27 §2): docker-compose.dev.yml
- * locally, service containers in CI. No mocks — the event relay test is the
- * license for the whole Regime B design.
+ * Integration tests against REAL Redis (plan/27 §2), run by the CI service
+ * container. No mocks — the event relay test is the license for the whole
+ * Regime B design.
  *
- * When Redis is unreachable (e.g. local dev without Docker) the infra tests
+ * When Redis is unreachable (local dev provides no Redis) the infra tests
  * SKIP rather than fail; in CI the service container is always present, so
  * there they run and gate. The pure key-builder test always runs.
  */
