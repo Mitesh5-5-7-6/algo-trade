@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import type {
   CandleInterval,
   MarketContext,
@@ -27,8 +27,13 @@ import type { IndicatorSpec } from "@neelkanth/indicators";
 export interface StrategyDefinition<Params, State> {
   /** Registry key mapping stored config → code (plan/15 §4), e.g. "EMA_CROSSOVER". */
   readonly type: string;
-  /** Zod schema validating `strategies.params` at enable time (plan/15 §4). */
-  readonly paramsSchema: ZodType<Params>;
+  /**
+   * Zod schema validating `strategies.params` at enable time (plan/15 §4). The
+   * input type is `unknown` (the runner parses raw operator config) while the
+   * output is the fully-defaulted `Params` — which is why `.default()`/`.refine()`
+   * schemas fit here where `ZodType<Params>` (input = output) would not.
+   */
+  readonly paramsSchema: ZodType<Params, ZodTypeDef, unknown>;
   /** The candle interval this strategy decides on. */
   interval(params: Params): CandleInterval;
   /** The indicators the context must contain (plan/15 §2). */
