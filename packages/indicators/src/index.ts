@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./spec.js";
 export * from "./ema.js";
 export * from "./rsi.js";
 export * from "./atr.js";

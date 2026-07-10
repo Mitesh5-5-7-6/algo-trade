@@ -24,6 +24,9 @@
       "path": "packages/indicators/tsconfig.build.json"
     },
     {
+      "path": "packages/strategies/tsconfig.build.json"
+    },
+    {
       "path": "packages/broker/tsconfig.build.json"
     },
     {

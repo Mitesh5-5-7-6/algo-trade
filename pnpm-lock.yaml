@@ -180,6 +180,9 @@ importers:
       '@neelkanth/indicators':
         specifier: workspace:*
         version: link:../indicators
+      '@neelkanth/strategies':
+        specifier: workspace:*
+        version: link:../strategies
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -232,6 +235,25 @@ importers:
       '@types/node':
         specifier: ^22.10.5
         version: 22.20.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/node@22.20.0)
+
+  packages/strategies:
+    dependencies:
+      '@neelkanth/core':
+        specifier: workspace:*
+        version: link:../core
+      '@neelkanth/indicators':
+        specifier: workspace:*
+        version: link:../indicators
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3

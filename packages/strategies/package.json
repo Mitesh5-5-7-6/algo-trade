@@ -1,8 +1,8 @@
 {
-  "name": "@neelkanth/engines",
+  "name": "@neelkanth/strategies",
   "version": "0.0.0",
   "private": true,
-  "description": "The trading engines: market-data, indicator, context, strategy, risk, order, position, pnl (plan/03 §4)",
+  "description": "The strategy library — one module per strategy, all implementing the pure analyze() contract (plan/16)",
   "type": "module",
   "exports": {
     ".": {
@@ -19,11 +19,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@neelkanth/broker": "workspace:*",
-    "@neelkanth/contracts": "workspace:*",
     "@neelkanth/core": "workspace:*",
     "@neelkanth/indicators": "workspace:*",
-    "@neelkanth/strategies": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {
