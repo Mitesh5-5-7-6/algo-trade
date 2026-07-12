@@ -93,6 +93,7 @@ describe("event bus (plan/09)", () => {
       "ORDER_FILLED",
       {
         orderId: "ord_it_1",
+        strategyId: "str_it_1",
         symbol: "NSE:INFY-EQ",
         side: "BUY",
         qty: 10,
@@ -123,6 +124,7 @@ describe("event bus (plan/09)", () => {
     await expect(
       bus.publish("ORDER_FILLED", {
         orderId: "ord_bad",
+        strategyId: "str_it_1",
         symbol: "NSE:INFY-EQ",
         side: "BUY",
         qty: -5, // type-valid number, runtime-invalid: Zod rejects at the boundary

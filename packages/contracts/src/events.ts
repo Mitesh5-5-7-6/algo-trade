@@ -101,6 +101,8 @@ export const EVENT_PAYLOAD_SCHEMAS = {
 
   ORDER_FILLED: z.object({
     orderId: EntityIdSchema,
+    /** Attributes the fill to its (strategy, symbol) position (plan/13 §3). */
+    strategyId: EntityIdSchema,
     symbol: SymbolSchema,
     side: OrderSideSchema,
     qty: QuantitySchema,

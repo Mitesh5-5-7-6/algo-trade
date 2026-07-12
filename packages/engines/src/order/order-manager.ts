@@ -191,6 +191,7 @@ export class OrderManager {
         "ORDER_FILLED",
         {
           orderId: order.orderId,
+          strategyId: order.strategyId,
           symbol: order.symbol,
           side: order.side,
           qty: order.qty,

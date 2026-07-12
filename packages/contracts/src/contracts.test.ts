@@ -25,6 +25,7 @@ describe("event catalog (plan/09 §6)", () => {
 describe("envelope (plan/09 §3)", () => {
   const fill = {
     orderId: "ord_1",
+    strategyId: "str_1",
     symbol: "NSE:RELIANCE-EQ",
     side: "BUY",
     qty: 10,
