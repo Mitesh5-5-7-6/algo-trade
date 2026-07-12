@@ -11,12 +11,20 @@ export interface MongoConnection {
   close(): Promise<void>;
 }
 
-export async function connectMongo(uri: string): Promise<MongoConnection> {
+/**
+ * @param dbName Optional override for the database name. Production omits it
+ *   (the name comes from the URI, per `.env.example`); integration tests pass a
+ *   unique name so parallel test files never share (and drop) one database.
+ */
+export async function connectMongo(
+  uri: string,
+  dbName?: string,
+): Promise<MongoConnection> {
   const client = new MongoClient(uri, {
     serverSelectionTimeoutMS: 5_000,
   });
   await client.connect();
-  const db = client.db(); // database name comes from the URI (plan .env.example)
+  const db = dbName === undefined ? client.db() : client.db(dbName);
   await db.command({ ping: 1 });
   return {
     client,

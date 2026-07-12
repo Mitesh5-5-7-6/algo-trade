@@ -29,7 +29,8 @@ const MONGO_URI =
 let connection: MongoConnection;
 
 beforeAll(async () => {
-  connection = await connectMongo(MONGO_URI);
+  // A per-file database so parallel integration test files never share one.
+  connection = await connectMongo(MONGO_URI, "neelkanth_it_repos");
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 });
