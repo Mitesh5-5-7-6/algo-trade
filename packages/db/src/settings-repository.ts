@@ -1,6 +1,6 @@
 import type { Db } from "mongodb";
 import { z } from "zod";
-import { RiskRulesSchema } from "@neelkanth/core";
+import { RiskLimitsSchema } from "@neelkanth/core";
 import { COLLECTIONS } from "./collections.js";
 
 /**
@@ -15,7 +15,9 @@ import { COLLECTIONS } from "./collections.js";
 export const GlobalSettingsSchema = z.object({
   scope: z.literal("global"),
   capitalAllocation: z.number().nonnegative(),
-  globalRiskLimits: RiskRulesSchema,
+  /** The complete outer safety envelope (plan/14 §4); per-strategy overrides
+   *  may only tighten it. */
+  globalRiskLimits: RiskLimitsSchema,
   marketHours: z.object({
     open: z.string().regex(/^\d{2}:\d{2}$/), // "09:15" IST
     close: z.string().regex(/^\d{2}:\d{2}$/), // "15:30" IST
@@ -32,6 +34,8 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   capitalAllocation: 0,
   globalRiskLimits: {
     maxDailyLoss: 25_000,
+    maxPositionSize: 1_000,
+    maxCapitalPerTrade: 100_000,
     maxOpenPositions: 6,
     maxExposure: 0.6,
   },

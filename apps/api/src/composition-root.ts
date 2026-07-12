@@ -12,6 +12,10 @@ import {
 } from "@neelkanth/db";
 import { buildServer, type ApiServer } from "./server.js";
 import type { DependencyCheck } from "./health.js";
+import { startEngineRuntime, type EngineRuntime } from "./engines/runtime.js";
+
+/** How often the session state is re-evaluated (plan/17 §6). */
+const SESSION_POLL_MS = 15_000;
 
 /**
  * The single composition root (plan/05 §3): the one place concrete infra —
@@ -31,6 +35,7 @@ export interface AppContext {
   readonly redis: RedisConnections;
   readonly mongo: MongoConnection;
   readonly server: ApiServer;
+  readonly runtime: EngineRuntime;
   /** Graceful teardown (plan/22 §4), reverse order of construction. */
   shutdown(): Promise<void>;
 }
@@ -75,6 +80,19 @@ export async function bootstrap(
     );
   }
 
+  // --- Construct + wire the engines (plan/05 §3) ---
+  // The pipeline: engines built with real Redis/Mongo ports, subscribed to the
+  // bus. Boot sequence (hydrate positions, reconcile stuck orders, enable
+  // strategies + warm indicators) runs inside. The Market Data Engine + FYERS
+  // feed attach to the same bus once broker credentials exist (plan/19).
+  log.info("wiring engines");
+  const runtime = await startEngineRuntime({ redis, mongo, logger });
+  await runtime.syncSession(Date.now()); // initial session state
+  const sessionTimer = setInterval(() => {
+    void runtime.syncSession(Date.now());
+  }, SESSION_POLL_MS);
+  sessionTimer.unref(); // never keep the process alive on the timer alone
+
   // --- Readiness probes (plan/23 §4) ---
   const readinessChecks: DependencyCheck[] = [
     {
@@ -102,14 +120,20 @@ export async function bootstrap(
     redis,
     mongo,
     server,
+    runtime,
     async shutdown() {
       // Reverse order; each step best-effort so one failure can't strand
-      // the rest (plan/22 §4). Engines and in-flight broker drain slot in
-      // ahead of these closes as Phase 1 lands.
+      // the rest (plan/22 §4). (In-flight broker drain lands with the live
+      // feed in Phase 3.)
       const shutdownLog = componentLogger(logger, "api.shutdown");
+      clearInterval(sessionTimer);
       shutdownLog.info("closing http server");
       await server.close().catch((err: unknown) => {
         shutdownLog.error({ err }, "error closing server");
+      });
+      shutdownLog.info("closing engine runtime");
+      await runtime.shutdown().catch((err: unknown) => {
+        shutdownLog.error({ err }, "error closing runtime");
       });
       shutdownLog.info("closing redis");
       await redis.quit();

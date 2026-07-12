@@ -1,17 +1,25 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig, type Config } from "@neelkanth/config";
 import { createLogger } from "@neelkanth/logger";
-import { connectMongo } from "@neelkanth/db";
+import type { StrategyConfig } from "@neelkanth/core";
+import {
+  connectMongo,
+  SettingsRepository,
+  StrategiesRepository,
+} from "@neelkanth/db";
+import { createRedisConnections } from "@neelkanth/redis";
 import { bootstrap, type AppContext } from "./composition-root.js";
 
 /**
- * Integration test for the composition root (plan/05 §3) against REAL Mongo.
- * Verifies the boot sequence wires a working server and that shutdown
- * (plan/22 §4) tears everything down cleanly — the shutdown path can't be
- * exercised via SIGTERM on Windows dev boxes, so we drive it directly here.
+ * Integration test for the composition root (plan/05 §3) against REAL Redis +
+ * Mongo. It exercises the full boot wiring — engines constructed, bus
+ * subscriptions established, the boot sequence (hydrate / reconcile / enable
+ * strategies + warm indicators) — and the graceful shutdown (plan/22 §4),
+ * which can't be driven via SIGTERM on a Windows dev box.
  *
- * Skips when Mongo is unreachable (local dev without it); CI's service
- * container always provides it.
+ * Requires both Redis and Mongo (the pipeline needs Redis to wire the bus);
+ * skips when either is unreachable (local dev without Docker). CI's service
+ * containers always provide both.
  */
 const MONGO_URI =
   process.env["MONGO_URI"] ?? "mongodb://localhost:27017/neelkanth_ctx_test";
@@ -35,27 +43,58 @@ function testConfig(): Config {
     REDIS_URL,
     SESSION_SECRET: "s".repeat(40),
     TOKEN_ENCRYPTION_KEY: "a".repeat(64),
-    // Port is irrelevant: the test drives the server via inject(), never listen().
     LOG_LEVEL: "fatal",
   });
 }
 
-let mongoAvailable = false;
+const enabledStrategy: StrategyConfig = {
+  strategyId: "str_boot",
+  ownerId: "usr_boot",
+  type: "EMA_CROSSOVER",
+  name: "EMA boot",
+  params: { fast: 9, slow: 21, quantity: 10 },
+  symbols: ["NSE:BOOT-EQ"],
+  enabled: true,
+  status: "active",
+  createdAt: 0,
+  updatedAt: 0,
+};
+
+let infraAvailable = false;
 
 beforeAll(async () => {
+  let mongoOk = false;
   try {
-    const probe = await connectMongo(MONGO_URI);
-    mongoAvailable = true;
-    await probe.close();
+    const mongo = await connectMongo(MONGO_URI);
+    await mongo.db.dropDatabase(); // clean slate → getGlobal seeds fresh
+    // Seed an enabled strategy + capital so boot exercises the enable path.
+    await new StrategiesRepository(mongo.db).create(enabledStrategy);
+    await new SettingsRepository(mongo.db).updateGlobal({
+      capitalAllocation: 1_000_000,
+    });
+    await mongo.close();
+    mongoOk = true;
   } catch {
-    mongoAvailable = false;
+    mongoOk = false;
   }
+
+  let redisOk = false;
+  try {
+    const redis = createRedisConnections(REDIS_URL, () => {
+      /* swallow probe-time connection errors */
+    });
+    await redis.client.ping();
+    await redis.quit();
+    redisOk = true;
+  } catch {
+    redisOk = false;
+  }
+
+  infraAvailable = mongoOk && redisOk;
 });
 
-function requireMongo(ctx: { skip: () => void }): void {
-  if (!mongoAvailable) {
-    ctx.skip();
-  }
+function requireInfra(ctx: { skip: () => void }): void {
+  if (!infraAvailable) ctx.skip();
 }
 
 describe("bootstrap (plan/05 §3 composition root)", () => {
@@ -65,8 +104,8 @@ describe("bootstrap (plan/05 §3 composition root)", () => {
     if (context) await context.shutdown();
   });
 
-  it("boots a working server and reports the readiness split honestly", async (ctx) => {
-    requireMongo(ctx);
+  it("wires the engines, boots a ready server, and enables strategies", async (ctx) => {
+    requireInfra(ctx);
     context = await bootstrap(testConfig(), silentLogger());
 
     const live = await context.server.inject({
@@ -79,14 +118,14 @@ describe("bootstrap (plan/05 §3 composition root)", () => {
       method: "GET",
       url: "/health/ready",
     });
-    // Mongo is up; Redis may or may not be (down in local dev). Either way the
-    // per-dependency report must include mongo:up.
+    expect(ready.statusCode).toBe(200); // both deps up in CI
     const body = ready.json<{ dependencies: Record<string, string> }>();
     expect(body.dependencies["mongo"]).toBe("up");
+    expect(body.dependencies["redis"]).toBe("up");
   });
 
   it("shuts down cleanly without throwing (plan/22 §4)", async (ctx) => {
-    requireMongo(ctx);
+    requireInfra(ctx);
     const local = await bootstrap(testConfig(), silentLogger());
     await expect(local.shutdown()).resolves.toBeUndefined();
   });
