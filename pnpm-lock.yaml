@@ -29,18 +29,36 @@ importers:
 
   apps/api:
     dependencies:
+      '@neelkanth/broker':
+        specifier: workspace:*
+        version: link:../../packages/broker
       '@neelkanth/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@neelkanth/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@neelkanth/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@neelkanth/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@neelkanth/engines':
+        specifier: workspace:*
+        version: link:../../packages/engines
+      '@neelkanth/indicators':
+        specifier: workspace:*
+        version: link:../../packages/indicators
       '@neelkanth/logger':
         specifier: workspace:*
         version: link:../../packages/logger
       '@neelkanth/redis':
         specifier: workspace:*
         version: link:../../packages/redis
+      '@neelkanth/strategies':
+        specifier: workspace:*
+        version: link:../../packages/strategies
       fastify:
         specifier: ^5.2.1
         version: 5.10.0

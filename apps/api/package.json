@@ -12,10 +12,16 @@
     "dev": "node --env-file=../../.env dist/main.js"
   },
   "dependencies": {
+    "@neelkanth/broker": "workspace:*",
     "@neelkanth/config": "workspace:*",
+    "@neelkanth/contracts": "workspace:*",
+    "@neelkanth/core": "workspace:*",
     "@neelkanth/db": "workspace:*",
+    "@neelkanth/engines": "workspace:*",
+    "@neelkanth/indicators": "workspace:*",
     "@neelkanth/logger": "workspace:*",
     "@neelkanth/redis": "workspace:*",
+    "@neelkanth/strategies": "workspace:*",
     "fastify": "^5.2.1"
   },
   "devDependencies": {

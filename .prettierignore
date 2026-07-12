@@ -7,3 +7,4 @@ coverage/
 pnpm-lock.yaml
 plan/
 .env.example
+golden-record.json
