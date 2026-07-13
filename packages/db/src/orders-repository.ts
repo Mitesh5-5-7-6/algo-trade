@@ -56,4 +56,14 @@ export class OrdersRepository {
     );
     return doc === null ? null : OrderSchema.parse(doc);
   }
+
+  /** Recent orders, newest first (dashboard order history). */
+  async findRecent(limit: number): Promise<Order[]> {
+    const docs = await this.collection
+      .find({}, { projection: { _id: 0 } })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray();
+    return docs.map((doc) => OrderSchema.parse(doc));
+  }
 }

@@ -13,6 +13,7 @@ import {
 import { buildServer, type ApiServer } from "./server.js";
 import type { DependencyCheck } from "./health.js";
 import { startEngineRuntime, type EngineRuntime } from "./engines/runtime.js";
+import { registerControlPlane } from "./control-plane/index.js";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
 const SESSION_POLL_MS = 15_000;
@@ -111,8 +112,9 @@ export async function bootstrap(
     },
   ];
 
-  // --- HTTP server ---
+  // --- HTTP server + control-plane routes (plan/05 §4.1) ---
   const server = buildServer({ logger, readinessChecks });
+  registerControlPlane(server, { db: mongo.db, runtime });
 
   return {
     config,

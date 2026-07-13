@@ -37,4 +37,14 @@ export class SignalsRepository {
       .toArray();
     return docs.map((doc) => SignalSchema.parse(doc));
   }
+
+  /** Recent signals across all strategies, newest first. */
+  async findRecent(limit: number): Promise<Signal[]> {
+    const docs = await this.collection
+      .find({}, { projection: { _id: 0, expireAt: 0 } })
+      .sort({ ts: -1 })
+      .limit(limit)
+      .toArray();
+    return docs.map((doc) => SignalSchema.parse(doc));
+  }
 }

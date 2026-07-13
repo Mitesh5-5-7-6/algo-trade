@@ -39,6 +39,7 @@ import {
   RiskEngine,
   SessionManager,
   StrategyRunner,
+  unrealizedPnl,
   type IndicatorPorts,
   type OrderPorts,
   type PnlPorts,
@@ -47,6 +48,7 @@ import {
   type StrategyPorts,
 } from "@neelkanth/engines";
 import { createStrategyRegistry } from "@neelkanth/strategies";
+import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
 const CANDLE_WINDOW = 60;
@@ -60,11 +62,9 @@ function istMinuteOfDay(now: number): number {
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
 }
 
-export interface EngineRuntime {
+export interface EngineRuntime extends RuntimeControls {
   readonly bus: EventBus;
   readonly positionEngine: PositionEngine;
-  /** Reflect a control-plane pause/kill/resume into the hot kill gate. */
-  setTradingEnabled(enabled: boolean): void;
   /** Evaluate the session at `now` and drive its side effects (plan/17 §6). */
   syncSession(now: number): Promise<void>;
   shutdown(): Promise<void>;
@@ -316,6 +316,38 @@ export async function startEngineRuntime(deps: {
     positionEngine,
     setTradingEnabled(enabled) {
       state.tradingEnabled = enabled;
+    },
+    async enableStrategy(config) {
+      enabledConfigs.set(
+        config.strategyId,
+        config.riskRules === undefined ? {} : { riskRules: config.riskRules },
+      );
+      await runner.enable(config);
+    },
+    disableStrategy(strategyId) {
+      runner.disable(strategyId);
+      enabledConfigs.delete(strategyId);
+    },
+    applyGlobalSettings({ limits, allocatedCapital }) {
+      state.limits = limits;
+      state.allocatedCapital = allocatedCapital;
+    },
+    getOpenPositions() {
+      return positionEngine.getOpenPositions();
+    },
+    realizedPnl() {
+      return positionEngine.realizedPnl();
+    },
+    unrealizedPnl() {
+      let total = 0;
+      for (const position of positionEngine.getOpenPositions()) {
+        const price = lastPrices.get(position.symbol);
+        if (price !== undefined) total += unrealizedPnl(position, price);
+      }
+      return total;
+    },
+    session() {
+      return state.session;
     },
     async syncSession(now) {
       const evaluation = sessionManager.evaluate(now);

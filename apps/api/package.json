@@ -22,7 +22,9 @@
     "@neelkanth/logger": "workspace:*",
     "@neelkanth/redis": "workspace:*",
     "@neelkanth/strategies": "workspace:*",
-    "fastify": "^5.2.1"
+    "fastify": "^5.2.1",
+    "mongodb": "^6.12.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
