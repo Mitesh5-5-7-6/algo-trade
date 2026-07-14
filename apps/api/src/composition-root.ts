@@ -27,6 +27,7 @@ import {
   SESSION_ABSOLUTE_MAX_SECONDS,
   SESSION_IDLE_TTL_SECONDS,
 } from "./auth/index.js";
+import { createRealtimeBridge } from "./realtime/index.js";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
 const SESSION_POLL_MS = 15_000;
@@ -150,6 +151,20 @@ export async function bootstrap(
     verifyStepUp: createStepUpVerifier(users),
   });
 
+  // --- Realtime bridge (plan/10): push live state to the dashboard ---
+  // Attaches Socket.IO to the same HTTP server, authenticates the handshake
+  // with the same sessions, and forwards the engine bus outward. A leaf: it
+  // only consumes events (plan/02 §11), so a stuck dashboard can't touch the
+  // pipeline. It becomes the owner of the shared HTTP server's close.
+  const bridge = await createRealtimeBridge({
+    httpServer: server.server,
+    bus: runtime.bus,
+    sessions,
+    users,
+    logger,
+    corsOrigin: config.DASHBOARD_ORIGIN,
+  });
+
   return {
     config,
     logger,
@@ -163,9 +178,11 @@ export async function bootstrap(
       // feed in Phase 3.)
       const shutdownLog = componentLogger(logger, "api.shutdown");
       clearInterval(sessionTimer);
-      shutdownLog.info("closing http server");
-      await server.close().catch((err: unknown) => {
-        shutdownLog.error({ err }, "error closing server");
+      shutdownLog.info("closing realtime bridge + http server");
+      // The bridge owns the shared HTTP server's close (io.close closes it too),
+      // so this stands in for server.close() — calling both would double-close.
+      await bridge.close().catch((err: unknown) => {
+        shutdownLog.error({ err }, "error closing realtime bridge");
       });
       shutdownLog.info("closing engine runtime");
       await runtime.shutdown().catch((err: unknown) => {
