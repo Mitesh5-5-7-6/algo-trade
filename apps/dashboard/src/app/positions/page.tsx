@@ -1,9 +1,11 @@
-import { getMockSnapshot } from "@/lib/data";
+"use client";
+
+import { useDashboardData } from "@/lib/live";
 import { formatIN, formatSignedINR, formatTimeIST } from "@/lib/format";
 
-/** Positions — live holdings (plan/06 §4; socket-fed at milestone 1.9). */
+/** Positions — live holdings, snapshot-then-stream over the socket (plan/06 §5). */
 export default function PositionsPage() {
-  const { positions, strategies } = getMockSnapshot();
+  const { positions, strategies } = useDashboardData().snapshot;
   const strategyName = (id: string) =>
     strategies.find((s) => s.config.strategyId === id)?.config.name ?? id;
 

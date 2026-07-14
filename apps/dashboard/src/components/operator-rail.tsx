@@ -1,32 +1,44 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api-client";
+import { qk } from "@/lib/query-keys";
+import { useDashboardData } from "@/lib/live";
 
 /**
  * The always-visible operator rail (plan/06 §3: emergency controls reachable
  * from every page, one action away). PAUSE is one click; KILL is
- * hold-to-confirm — stopping must be easy, but not accidental.
+ * hold-to-confirm — stopping must be easy, but not accidental. Both are wired
+ * to the control-plane (POST /control/pause, /control/kill).
  *
- * Mock milestone: state is local. Milestone 1.9 wires these to
- * POST /control/pause and /control/kill (plan/05 §4.1); note the resume path
- * is ⚠ step-up gated there, which is why this rail has no resume button —
- * re-enabling a killed system is deliberately harder than killing it.
+ * There is deliberately no resume button here: re-enabling a halted system is
+ * ⚠ step-up gated (plan/21 §5) and lives on the Settings page — stopping is
+ * frictionless, restarting is not.
  */
 export function OperatorRail() {
-  const [engine, setEngine] = useState<"running" | "paused" | "killed">(
-    "running",
-  );
+  const queryClient = useQueryClient();
+  const { snapshot } = useDashboardData();
+  const tradingEnabled = snapshot.status.tradingEnabled;
+
+  const invalidate = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: qk.controlStatus });
+  }, [queryClient]);
+
+  const pause = useMutation({ mutationFn: api.pause, onSuccess: invalidate });
+  const kill = useMutation({ mutationFn: api.kill, onSuccess: invalidate });
+
   const [holding, setHolding] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const beginHold = useCallback(() => {
-    if (engine === "killed") return;
+    if (!tradingEnabled) return;
     setHolding(true);
     holdTimer.current = setTimeout(() => {
-      setEngine("killed");
       setHolding(false);
+      kill.mutate();
     }, 1500);
-  }, [engine]);
+  }, [tradingEnabled, kill]);
 
   const cancelHold = useCallback(() => {
     setHolding(false);
@@ -40,40 +52,28 @@ export function OperatorRail() {
     <aside className="rail">
       <h2 className="panel-title">Operator Controls</h2>
 
-      {engine === "killed" && (
+      {!tradingEnabled && (
         <div className="halted-banner">
-          KILLED — all execution halted. Re-enable requires step-up re-auth from
-          Settings.
-        </div>
-      )}
-      {engine === "paused" && (
-        <div
-          className="halted-banner"
-          style={{
-            borderColor: "var(--amber)",
-            color: "var(--amber)",
-            background: "rgba(238,182,83,.08)",
-          }}
-        >
-          PAUSED — no new entries. Exits still allowed.
+          HALTED — no new entries; exits still allowed. Re-enable requires
+          step-up re-auth from Settings.
         </div>
       )}
 
       <button
         type="button"
         className="btn-pause"
-        disabled={engine === "killed"}
+        disabled={!tradingEnabled || pause.isPending}
         onClick={() => {
-          setEngine((state) => (state === "paused" ? "running" : "paused"));
+          pause.mutate();
         }}
       >
-        {engine === "paused" ? "▶ RESUME TRADING" : "⏸ PAUSE ALL TRADING"}
+        {pause.isPending ? "PAUSING…" : "⏸ PAUSE ALL TRADING"}
       </button>
 
       <button
         type="button"
         className={`btn-kill${holding ? " holding" : ""}`}
-        disabled={engine === "killed"}
+        disabled={!tradingEnabled || kill.isPending}
         onPointerDown={beginHold}
         onPointerUp={cancelHold}
         onPointerLeave={cancelHold}

@@ -427,3 +427,104 @@ table.data th.num {
   color: var(--text-muted);
   border: 1px solid var(--border);
 }
+
+/*
+ * Live-connection banner (plan/06 §7): a broken stream must never look healthy.
+ * `live` is quiet green; `stale`/`connecting` are loud amber so the operator
+ * cannot mistake a frozen view for a current one.
+ */
+.live-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  border: 1px solid var(--border);
+}
+.live-banner.live {
+  color: var(--green);
+  border-color: rgba(62, 207, 142, 0.35);
+  background: rgba(62, 207, 142, 0.06);
+}
+.live-banner.stale,
+.live-banner.connecting {
+  color: var(--amber);
+  border-color: rgba(238, 182, 83, 0.4);
+  background: rgba(238, 182, 83, 0.08);
+}
+.live-banner .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.live-banner .dot.ok {
+  background: var(--green);
+}
+.live-banner .dot.warn {
+  background: var(--amber);
+  animation: sn-pulse 1.2s ease-in-out infinite;
+}
+@keyframes sn-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* --- Login (plan/21): the one unauthenticated surface --- */
+.login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-brand {
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  font-size: 18px;
+  color: var(--indigo);
+}
+.login-sub {
+  margin: -8px 0 6px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+.login-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 12px;
+}
+.btn-primary {
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 7px;
+  background: var(--indigo);
+  color: #14151c;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

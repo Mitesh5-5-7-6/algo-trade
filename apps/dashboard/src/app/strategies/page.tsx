@@ -1,14 +1,16 @@
-import { getMockSnapshot } from "@/lib/data";
+"use client";
+
+import { useDashboardData } from "@/lib/live";
 import { formatSignedINR } from "@/lib/format";
 
 /**
  * Strategies — the operator's primary artifact (plan/06 §4): what the machine
- * runs, its parameters, and whether it is enabled. Create/edit forms and the
- * enable toggle wire to the control-plane API at milestone 1.9
- * (plan/05 §4.1) — until then this surface is read-only.
+ * runs, its parameters, and whether it is enabled. Read live from the API;
+ * create/edit forms and the enable toggle (POST /strategies/:id/enable, ⚠
+ * step-up on some settings) are the next increment (plan/05 §4.1).
  */
 export default function StrategiesPage() {
-  const { strategies } = getMockSnapshot();
+  const { strategies } = useDashboardData().snapshot;
 
   return (
     <>

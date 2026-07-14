@@ -3,11 +3,12 @@ import type { Order, Position, StrategyConfig } from "@neelkanth/core";
 /**
  * The dashboard's data seam.
  *
- * Until milestone 1.9 wires TanStack Query + Socket.IO to the live API
- * (plan/06 §5), every page reads from this typed mock snapshot. The shapes
- * are the REAL `core` shapes — the mock is validated against the Zod schemas
- * in tests — so swapping mocks for live data changes the transport, not a
- * single component.
+ * The live layer (lib/live.ts) now fills this snapshot from the API over
+ * TanStack Query + Socket.IO (plan/06 §5). This mock remains the seed/fallback
+ * for the surfaces the API does not expose yet — the equity curve, the activity
+ * feed, and per-strategy day stats — each marked with a TODO in lib/live.ts.
+ * The shapes are the REAL `core` shapes, validated against the Zod schemas in
+ * tests, so filling a gap later changes the transport, not a component.
  *
  * Numbers reproduce the operator-supplied design frame (plan/06 §4) so the
  * first render is a faithful implementation check against the reference.

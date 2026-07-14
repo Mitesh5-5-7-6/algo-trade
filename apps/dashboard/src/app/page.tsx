@@ -1,10 +1,13 @@
+"use client";
+
 import { EquityCurve } from "@/components/equity-curve";
-import { getMockSnapshot } from "@/lib/data";
+import { useDashboardData } from "@/lib/live";
 import { formatSignedINR, formatTimeIST } from "@/lib/format";
 
 /** Overview — the landing surface: day P&L curve + live activity (plan/06 §4, Sentinel design). */
 export default function OverviewPage() {
-  const { dayPnl, positions, activity, strategies } = getMockSnapshot();
+  const { dayPnl, positions, activity, strategies } =
+    useDashboardData().snapshot;
   const openPositions = positions.filter((p) => p.status === "OPEN");
   const enabled = strategies.filter((s) => s.config.enabled);
 

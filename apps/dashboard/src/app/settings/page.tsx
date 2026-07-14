@@ -1,4 +1,6 @@
-import { getMockSnapshot } from "@/lib/data";
+"use client";
+
+import { useDashboardData } from "@/lib/live";
 import { formatIN, formatPct } from "@/lib/format";
 
 /**
@@ -9,7 +11,7 @@ import { formatIN, formatPct } from "@/lib/format";
  * frictionless (plan/05 §4.1, plan/21 §5).
  */
 export default function SettingsPage() {
-  const { settings } = getMockSnapshot();
+  const { settings } = useDashboardData().snapshot;
 
   return (
     <>

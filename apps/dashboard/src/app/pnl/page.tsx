@@ -1,10 +1,12 @@
+"use client";
+
 import { EquityCurve } from "@/components/equity-curve";
-import { getMockSnapshot } from "@/lib/data";
+import { useDashboardData } from "@/lib/live";
 import { formatINR, formatSignedINR } from "@/lib/format";
 
 /** P&L — realized vs unrealized, per strategy and global (plan/06 §4, plan/13 §5). */
 export default function PnlPage() {
-  const { dayPnl, strategies, positions } = getMockSnapshot();
+  const { dayPnl, strategies, positions } = useDashboardData().snapshot;
   const unrealizedByStrategy = new Map<string, number>();
   for (const position of positions) {
     unrealizedByStrategy.set(

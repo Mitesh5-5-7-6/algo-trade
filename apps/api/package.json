@@ -13,6 +13,7 @@
     "bootstrap:operator": "node --env-file=../../.env dist/bootstrap-operator.js"
   },
   "dependencies": {
+    "@fastify/cors": "^11.0.0",
     "@neelkanth/broker": "workspace:*",
     "@neelkanth/config": "workspace:*",
     "@neelkanth/contracts": "workspace:*",

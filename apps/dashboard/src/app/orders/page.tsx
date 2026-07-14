@@ -1,4 +1,6 @@
-import { getMockSnapshot } from "@/lib/data";
+"use client";
+
+import { useDashboardData } from "@/lib/live";
 import { formatIN, formatTimeIST } from "@/lib/format";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -11,7 +13,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 /** Orders — history + live status (plan/06 §4). */
 export default function OrdersPage() {
-  const { orders } = getMockSnapshot();
+  const { orders } = useDashboardData().snapshot;
 
   return (
     <>

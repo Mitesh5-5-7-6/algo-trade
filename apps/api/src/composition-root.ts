@@ -11,6 +11,7 @@ import {
   UsersRepository,
   type MongoConnection,
 } from "@neelkanth/db";
+import cors from "@fastify/cors";
 import { buildServer, type ApiServer } from "./server.js";
 import type { DependencyCheck } from "./health.js";
 import { startEngineRuntime, type EngineRuntime } from "./engines/runtime.js";
@@ -143,6 +144,13 @@ export async function bootstrap(
   const secureCookies = config.NODE_ENV === "production";
 
   const server = buildServer({ logger, readinessChecks });
+  // CORS with credentials so the dashboard (a separate origin in dev; same
+  // origin behind the reverse proxy in prod, plan/22 §2) can send the session
+  // cookie. Exactly one origin is allowed — never `*` with credentials.
+  await server.register(cors, {
+    origin: config.DASHBOARD_ORIGIN,
+    credentials: true,
+  });
   registerAuthGuard(server, { sessions, users, secureCookies });
   registerAuthRoutes(server, { users, sessions, rateLimiter, secureCookies });
   registerControlPlane(server, {

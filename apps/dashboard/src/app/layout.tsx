@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
-import { NavTabs } from "@/components/nav-tabs";
-import { OperatorRail } from "@/components/operator-rail";
-import { StatusStrip } from "@/components/status-strip";
-import { TopBar } from "@/components/top-bar";
-import { getMockSnapshot } from "@/lib/data";
+import { Providers } from "@/lib/providers";
+import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
   title: "Sentinel — Neelkanth Trader",
@@ -13,21 +10,17 @@ export const metadata: Metadata = {
 };
 
 /**
- * The persistent shell (plan/06 §3): top bar, status strip, nav, and the
- * always-accessible operator rail — pause and kill reachable from every page.
+ * The root layout: the Query cache + live socket (Providers) wrap the shell.
+ * The shell itself is a client component (it reads live data and reacts to the
+ * connection state); the login route renders inside it but without the chrome.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
-  const snapshot = getMockSnapshot();
   return (
     <html lang="en">
       <body>
-        <TopBar status={snapshot.status} dayPnl={snapshot.dayPnl} />
-        <StatusStrip status={snapshot.status} />
-        <div className="frame">
-          <NavTabs />
-          <main className="content">{children}</main>
-          <OperatorRail />
-        </div>
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );
