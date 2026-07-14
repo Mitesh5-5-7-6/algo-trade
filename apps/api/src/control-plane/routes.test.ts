@@ -14,7 +14,7 @@ import {
 import { createLogger } from "@neelkanth/logger";
 import { buildServer, type ApiServer } from "../server.js";
 import { registerControlPlane } from "./routes.js";
-import type { RuntimeControls } from "./controls.js";
+import type { RuntimeControls, StepUpVerifier } from "./controls.js";
 
 const MONGO_URI =
   process.env["MONGO_URI"] ?? "mongodb://localhost:27017/neelkanth_cp_test";
@@ -72,11 +72,23 @@ function silentLogger() {
 
 let app: ApiServer;
 let runtime: ReturnType<typeof fakeRuntime>;
+let stepUps: Array<string | undefined>;
 
 function makeApp() {
   runtime = fakeRuntime();
+  stepUps = [];
+  // Permissive step-up here — this suite proves routing/repo/runtime wiring;
+  // the enforced gate is proven in auth.test.ts with the real verifier.
+  const verifyStepUp: StepUpVerifier = (_userId, password) => {
+    stepUps.push(password);
+    return Promise.resolve();
+  };
   app = buildServer({ logger: silentLogger(), readinessChecks: [] });
-  registerControlPlane(app, { db: connection.db, runtime: runtime.controls });
+  registerControlPlane(app, {
+    db: connection.db,
+    runtime: runtime.controls,
+    verifyStepUp,
+  });
 }
 
 afterEach(async () => {
@@ -244,8 +256,11 @@ describe("settings & control routes", () => {
     const resumed = await app.inject({
       method: "POST",
       url: "/control/resume",
+      payload: { stepUpPassword: "hunter2" },
     });
     expect(resumed.json()).toEqual({ tradingEnabled: true });
     expect(runtime.isTradingEnabled()).toBe(true);
+    // Resume is a ⚠ route — it must go through the step-up gate (plan/21 §5).
+    expect(stepUps).toEqual(["hunter2"]);
   });
 });

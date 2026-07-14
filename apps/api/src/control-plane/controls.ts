@@ -28,3 +28,16 @@ export interface RuntimeControls {
   unrealizedPnl(): number;
   session(): SessionContext;
 }
+
+/**
+ * Step-up re-auth gate for dangerous control actions (plan/21 §5): resuming
+ * after a kill, changing capital, loosening risk limits. Resolves if the
+ * operator re-confirmed, throws (StepUpRequiredError / UnauthorizedError)
+ * otherwise. Injected — so control-plane routes never import the auth layer,
+ * and the enforcement is a fake in route tests. `userId` is the acting
+ * operator (from the resolved session); `undefined` when unauthenticated.
+ */
+export type StepUpVerifier = (
+  userId: string | undefined,
+  password: string | undefined,
+) => Promise<void>;

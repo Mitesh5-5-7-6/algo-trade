@@ -8,12 +8,25 @@ import {
   connectMongo,
   ensureIndexes,
   SettingsRepository,
+  UsersRepository,
   type MongoConnection,
 } from "@neelkanth/db";
 import { buildServer, type ApiServer } from "./server.js";
 import type { DependencyCheck } from "./health.js";
 import { startEngineRuntime, type EngineRuntime } from "./engines/runtime.js";
 import { registerControlPlane } from "./control-plane/index.js";
+import {
+  createStepUpVerifier,
+  LoginRateLimiter,
+  LOGIN_RATE_LIMIT,
+  redisRateLimitKV,
+  redisSessionKV,
+  registerAuthGuard,
+  registerAuthRoutes,
+  SessionStore,
+  SESSION_ABSOLUTE_MAX_SECONDS,
+  SESSION_IDLE_TTL_SECONDS,
+} from "./auth/index.js";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
 const SESSION_POLL_MS = 15_000;
@@ -112,9 +125,30 @@ export async function bootstrap(
     },
   ];
 
-  // --- HTTP server + control-plane routes (plan/05 §4.1) ---
+  // --- Auth (plan/21) + control-plane routes (plan/05 §4.1) ---
+  // Sessions + login throttle live in Redis; the guard hook must be registered
+  // before the routes it protects, so it runs on them. Cookies are Secure only
+  // in production (dev serves plain HTTP).
+  const users = new UsersRepository(mongo.db);
+  const sessions = new SessionStore(
+    redisSessionKV(redis.client),
+    SESSION_IDLE_TTL_SECONDS,
+    SESSION_ABSOLUTE_MAX_SECONDS,
+  );
+  const rateLimiter = new LoginRateLimiter(
+    redisRateLimitKV(redis.client),
+    LOGIN_RATE_LIMIT,
+  );
+  const secureCookies = config.NODE_ENV === "production";
+
   const server = buildServer({ logger, readinessChecks });
-  registerControlPlane(server, { db: mongo.db, runtime });
+  registerAuthGuard(server, { sessions, users, secureCookies });
+  registerAuthRoutes(server, { users, sessions, rateLimiter, secureCookies });
+  registerControlPlane(server, {
+    db: mongo.db,
+    runtime,
+    verifyStepUp: createStepUpVerifier(users),
+  });
 
   return {
     config,

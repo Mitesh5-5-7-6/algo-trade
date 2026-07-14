@@ -1,6 +1,7 @@
 export * from "./client.js";
 export * from "./collections.js";
 export * from "./settings-repository.js";
+export * from "./users-repository.js";
 export * from "./orders-repository.js";
 export * from "./positions-repository.js";
 export * from "./signals-repository.js";

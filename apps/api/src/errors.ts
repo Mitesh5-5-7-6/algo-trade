@@ -48,6 +48,12 @@ export class StepUpRequiredError extends DomainError {
   readonly code = "STEP_UP_REQUIRED";
 }
 
+/** Too many login attempts — the account or IP is locked out (plan/21 §2). */
+export class RateLimitError extends DomainError {
+  readonly statusCode = 429;
+  readonly code = "RATE_LIMITED";
+}
+
 /** A control-plane action violated a risk rule (plan/05 §5). */
 export class RiskViolationError extends DomainError {
   readonly statusCode = 422;

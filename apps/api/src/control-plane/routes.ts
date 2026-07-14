@@ -5,6 +5,7 @@ import {
   RiskLimitsSchema,
   RiskRulesSchema,
   StrategyConfigSchema,
+  type RiskLimits,
   type StrategyConfig,
 } from "@neelkanth/core";
 import {
@@ -19,7 +20,7 @@ import {
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import type { ApiServer } from "../server.js";
 import { NotFoundError, ValidationError } from "../errors.js";
-import type { RuntimeControls } from "./controls.js";
+import type { RuntimeControls, StepUpVerifier } from "./controls.js";
 
 /** Single-operator system (plan/21 §6); replaced by the session user with auth. */
 const OPERATOR_ID = "operator";
@@ -63,11 +64,34 @@ const UpdateSettingsBody = z.object({
       squareOff: z.string().regex(/^\d{2}:\d{2}$/),
     })
     .optional(),
+  /** Password re-entry for the step-up gate (plan/21 §5), when required. */
+  stepUpPassword: z.string().optional(),
 });
+
+/** Body carrying only the step-up confirmation — resume takes nothing else. */
+const StepUpBody = z.object({ stepUpPassword: z.string().optional() });
+
+/**
+ * Every risk limit is an upper bound (plan/14 §4): a higher value is more
+ * permissive. So "loosening" — the thing that needs step-up (plan/21 §5) — is
+ * simply any field increasing. Tightening stays friction-free: cutting risk in
+ * a hurry must never be gated behind a password prompt.
+ */
+function loosensLimits(current: RiskLimits, next: RiskLimits): boolean {
+  return (
+    next.maxDailyLoss > current.maxDailyLoss ||
+    next.maxPositionSize > current.maxPositionSize ||
+    next.maxCapitalPerTrade > current.maxCapitalPerTrade ||
+    next.maxOpenPositions > current.maxOpenPositions ||
+    next.maxExposure > current.maxExposure
+  );
+}
 
 export interface ControlPlaneDeps {
   db: Db;
   runtime: RuntimeControls;
+  /** Enforces step-up re-auth on dangerous routes (plan/21 §5). */
+  verifyStepUp: StepUpVerifier;
 }
 
 /**
@@ -90,7 +114,7 @@ export function registerControlPlane(
   const pnlSnapshots = new PnlSnapshotsRepository(deps.db);
   const settings = new SettingsRepository(deps.db);
   const registry = createStrategyRegistry();
-  const { runtime } = deps;
+  const { runtime, verifyStepUp } = deps;
 
   // --- Strategies (plan/06 §4, plan/15 §4) ---
 
@@ -192,6 +216,17 @@ export function registerControlPlane(
   // ⚠ step-up when loosening a limit or changing capital (plan/21 §5).
   app.patch("/settings", async (request) => {
     const body = parse(UpdateSettingsBody, request.body);
+    const current = await settings.getGlobal();
+    const changesCapital =
+      body.capitalAllocation !== undefined &&
+      body.capitalAllocation !== current.capitalAllocation;
+    const loosens =
+      body.globalRiskLimits !== undefined &&
+      loosensLimits(current.globalRiskLimits, body.globalRiskLimits);
+    if (changesCapital || loosens) {
+      await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
+    }
+
     const patch: Partial<
       Pick<
         GlobalSettings,
@@ -239,7 +274,9 @@ export function registerControlPlane(
 
   // ⚠ step-up: re-enabling after a kill is where a hijacked session does the
   // most damage (plan/21 §5).
-  app.post("/control/resume", async () => {
+  app.post("/control/resume", async (request) => {
+    const body = parse(StepUpBody, request.body ?? {});
+    await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
     await settings.setTradingEnabled(true);
     runtime.setTradingEnabled(true);
     return { tradingEnabled: true };

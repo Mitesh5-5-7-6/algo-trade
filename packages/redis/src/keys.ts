@@ -21,6 +21,8 @@ export const riskOpenCountKey = () => "risk:openCount";
 
 /** `session:` — operator auth sessions; TTL = expiry (plan/08 §7). */
 export const authSessionKey = (sessionId: string) => `session:${sessionId}`;
+/** The set of a user's live session ids, for revoke-all (plan/21 §4, §7). */
+export const authUserSessionsKey = (userId: string) => `session:user:${userId}`;
 
 /** `ratelimit:` — throttle counters; TTL = window (plan/08 §8). */
 export const rateLimitKey = (scope: string, key: string) =>
