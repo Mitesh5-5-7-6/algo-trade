@@ -11,6 +11,10 @@ export const qk = {
   strategyStats: ["strategies", "stats"] as const,
   settings: ["settings"] as const,
   pnl: ["pnl"] as const,
+  // Deliberately NOT nested under "pnl": PNL_UPDATED invalidates qk.pnl on
+  // every throttled tick, but the curve gains one point a minute — it refetches
+  // on its own interval instead of riding that cascade.
+  pnlCurve: ["pnlCurve"] as const,
   controlStatus: ["control", "status"] as const,
 };
 

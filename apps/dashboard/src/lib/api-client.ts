@@ -52,6 +52,13 @@ export interface StrategyDayStats {
   signalsToday: number;
 }
 
+/** One `/pnl/curve` sample — the intraday day-curve point (plan/06 §4). */
+export interface EquityPoint {
+  ts: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+}
+
 /** The `/settings` document the operator tunes (plan/07 `settings`). */
 export interface LiveSettings {
   capitalAllocation: number;
@@ -88,6 +95,7 @@ export const api = {
   strategyStats: () => apiFetch<StrategyDayStats[]>("/strategies/stats"),
   settings: () => apiFetch<LiveSettings>("/settings"),
   pnl: () => apiFetch<PnlSummary>("/pnl"),
+  pnlCurve: () => apiFetch<EquityPoint[]>("/pnl/curve"),
   controlStatus: () => apiFetch<ControlStatus>("/control/status"),
 
   pause: () =>

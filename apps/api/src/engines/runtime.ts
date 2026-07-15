@@ -30,6 +30,7 @@ import {
 import { PaperBroker } from "@neelkanth/broker";
 import {
   computePortfolio,
+  EquityCurveTracker,
   IndicatorEngine,
   istDateKey,
   OrderManager,
@@ -67,6 +68,8 @@ export interface EngineRuntime extends RuntimeControls {
   readonly positionEngine: PositionEngine;
   /** Evaluate the session at `now` and drive its side effects (plan/17 §6). */
   syncSession(now: number): Promise<void>;
+  /** Record an intraday equity sample at `now` (plan/06 §4 day curve). */
+  sampleEquity(now: number): void;
   shutdown(): Promise<void>;
 }
 
@@ -311,6 +314,18 @@ export async function startEngineRuntime(deps: {
     "engine runtime wired",
   );
 
+  // The day curve (plan/06 §4): sampled by a composition-root timer, served
+  // by GET /pnl/curve. In-memory by design — plan/07 persists PnL daily only.
+  const equityTracker = new EquityCurveTracker();
+  function totalUnrealizedPnl(): number {
+    let total = 0;
+    for (const position of positionEngine.getOpenPositions()) {
+      const price = lastPrices.get(position.symbol);
+      if (price !== undefined) total += unrealizedPnl(position, price);
+    }
+    return total;
+  }
+
   return {
     bus,
     positionEngine,
@@ -339,15 +354,23 @@ export async function startEngineRuntime(deps: {
       return positionEngine.realizedPnl();
     },
     unrealizedPnl() {
-      let total = 0;
-      for (const position of positionEngine.getOpenPositions()) {
-        const price = lastPrices.get(position.symbol);
-        if (price !== undefined) total += unrealizedPnl(position, price);
-      }
-      return total;
+      return totalUnrealizedPnl();
     },
     session() {
       return state.session;
+    },
+    equityCurve() {
+      return equityTracker.points();
+    },
+    sampleEquity(now) {
+      // sessionManager.phase — the PURE query; evaluate() here would consume
+      // the open/close edge syncSession's event publishing depends on.
+      equityTracker.sample(
+        now,
+        sessionManager.phase(now),
+        positionEngine.realizedPnl(),
+        totalUnrealizedPnl(),
+      );
     },
     async syncSession(now) {
       const evaluation = sessionManager.evaluate(now);

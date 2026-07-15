@@ -4,6 +4,7 @@ import type {
   SessionContext,
   StrategyConfig,
 } from "@neelkanth/core";
+import type { EquityPoint } from "@neelkanth/engines";
 
 /**
  * The slice of the engine runtime the control plane drives (plan/05 §4). A
@@ -27,6 +28,8 @@ export interface RuntimeControls {
   realizedPnl(): number;
   unrealizedPnl(): number;
   session(): SessionContext;
+  /** Today's intraday equity samples, oldest first (plan/06 §4 day curve). */
+  equityCurve(): readonly EquityPoint[];
 }
 
 /**

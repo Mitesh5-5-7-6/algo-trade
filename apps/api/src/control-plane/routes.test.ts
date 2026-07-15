@@ -56,6 +56,7 @@ function fakeRuntime() {
     realizedPnl: () => 250,
     unrealizedPnl: () => 40,
     session: (): SessionContext => ({ phase: "open", minutesSinceOpen: 30 }),
+    equityCurve: () => [{ ts: 1000, realizedPnl: 250, unrealizedPnl: 40 }],
   };
   return { controls, calls, isTradingEnabled: () => tradingEnabled };
 }
@@ -216,6 +217,11 @@ describe("read-model routes", () => {
     ).toEqual([]);
     const pnl = await app.inject({ method: "GET", url: "/pnl" });
     expect(pnl.json()).toEqual({ realizedPnl: 250, unrealizedPnl: 40 });
+
+    const curve = await app.inject({ method: "GET", url: "/pnl/curve" });
+    expect(curve.json()).toEqual([
+      { ts: 1000, realizedPnl: 250, unrealizedPnl: 40 },
+    ]);
   });
 
   it("aggregates per-strategy day stats, zero-filled (plan/06 §4)", async () => {

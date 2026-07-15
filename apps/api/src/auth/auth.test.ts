@@ -94,6 +94,7 @@ function fakeRuntime(): RuntimeControls {
     realizedPnl: () => 0,
     unrealizedPnl: () => 0,
     session: (): SessionContext => ({ phase: "open", minutesSinceOpen: 0 }),
+    equityCurve: () => [],
   };
 }
 

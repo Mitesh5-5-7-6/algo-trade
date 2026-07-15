@@ -122,6 +122,17 @@ describe("bootstrap (plan/05 §3 composition root)", () => {
     const body = ready.json<{ dependencies: Record<string, string> }>();
     expect(body.dependencies["mongo"]).toBe("up");
     expect(body.dependencies["redis"]).toBe("up");
+
+    // Equity sampler: a crafted open-market instant (Mon 2026-01-05 10:00 IST)
+    // records a point regardless of when CI runs; a closed instant does not.
+    const istOffset = (5 * 60 + 30) * 60_000;
+    const openInstant = Date.UTC(2026, 0, 5, 10, 0) - istOffset;
+    const closedSameDay = Date.UTC(2026, 0, 5, 16, 0) - istOffset; // post-close
+    context.runtime.sampleEquity(openInstant);
+    context.runtime.sampleEquity(closedSameDay); // same IST day → not recorded
+    expect(context.runtime.equityCurve()).toEqual([
+      { ts: openInstant, realizedPnl: 0, unrealizedPnl: 0 },
+    ]);
   });
 
   it("shuts down cleanly without throwing (plan/22 §4)", async (ctx) => {

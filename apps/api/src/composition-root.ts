@@ -32,6 +32,8 @@ import { createRealtimeBridge } from "./realtime/index.js";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
 const SESSION_POLL_MS = 15_000;
+/** Day-curve sampling cadence (plan/06 §4): one point a minute while open. */
+const EQUITY_SAMPLE_MS = 60_000;
 
 /**
  * The single composition root (plan/05 §3): the one place concrete infra —
@@ -108,6 +110,10 @@ export async function bootstrap(
     void runtime.syncSession(Date.now());
   }, SESSION_POLL_MS);
   sessionTimer.unref(); // never keep the process alive on the timer alone
+  const equityTimer = setInterval(() => {
+    runtime.sampleEquity(Date.now());
+  }, EQUITY_SAMPLE_MS);
+  equityTimer.unref();
 
   // --- Readiness probes (plan/23 §4) ---
   const readinessChecks: DependencyCheck[] = [
@@ -186,6 +192,7 @@ export async function bootstrap(
       // feed in Phase 3.)
       const shutdownLog = componentLogger(logger, "api.shutdown");
       clearInterval(sessionTimer);
+      clearInterval(equityTimer);
       shutdownLog.info("closing realtime bridge + http server");
       // The bridge owns the shared HTTP server's close (io.close closes it too),
       // so this stands in for server.close() — calling both would double-close.

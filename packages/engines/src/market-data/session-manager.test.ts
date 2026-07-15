@@ -89,6 +89,19 @@ describe("istDateKey", () => {
   });
 });
 
+describe("SessionManager.phase (pure query)", () => {
+  it("answers without disturbing evaluate()'s edge detection", () => {
+    const manager = new SessionManager();
+    manager.evaluate(ist(...MON, 9, 5)); // pre-open, seeds previous
+
+    // A sampler asking for the phase mid-tick must not consume the edge.
+    expect(manager.phase(ist(...MON, 9, 20))).toBe("open");
+
+    const evaluation = manager.evaluate(ist(...MON, 9, 20));
+    expect(evaluation.marketOpened).toBe(true); // the edge still fires
+  });
+});
+
 describe("startOfDayIST", () => {
   it("returns IST midnight of the instant's trading date, in epoch ms", () => {
     // Any instant during Monday's IST day maps to Mon 00:00 IST.

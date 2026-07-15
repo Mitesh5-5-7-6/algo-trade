@@ -112,6 +112,16 @@ export class SessionManager {
   }
 
   /**
+   * Pure phase query — no edge tracking. Callers that only need "what phase is
+   * it at `now`?" (e.g. the equity sampler) MUST use this, not `evaluate()`:
+   * evaluate advances the internal previous-phase state, so a second caller
+   * would swallow the open/close transition the session loop relies on.
+   */
+  phase(now: number): SessionPhase {
+    return this.phaseAt(now);
+  }
+
+  /**
    * Evaluate the session at `now`. The very first evaluation reports
    * `phaseChanged` (so `hot:session` is written) but never a market
    * open/close transition — we don't know the prior state, and an honest

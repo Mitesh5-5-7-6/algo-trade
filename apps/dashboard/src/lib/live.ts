@@ -23,11 +23,10 @@ function phaseToMarket(phase: string): SystemStatus["market"]["phase"] {
 }
 
 /**
- * Assemble the dashboard snapshot from the live read models (plan/06 §5),
- * mock-filling the surfaces the API does not expose yet — the equity curve
- * and broker health. Those gaps are marked below as the single place to remove
- * them when the remaining read models land; every component keeps reading the
- * same `DashboardSnapshot`.
+ * Assemble the dashboard snapshot from the live read models (plan/06 §5).
+ * One mock-filled surface remains — broker health, which needs the live FYERS
+ * broker (blocked on credentials); it is marked below as the single place to
+ * remove. Every component keeps reading the same `DashboardSnapshot`.
  */
 export function useDashboardData(enabled = true): LiveDashboard {
   const mock = getMockSnapshot();
@@ -72,6 +71,14 @@ export function useDashboardData(enabled = true): LiveDashboard {
     enabled,
   });
   const pnl = useQuery({ queryKey: qk.pnl, queryFn: api.pnl, enabled });
+  const pnlCurve = useQuery({
+    queryKey: qk.pnlCurve,
+    queryFn: api.pnlCurve,
+    // One point a minute (the sampler's cadence) — poll, don't ride the
+    // socket's PNL_UPDATED cascade.
+    refetchInterval: 60_000,
+    enabled,
+  });
   const control = useQuery({
     queryKey: qk.controlStatus,
     queryFn: api.controlStatus,
@@ -86,6 +93,7 @@ export function useDashboardData(enabled = true): LiveDashboard {
     strategyStats,
     settings,
     pnl,
+    pnlCurve,
     control,
   ];
   const unauthenticated = queries.some(
@@ -142,6 +150,16 @@ export function useDashboardData(enabled = true): LiveDashboard {
     tradingEnabled: control.data?.tradingEnabled ?? mock.status.tradingEnabled,
   };
 
+  // Live curve once fetched; the mock's design-frame curve only until then.
+  // An empty live curve (fresh day, market not yet open) renders honestly
+  // empty rather than falling back to fabricated history.
+  const curve = pnlCurve.data
+    ? pnlCurve.data.map((point) => ({
+        ts: point.ts,
+        value: point.realizedPnl + point.unrealizedPnl,
+      }))
+    : mock.dayPnl.curve;
+
   const snapshot: DashboardSnapshot = {
     status,
     dayPnl: {
@@ -149,7 +167,7 @@ export function useDashboardData(enabled = true): LiveDashboard {
       unrealized,
       lossLimit,
       lossLimitUsed,
-      curve: mock.dayPnl.curve, // TODO(read-model): equity curve endpoint
+      curve,
       ...(mock.dayPnl.warningArmedAt !== undefined
         ? { warningArmedAt: mock.dayPnl.warningArmedAt }
         : {}),

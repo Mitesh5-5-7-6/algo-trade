@@ -244,6 +244,9 @@ export function registerControlPlane(
     realizedPnl: runtime.realizedPnl(),
     unrealizedPnl: runtime.unrealizedPnl(),
   }));
+  // Today's intraday curve — in-memory samples (plan/06 §4); the durable
+  // per-day history is /pnl/history (plan/07 pnl_snapshots).
+  app.get("/pnl/curve", () => runtime.equityCurve());
   app.get("/pnl/history", () => pnlSnapshots.findByScope("global", LIST_LIMIT));
 
   // --- Settings (plan/07 `settings`) ---
