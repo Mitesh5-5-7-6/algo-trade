@@ -21,6 +21,7 @@ import { createStrategyRegistry } from "@neelkanth/strategies";
 import type { ApiServer } from "../server.js";
 import { NotFoundError, ValidationError } from "../errors.js";
 import type { RuntimeControls, StepUpVerifier } from "./controls.js";
+import { buildActivityFeed } from "./activity.js";
 
 /** Single-operator system (plan/21 §6); replaced by the session user with auth. */
 const OPERATOR_ID = "operator";
@@ -203,6 +204,22 @@ export function registerControlPlane(
   app.get("/orders", () => orders.findRecent(LIST_LIMIT));
   app.get("/signals", () => signals.findRecent(LIST_LIMIT));
   app.get("/risk-logs", () => riskLogs.findRecent(LIST_LIMIT));
+
+  // The Overview activity feed: signals + orders + blocked entries, merged and
+  // time-ordered (plan/06 §4). A read-model folded from the durable records.
+  app.get("/activity", async () => {
+    const [recentSignals, recentOrders, blockedRisk] = await Promise.all([
+      signals.findRecent(LIST_LIMIT),
+      orders.findRecent(LIST_LIMIT),
+      riskLogs.findRecent(LIST_LIMIT, true),
+    ]);
+    return buildActivityFeed(
+      recentSignals,
+      recentOrders,
+      blockedRisk,
+      LIST_LIMIT,
+    );
+  });
   app.get("/pnl", () => ({
     realizedPnl: runtime.realizedPnl(),
     unrealizedPnl: runtime.unrealizedPnl(),

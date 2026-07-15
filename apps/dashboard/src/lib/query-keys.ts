@@ -6,6 +6,7 @@
 export const qk = {
   positions: ["positions"] as const,
   orders: ["orders"] as const,
+  activity: ["activity"] as const,
   strategies: ["strategies"] as const,
   settings: ["settings"] as const,
   pnl: ["pnl"] as const,

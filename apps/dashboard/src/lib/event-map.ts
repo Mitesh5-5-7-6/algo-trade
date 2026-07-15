@@ -28,18 +28,21 @@ export function queryKeysForEvent(event: string): readonly QueryKey[] {
   switch (event) {
     case "ORDER_PLACED":
     case "ORDER_FILLED":
-      return [qk.orders, qk.positions, qk.pnl];
+      return [qk.orders, qk.positions, qk.pnl, qk.activity];
     case "POSITION_UPDATED":
       return [qk.positions, qk.pnl];
     case "PNL_UPDATED":
       return [qk.pnl];
+    case "SIGNAL_CREATED":
+    case "RISK_BLOCKED":
+      return [qk.activity];
     case "MARKET_OPEN":
     case "MARKET_CLOSE":
     case "BROKER_CONNECTED":
     case "BROKER_DISCONNECTED":
       return [qk.controlStatus];
-    // SIGNAL_CREATED / RISK_BLOCKED / SYSTEM_ERROR feed the activity view,
-    // which has no cached read model yet (mock-filled) — nothing to invalidate.
+    // SYSTEM_ERROR surfaces as an alert, not a cached read model — nothing to
+    // invalidate here.
     default:
       return [];
   }

@@ -3,11 +3,12 @@ import { FORWARDED_EVENTS, queryKeysForEvent } from "./event-map";
 import { qk } from "./query-keys";
 
 describe("queryKeysForEvent (plan/06 §5 socket→cache reconciliation)", () => {
-  it("a fill invalidates orders, positions, and pnl", () => {
+  it("a fill invalidates orders, positions, pnl, and activity", () => {
     expect(queryKeysForEvent("ORDER_FILLED")).toEqual([
       qk.orders,
       qk.positions,
       qk.pnl,
+      qk.activity,
     ]);
   });
 
@@ -29,8 +30,12 @@ describe("queryKeysForEvent (plan/06 §5 socket→cache reconciliation)", () => 
     expect(queryKeysForEvent("MARKET_OPEN")).toEqual([qk.controlStatus]);
   });
 
-  it("activity-only events invalidate nothing (no cached read model yet)", () => {
-    expect(queryKeysForEvent("SIGNAL_CREATED")).toEqual([]);
+  it("signals and risk blocks invalidate the activity feed", () => {
+    expect(queryKeysForEvent("SIGNAL_CREATED")).toEqual([qk.activity]);
+    expect(queryKeysForEvent("RISK_BLOCKED")).toEqual([qk.activity]);
+  });
+
+  it("a system error invalidates nothing (surfaced as an alert)", () => {
     expect(queryKeysForEvent("SYSTEM_ERROR")).toEqual([]);
   });
 

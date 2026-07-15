@@ -1,5 +1,6 @@
 import type { Order, Position, StrategyConfig } from "@neelkanth/core";
 import { API_BASE } from "./config";
+import type { ActivityEntry } from "./data";
 
 /**
  * The REST half of the two data channels (plan/06 §5): request/response for
@@ -75,6 +76,7 @@ export const api = {
 
   positions: () => apiFetch<Position[]>("/positions"),
   orders: () => apiFetch<Order[]>("/orders"),
+  activity: () => apiFetch<ActivityEntry[]>("/activity"),
   strategies: () => apiFetch<StrategyConfig[]>("/strategies"),
   settings: () => apiFetch<LiveSettings>("/settings"),
   pnl: () => apiFetch<PnlSummary>("/pnl"),

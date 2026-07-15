@@ -25,9 +25,9 @@ function phaseToMarket(phase: string): SystemStatus["market"]["phase"] {
 /**
  * Assemble the dashboard snapshot from the live read models (plan/06 §5),
  * mock-filling the surfaces the API does not expose yet — the equity curve,
- * the activity feed, per-strategy day stats, and broker latency. Those gaps are
- * marked here as the single place to remove them when the aggregated read
- * models land; every component keeps reading the same `DashboardSnapshot`.
+ * per-strategy day stats, and broker latency. Those gaps are marked below as
+ * the single place to remove them when the remaining read models land; every
+ * component keeps reading the same `DashboardSnapshot`.
  */
 export function useDashboardData(enabled = true): LiveDashboard {
   const mock = getMockSnapshot();
@@ -42,6 +42,12 @@ export function useDashboardData(enabled = true): LiveDashboard {
     queryKey: qk.orders,
     queryFn: api.orders,
     initialData: mock.orders,
+    enabled,
+  });
+  const activity = useQuery({
+    queryKey: qk.activity,
+    queryFn: api.activity,
+    initialData: mock.activity,
     enabled,
   });
   const strategies = useQuery({
@@ -62,7 +68,15 @@ export function useDashboardData(enabled = true): LiveDashboard {
     enabled,
   });
 
-  const queries = [positions, orders, strategies, settings, pnl, control];
+  const queries = [
+    positions,
+    orders,
+    activity,
+    strategies,
+    settings,
+    pnl,
+    control,
+  ];
   const unauthenticated = queries.some(
     (q) => q.error instanceof ApiError && q.error.status === 401,
   );
@@ -129,7 +143,7 @@ export function useDashboardData(enabled = true): LiveDashboard {
     positions: livePositions,
     orders: orders.data,
     strategies: strategyRows,
-    activity: mock.activity, // TODO(read-model): activity feed from signals/orders
+    activity: activity.data,
     settings: settings.data
       ? {
           capitalAllocation: settings.data.capitalAllocation,
