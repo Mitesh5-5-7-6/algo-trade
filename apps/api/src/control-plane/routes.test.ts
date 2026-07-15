@@ -8,6 +8,8 @@ import type {
 import {
   connectMongo,
   ensureIndexes,
+  PositionsRepository,
+  SignalsRepository,
   StrategiesRepository,
   type MongoConnection,
 } from "@neelkanth/db";
@@ -214,6 +216,72 @@ describe("read-model routes", () => {
     ).toEqual([]);
     const pnl = await app.inject({ method: "GET", url: "/pnl" });
     expect(pnl.json()).toEqual({ realizedPnl: 250, unrealizedPnl: 40 });
+  });
+
+  it("aggregates per-strategy day stats, zero-filled (plan/06 §4)", async () => {
+    makeApp();
+    const now = Date.now();
+    const strategyRepo = new StrategiesRepository(connection.db);
+    const config: StrategyConfig = {
+      strategyId: "str_stats_a",
+      ownerId: "operator",
+      type: "RSI",
+      name: "RSI",
+      params: { period: 14 },
+      symbols: ["NSE:Y-EQ"],
+      enabled: true,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    };
+    await strategyRepo.create(config);
+    await strategyRepo.create({
+      ...config,
+      strategyId: "str_stats_idle",
+      name: "idle",
+    });
+
+    const positionsRepo = new PositionsRepository(connection.db);
+    await positionsRepo.upsert({
+      positionId: "pos_stats_1",
+      symbol: "NSE:Y-EQ",
+      strategyId: "str_stats_a",
+      side: "LONG",
+      qty: 0,
+      avgEntryPrice: 100,
+      status: "CLOSED",
+      realizedPnl: 320,
+      unrealizedPnl: 0,
+      openedAt: now,
+      mode: "paper",
+    });
+
+    const signalsRepo = new SignalsRepository(connection.db);
+    await signalsRepo.insert({
+      signalId: "sig_stats_1",
+      strategyId: "str_stats_a",
+      symbol: "NSE:Y-EQ",
+      side: "BUY",
+      confidence: 0.9,
+      reason: "test",
+      contextSnapshot: {
+        price: 1,
+        indicators: {},
+        session: "open",
+        sentiment: 0,
+      },
+      ts: now,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/strategies/stats" });
+    expect(res.statusCode).toBe(200);
+    const rows = res
+      .json<{ strategyId: string }[]>()
+      .sort((a, b) => a.strategyId.localeCompare(b.strategyId));
+    expect(rows).toEqual([
+      { strategyId: "str_stats_a", dayRealizedPnl: 320, signalsToday: 1 },
+      { strategyId: "str_stats_idle", dayRealizedPnl: 0, signalsToday: 0 },
+    ]);
   });
 });
 

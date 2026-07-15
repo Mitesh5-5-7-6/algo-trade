@@ -249,3 +249,91 @@ describe("StrategiesRepository (plan/07, plan/15 §8)", () => {
     expect(await repo.update("ghost", { name: "x" })).toBeNull();
   });
 });
+
+describe("day-stats aggregations (plan/06 §4 read model)", () => {
+  // A boundary above every other timestamp in this shared-db file, so these
+  // aggregations see only their own seeds.
+  const DAY = 1_800_000_000_000;
+
+  const position = (overrides: Partial<Position>): Position => ({
+    positionId: "pos_agg",
+    symbol: "NSE:X-EQ",
+    strategyId: "str_agg_a",
+    side: "LONG",
+    qty: 0,
+    avgEntryPrice: 100,
+    status: "CLOSED",
+    realizedPnl: 0,
+    unrealizedPnl: 0,
+    openedAt: DAY + 1,
+    mode: "paper",
+    ...overrides,
+  });
+
+  const signal = (overrides: Partial<Signal>): Signal => ({
+    signalId: "sig_agg",
+    strategyId: "str_agg_a",
+    symbol: "NSE:X-EQ",
+    side: "BUY",
+    confidence: 0.8,
+    reason: "test",
+    contextSnapshot: {
+      price: 100,
+      indicators: {},
+      session: "open",
+      sentiment: 0,
+    },
+    ts: DAY + 1,
+    ...overrides,
+  });
+
+  it("sums realized PnL per strategy for positions opened since the boundary", async () => {
+    const repo = new PositionsRepository(connection.db);
+    await repo.upsert(
+      position({
+        positionId: "pa1",
+        strategyId: "str_agg_a",
+        realizedPnl: 150,
+      }),
+    );
+    await repo.upsert(
+      position({
+        positionId: "pa2",
+        strategyId: "str_agg_a",
+        realizedPnl: -40,
+      }),
+    );
+    await repo.upsert(
+      position({ positionId: "pb1", strategyId: "str_agg_b", realizedPnl: 75 }),
+    );
+    // Opened before the boundary — yesterday's position, excluded.
+    await repo.upsert(
+      position({
+        positionId: "pold",
+        strategyId: "str_agg_a",
+        realizedPnl: 999,
+        openedAt: DAY - 1,
+      }),
+    );
+
+    const sums = await repo.sumRealizedByStrategySince(DAY);
+    expect(sums.get("str_agg_a")).toBe(110);
+    expect(sums.get("str_agg_b")).toBe(75);
+    expect(sums.has("str_old")).toBe(false);
+  });
+
+  it("counts actionable signals per strategy, excluding HOLD and older rows", async () => {
+    const repo = new SignalsRepository(connection.db);
+    await repo.insert(signal({ signalId: "sa1", side: "BUY" }));
+    await repo.insert(signal({ signalId: "sa2", side: "SELL", ts: DAY + 2 }));
+    await repo.insert(signal({ signalId: "sa3", side: "HOLD", ts: DAY + 3 }));
+    await repo.insert(
+      signal({ signalId: "sb1", strategyId: "str_agg_b", ts: DAY + 4 }),
+    );
+    await repo.insert(signal({ signalId: "sold", ts: DAY - 5 })); // yesterday
+
+    const counts = await repo.countActionableByStrategySince(DAY);
+    expect(counts.get("str_agg_a")).toBe(2); // BUY + SELL, HOLD dropped
+    expect(counts.get("str_agg_b")).toBe(1);
+  });
+});

@@ -1,6 +1,12 @@
 import type { Db } from "mongodb";
+import { z } from "zod";
 import { SignalSchema, type Signal } from "@neelkanth/core";
 import { COLLECTIONS, TTL } from "./collections.js";
+
+const CountByStrategyRowSchema = z.object({
+  _id: z.string(),
+  count: z.number().int(),
+});
 
 /**
  * Signals (plan/07 `signals`): the decision log, append-only, sole-written by
@@ -46,5 +52,28 @@ export class SignalsRepository {
       .limit(limit)
       .toArray();
     return docs.map((doc) => SignalSchema.parse(doc));
+  }
+
+  /**
+   * Actionable (BUY/SELL) signals counted per strategy since `since` (the
+   * IST-midnight boundary). HOLD is excluded: it is recorded for forensics but
+   * is not a raised signal — counting it would swamp the number with one row
+   * per evaluation (plan/18 §6). Feeds the day stats read model (plan/06 §4).
+   */
+  async countActionableByStrategySince(
+    since: number,
+  ): Promise<Map<string, number>> {
+    const rows = await this.collection
+      .aggregate([
+        { $match: { ts: { $gte: since }, side: { $in: ["BUY", "SELL"] } } },
+        { $group: { _id: "$strategyId", count: { $sum: 1 } } },
+      ])
+      .toArray();
+    const result = new Map<string, number>();
+    for (const raw of rows) {
+      const row = CountByStrategyRowSchema.parse(raw);
+      result.set(row._id, row.count);
+    }
+    return result;
   }
 }

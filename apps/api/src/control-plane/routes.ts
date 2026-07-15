@@ -11,12 +11,14 @@ import {
 import {
   OrdersRepository,
   PnlSnapshotsRepository,
+  PositionsRepository,
   RiskLogsRepository,
   SettingsRepository,
   SignalsRepository,
   StrategiesRepository,
   type GlobalSettings,
 } from "@neelkanth/db";
+import { startOfDayIST } from "@neelkanth/engines";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import type { ApiServer } from "../server.js";
 import { NotFoundError, ValidationError } from "../errors.js";
@@ -110,6 +112,7 @@ export function registerControlPlane(
 ): void {
   const strategies = new StrategiesRepository(deps.db);
   const orders = new OrdersRepository(deps.db);
+  const positions = new PositionsRepository(deps.db);
   const signals = new SignalsRepository(deps.db);
   const riskLogs = new RiskLogsRepository(deps.db);
   const pnlSnapshots = new PnlSnapshotsRepository(deps.db);
@@ -120,6 +123,23 @@ export function registerControlPlane(
   // --- Strategies (plan/06 §4, plan/15 §4) ---
 
   app.get("/strategies", () => strategies.listByOwner(OPERATOR_ID));
+
+  // Per-strategy day stats (plan/06 §4): realized PnL + actionable signal
+  // count since IST midnight, zero-filled over the operator's strategies.
+  // Static segment — registered alongside /strategies/:id, static wins.
+  app.get("/strategies/stats", async () => {
+    const since = startOfDayIST(Date.now());
+    const [configs, realizedByStrategy, signalsByStrategy] = await Promise.all([
+      strategies.listByOwner(OPERATOR_ID),
+      positions.sumRealizedByStrategySince(since),
+      signals.countActionableByStrategySince(since),
+    ]);
+    return configs.map((config) => ({
+      strategyId: config.strategyId,
+      dayRealizedPnl: realizedByStrategy.get(config.strategyId) ?? 0,
+      signalsToday: signalsByStrategy.get(config.strategyId) ?? 0,
+    }));
+  });
 
   app.post("/strategies", async (request, reply) => {
     const body = parse(CreateStrategyBody, request.body);

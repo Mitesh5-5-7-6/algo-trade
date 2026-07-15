@@ -28,12 +28,14 @@ export function queryKeysForEvent(event: string): readonly QueryKey[] {
   switch (event) {
     case "ORDER_PLACED":
     case "ORDER_FILLED":
-      return [qk.orders, qk.positions, qk.pnl, qk.activity];
+      return [qk.orders, qk.positions, qk.pnl, qk.activity, qk.strategyStats];
     case "POSITION_UPDATED":
-      return [qk.positions, qk.pnl];
+      // Realized PnL lives on the position — the day stats move with it.
+      return [qk.positions, qk.pnl, qk.strategyStats];
     case "PNL_UPDATED":
       return [qk.pnl];
     case "SIGNAL_CREATED":
+      return [qk.activity, qk.strategyStats];
     case "RISK_BLOCKED":
       return [qk.activity];
     case "MARKET_OPEN":

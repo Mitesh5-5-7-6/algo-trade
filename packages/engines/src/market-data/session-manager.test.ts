@@ -3,6 +3,7 @@ import {
   istDateKey,
   NSE_DEFAULT_SESSION,
   SessionManager,
+  startOfDayIST,
 } from "./session-manager.js";
 
 /** Epoch ms for an IST wall-clock instant (month is 0-based). */
@@ -85,5 +86,24 @@ describe("istDateKey", () => {
     // 2026-01-05 20:00 UTC = 2026-01-06 01:30 IST → next day in IST.
     expect(istDateKey(Date.UTC(2026, 0, 5, 20, 0))).toBe("2026-01-06");
     expect(istDateKey(ist(...MON, 9, 20))).toBe("2026-01-05");
+  });
+});
+
+describe("startOfDayIST", () => {
+  it("returns IST midnight of the instant's trading date, in epoch ms", () => {
+    // Any instant during Monday's IST day maps to Mon 00:00 IST.
+    expect(startOfDayIST(ist(...MON, 9, 20))).toBe(ist(...MON, 0, 0));
+    expect(startOfDayIST(ist(...MON, 23, 59))).toBe(ist(...MON, 0, 0));
+    // 20:00 UTC Mon is already Tuesday 01:30 IST → Tuesday's midnight.
+    expect(startOfDayIST(Date.UTC(2026, 0, 5, 20, 0))).toBe(
+      ist(2026, 0, 6, 0, 0),
+    );
+  });
+
+  it("agrees with istDateKey about which day an instant belongs to", () => {
+    const around = Date.UTC(2026, 0, 5, 18, 30); // exactly IST midnight
+    for (const now of [around - 1, around, around + 1]) {
+      expect(istDateKey(startOfDayIST(now))).toBe(istDateKey(now));
+    }
   });
 });

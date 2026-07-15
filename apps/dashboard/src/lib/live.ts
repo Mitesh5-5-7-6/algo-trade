@@ -24,10 +24,10 @@ function phaseToMarket(phase: string): SystemStatus["market"]["phase"] {
 
 /**
  * Assemble the dashboard snapshot from the live read models (plan/06 §5),
- * mock-filling the surfaces the API does not expose yet — the equity curve,
- * per-strategy day stats, and broker latency. Those gaps are marked below as
- * the single place to remove them when the remaining read models land; every
- * component keeps reading the same `DashboardSnapshot`.
+ * mock-filling the surfaces the API does not expose yet — the equity curve
+ * and broker health. Those gaps are marked below as the single place to remove
+ * them when the remaining read models land; every component keeps reading the
+ * same `DashboardSnapshot`.
  */
 export function useDashboardData(enabled = true): LiveDashboard {
   const mock = getMockSnapshot();
@@ -56,6 +56,16 @@ export function useDashboardData(enabled = true): LiveDashboard {
     initialData: mock.strategies.map((row) => row.config),
     enabled,
   });
+  const strategyStats = useQuery({
+    queryKey: qk.strategyStats,
+    queryFn: api.strategyStats,
+    initialData: mock.strategies.map((row) => ({
+      strategyId: row.config.strategyId,
+      dayRealizedPnl: row.dayRealizedPnl,
+      signalsToday: row.signalsToday,
+    })),
+    enabled,
+  });
   const settings = useQuery({
     queryKey: qk.settings,
     queryFn: api.settings,
@@ -73,6 +83,7 @@ export function useDashboardData(enabled = true): LiveDashboard {
     orders,
     activity,
     strategies,
+    strategyStats,
     settings,
     pnl,
     control,
@@ -89,17 +100,20 @@ export function useDashboardData(enabled = true): LiveDashboard {
       .length;
 
   const strategyRows: StrategyRow[] = strategies.data.map((config) => {
-    const seed = mock.strategies.find(
-      (row) => row.config.strategyId === config.strategyId,
+    const stats = strategyStats.data.find(
+      (row) => row.strategyId === config.strategyId,
     );
     return {
       config,
-      // TODO(read-model): per-strategy day PnL + signal counts (mock-filled).
-      dayRealizedPnl: seed?.dayRealizedPnl ?? 0,
-      signalsToday: seed?.signalsToday ?? 0,
+      dayRealizedPnl: stats?.dayRealizedPnl ?? 0,
+      signalsToday: stats?.signalsToday ?? 0,
       openPositions: openByStrategy(config.strategyId),
     };
   });
+  const signalsToday = strategyStats.data.reduce(
+    (sum, row) => sum + row.signalsToday,
+    0,
+  );
 
   const realized = pnl.data?.realizedPnl ?? mock.dayPnl.realized;
   const unrealized = pnl.data?.unrealizedPnl ?? mock.dayPnl.unrealized;
@@ -123,7 +137,7 @@ export function useDashboardData(enabled = true): LiveDashboard {
           ? "running"
           : "paused"
         : mock.status.engine.state,
-      signalsToday: mock.status.engine.signalsToday, // TODO(read-model)
+      signalsToday,
     },
     tradingEnabled: control.data?.tradingEnabled ?? mock.status.tradingEnabled,
   };

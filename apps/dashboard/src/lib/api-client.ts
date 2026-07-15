@@ -45,6 +45,13 @@ export interface PnlSummary {
   unrealizedPnl: number;
 }
 
+/** The `/strategies/stats` read model — per-strategy day stats (plan/06 §4). */
+export interface StrategyDayStats {
+  strategyId: string;
+  dayRealizedPnl: number;
+  signalsToday: number;
+}
+
 /** The `/settings` document the operator tunes (plan/07 `settings`). */
 export interface LiveSettings {
   capitalAllocation: number;
@@ -78,6 +85,7 @@ export const api = {
   orders: () => apiFetch<Order[]>("/orders"),
   activity: () => apiFetch<ActivityEntry[]>("/activity"),
   strategies: () => apiFetch<StrategyConfig[]>("/strategies"),
+  strategyStats: () => apiFetch<StrategyDayStats[]>("/strategies/stats"),
   settings: () => apiFetch<LiveSettings>("/settings"),
   pnl: () => apiFetch<PnlSummary>("/pnl"),
   controlStatus: () => apiFetch<ControlStatus>("/control/status"),

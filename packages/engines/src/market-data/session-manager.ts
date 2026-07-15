@@ -11,6 +11,16 @@ export function istDateKey(now: number): string {
   return `${String(ist.getUTCFullYear())}-${month}-${day}`;
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * Epoch ms of IST midnight for the instant's trading date — the "today"
+ * boundary day-scoped read models filter on (same clock as istDateKey).
+ */
+export function startOfDayIST(now: number): number {
+  return Math.floor((now + IST_OFFSET_MS) / DAY_MS) * DAY_MS - IST_OFFSET_MS;
+}
+
 function parseHHMM(value: string): number {
   const match = /^(\d{2}):(\d{2})$/.exec(value);
   if (!match) throw new Error(`invalid HH:MM time: ${value}`);

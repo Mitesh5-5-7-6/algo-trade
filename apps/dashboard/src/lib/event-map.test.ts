@@ -3,19 +3,21 @@ import { FORWARDED_EVENTS, queryKeysForEvent } from "./event-map";
 import { qk } from "./query-keys";
 
 describe("queryKeysForEvent (plan/06 §5 socket→cache reconciliation)", () => {
-  it("a fill invalidates orders, positions, pnl, and activity", () => {
+  it("a fill invalidates orders, positions, pnl, activity, and day stats", () => {
     expect(queryKeysForEvent("ORDER_FILLED")).toEqual([
       qk.orders,
       qk.positions,
       qk.pnl,
       qk.activity,
+      qk.strategyStats,
     ]);
   });
 
-  it("a position update invalidates positions and pnl", () => {
+  it("a position update invalidates positions, pnl, and day stats", () => {
     expect(queryKeysForEvent("POSITION_UPDATED")).toEqual([
       qk.positions,
       qk.pnl,
+      qk.strategyStats,
     ]);
   });
 
@@ -30,8 +32,14 @@ describe("queryKeysForEvent (plan/06 §5 socket→cache reconciliation)", () => 
     expect(queryKeysForEvent("MARKET_OPEN")).toEqual([qk.controlStatus]);
   });
 
-  it("signals and risk blocks invalidate the activity feed", () => {
-    expect(queryKeysForEvent("SIGNAL_CREATED")).toEqual([qk.activity]);
+  it("a signal invalidates the activity feed and day stats", () => {
+    expect(queryKeysForEvent("SIGNAL_CREATED")).toEqual([
+      qk.activity,
+      qk.strategyStats,
+    ]);
+  });
+
+  it("a risk block invalidates only the activity feed (its signal was already counted)", () => {
     expect(queryKeysForEvent("RISK_BLOCKED")).toEqual([qk.activity]);
   });
 
