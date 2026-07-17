@@ -64,6 +64,11 @@ export class StrategyRegistry {
     return this.factories.has(type);
   }
 
+  /** The registered type names — the control plane's create-form catalog. */
+  types(): string[] {
+    return [...this.factories.keys()];
+  }
+
   /** Instantiate a per-symbol strategy instance; throws on an unknown type. */
   instantiate(
     type: string,

@@ -125,6 +125,14 @@ describe("strategies routes (plan/05 §4.1)", () => {
     expect(list.json<StrategyConfig[]>()).toHaveLength(1);
   });
 
+  it("lists the registered strategy types for the create form", async () => {
+    makeApp();
+    const res = await app.inject({ method: "GET", url: "/strategies/types" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<string[]>()).toContain("EMA_CROSSOVER");
+    expect(res.json<string[]>()).toContain("RSI");
+  });
+
   it("rejects an unknown strategy type with 400", async () => {
     makeApp();
     const res = await app.inject({

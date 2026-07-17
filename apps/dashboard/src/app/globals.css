@@ -390,7 +390,12 @@ table.data th.num {
   color: var(--text-muted);
   text-transform: uppercase;
 }
-.field input[type="text"] {
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="password"],
+.field input[type="email"],
+.field select,
+.field textarea {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -398,7 +403,14 @@ table.data th.num {
   font-family: var(--font-mono);
   font-size: 15px;
   padding: 10px 12px;
+}
+/* Numerals read right-aligned (the design's capital field); words don't. */
+.field input[type="number"] {
   text-align: right;
+}
+.field textarea {
+  font-size: 13px;
+  resize: vertical;
 }
 .field input[type="range"] {
   accent-color: var(--amber);
@@ -527,4 +539,125 @@ table.data th.num {
 .btn-primary:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+/* --- Interactive controls (strategy CRUD + settings, plan/05 §4.1) --- */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.page-head .btn-primary {
+  margin-top: 0;
+}
+.btn-ghost {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-ghost:hover {
+  border-color: var(--text-muted);
+}
+.btn-ghost.danger {
+  color: var(--red);
+}
+.btn-ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-enable {
+  padding: 6px 10px;
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  background: rgba(62, 207, 142, 0.08);
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-enable:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn-danger-confirm {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 7px;
+  background: var(--amber);
+  color: #14151c;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-danger-confirm:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.row-actions {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* --- Modal / drawer (step-up prompt, strategy form) --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 11, 16, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px;
+}
+.modal-card.drawer {
+  max-width: 520px;
+}
+.modal-copy {
+  margin: 6px 0 14px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+.field-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.field-inline label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.field-inline input[type="checkbox"] {
+  accent-color: var(--indigo);
+}
+.resume-panel {
+  border-color: rgba(238, 182, 83, 0.4);
+  margin-bottom: 16px;
+}
+.saved-note {
+  font-size: 12px;
+  color: var(--green);
 }

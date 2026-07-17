@@ -9,6 +9,7 @@ export const qk = {
   activity: ["activity"] as const,
   strategies: ["strategies"] as const,
   strategyStats: ["strategies", "stats"] as const,
+  strategyTypes: ["strategyTypes"] as const,
   settings: ["settings"] as const,
   pnl: ["pnl"] as const,
   // Deliberately NOT nested under "pnl": PNL_UPDATED invalidates qk.pnl on

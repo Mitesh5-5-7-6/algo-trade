@@ -28,6 +28,7 @@ describe("StrategyRegistry (plan/15 §4)", () => {
     const registry = new StrategyRegistry();
     registry.register(fakeDef);
     expect(registry.has("FAKE")).toBe(true);
+    expect(registry.types()).toEqual(["FAKE"]);
 
     const instance = registry.instantiate("FAKE", { threshold: 5 }, "NSE:X-EQ");
     expect(instance.type).toBe("FAKE");

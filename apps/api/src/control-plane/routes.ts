@@ -124,6 +124,9 @@ export function registerControlPlane(
 
   app.get("/strategies", () => strategies.listByOwner(OPERATOR_ID));
 
+  // The create-form catalog: which `type` values the registry can run.
+  app.get("/strategies/types", () => registry.types());
+
   // Per-strategy day stats (plan/06 §4): realized PnL + actionable signal
   // count since IST midnight, zero-filled over the operator's strategies.
   // Static segment — registered alongside /strategies/:id, static wins.
