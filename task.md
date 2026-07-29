@@ -30,11 +30,11 @@ Based on the `/plan` (specifically `28_ROADMAP.md`) and the current state of the
 - [ ] AI Summaries page
 - [ ] Evaluation loop
 
-## Phase 3 — Live Trading (Status: In-Progress)
+## Phase 3 — Live Trading (Status: Complete)
 - [x] Go-live swap (Wire Broker and Market Data into runtime)
-- [ ] Bracket/cover orders
-- [ ] TOTP 2FA
-- [ ] Staging environment & chaos drills
+- [x] Bracket/cover orders
+- [x] TOTP 2FA
+- [x] Staging environment & chaos drills
 
 ## Code Review: `apps/dashboard/src/lib/live.ts`
 - **Current State:** The code effectively wires up the live trading dashboard to the backend via `@tanstack/react-query`. It defines a `DashboardSnapshot` that components can consume.
