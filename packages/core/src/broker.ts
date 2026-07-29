@@ -36,6 +36,10 @@ export const BrokerOrderRequestSchema = z.object({
   type: OrderTypeSchema,
   /** Required for LIMIT, absent for MARKET. */
   price: PriceSchema.optional(),
+  /** Stop loss trigger price (if a bracket/cover order). */
+  stopLoss: PriceSchema.optional(),
+  /** Take profit target price (if a bracket order). */
+  takeProfit: PriceSchema.optional(),
 });
 export type BrokerOrderRequest = z.infer<typeof BrokerOrderRequestSchema>;
 

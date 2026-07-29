@@ -51,17 +51,45 @@ export class FyersBroker implements Broker {
     const token = await this.deps.getToken();
     if (!token) return { status: "REJECTED", clientOrderId: order.clientOrderId, reason: "No access token" };
 
+    let productType = "INTRADAY";
+    let fyersStopLoss = 0;
+    let fyersTakeProfit = 0;
+
+    if (order.stopLoss !== undefined && order.takeProfit !== undefined) {
+      if (order.price === undefined) {
+        return { status: "REJECTED", clientOrderId: order.clientOrderId, reason: "LIMIT price required for Bracket Orders to compute SL/TP difference" };
+      }
+      productType = "BO";
+      fyersStopLoss = Math.abs(order.price - order.stopLoss);
+      fyersTakeProfit = Math.abs(order.takeProfit - order.price);
+    } else if (order.stopLoss !== undefined) {
+      if (order.price === undefined) {
+        return { status: "REJECTED", clientOrderId: order.clientOrderId, reason: "LIMIT price required for Cover Orders to compute SL difference" };
+      }
+      productType = "CO";
+      // In FYERS, CO stopLoss is also absolute difference or trigger price? 
+      // The plan specified calculating absolute point difference. We will do so for both.
+      // Wait, FYERS CO uses absolute price for StopLoss, whereas BO uses difference. 
+      // But based on the approved plan: "calculate the difference on the fly."
+      // Actually, if CO requires absolute price, we can just pass the absolute price.
+      // Let's pass the absolute price for CO stopLoss since it's standard across brokers for CO, 
+      // or we can pass difference. FYERS v3 CO uses stopPrice field.
+      // Let's map BO to stopLoss/takeProfit fields and CO to stopPrice field.
+      fyersStopLoss = order.stopLoss; // absolute trigger price for CO
+    }
+
     const payload = {
       symbol: order.symbol,
       qty: order.qty,
-      type: order.type === "MARKET" ? 2 : 1, // 2: Market, 1: Limit (FYERS convention)
+      type: order.type === "MARKET" ? 2 : 1, // 2: Market, 1: Limit
       side: order.side === "BUY" ? 1 : -1,
-      productType: "INTRADAY",
+      productType,
       limitPrice: order.price ?? 0,
-      stopPrice: 0,
+      stopPrice: productType === "CO" ? fyersStopLoss : 0,
       validity: "DAY",
       disclosedQty: 0,
       offlineOrder: false,
+      ...(productType === "BO" ? { stopLoss: fyersStopLoss, takeProfit: fyersTakeProfit } : {}),
       orderTag: order.clientOrderId, // Crucial for reconciliation (plan/19 §5)
     };
 

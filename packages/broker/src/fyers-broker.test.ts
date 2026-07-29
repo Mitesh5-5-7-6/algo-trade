@@ -93,6 +93,39 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     expect(body.limitPrice).toBe(2500);
   });
 
+  it("maps a Bracket Order correctly (BO)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ s: "ok", id: "fyers_bo" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const broker = new FyersBroker(deps());
+    // entry at 100, SL at 95, target at 110
+    await broker.execute(order({ type: "LIMIT", price: 100, stopLoss: 95, takeProfit: 110, side: "BUY" }));
+
+    const body = JSON.parse((mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.productType).toBe("BO");
+    expect(body.stopLoss).toBe(5); // 100 - 95
+    expect(body.takeProfit).toBe(10); // 110 - 100
+  });
+
+  it("maps a Cover Order correctly (CO)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ s: "ok", id: "fyers_co" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const broker = new FyersBroker(deps());
+    await broker.execute(order({ type: "LIMIT", price: 100, stopLoss: 95, side: "BUY" }));
+
+    const body = JSON.parse((mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    expect(body.productType).toBe("CO");
+    expect(body.stopPrice).toBe(95); // CO sends absolute trigger price
+    expect(body.stopLoss).toBeUndefined(); // stopLoss field is only for BO
+  });
+
   it("returns REJECTED when FYERS API responds with an error", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,

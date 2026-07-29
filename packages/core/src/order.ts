@@ -45,6 +45,10 @@ export const OrderSchema = z.object({
   type: OrderTypeSchema,
   /** Limit price; absent for MARKET orders. */
   price: PriceSchema.optional(),
+  /** Stop loss trigger price (if a bracket/cover order). */
+  stopLoss: PriceSchema.optional(),
+  /** Take profit target price (if a bracket order). */
+  takeProfit: PriceSchema.optional(),
   status: OrderStatusSchema,
   mode: TradeModeSchema,
   brokerOrderId: z.string().optional(),

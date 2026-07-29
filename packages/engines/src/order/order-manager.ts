@@ -99,6 +99,8 @@ export class OrderManager {
         side,
         qty,
         type: "MARKET",
+        ...(signal.stopLoss !== undefined ? { stopLoss: signal.stopLoss } : {}),
+        ...(signal.target !== undefined ? { takeProfit: signal.target } : {}),
         status: "PLACED",
         mode: "paper",
         createdAt: this.now(),
@@ -234,5 +236,7 @@ function toBrokerRequest(order: Order): BrokerOrderRequest {
     qty: order.qty,
     type: order.type,
     ...(order.price === undefined ? {} : { price: order.price }),
+    ...(order.stopLoss === undefined ? {} : { stopLoss: order.stopLoss }),
+    ...(order.takeProfit === undefined ? {} : { takeProfit: order.takeProfit }),
   };
 }
