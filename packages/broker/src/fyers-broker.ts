@@ -188,7 +188,10 @@ export class FyersBroker implements Broker {
       return { clientOrderId, found: false };
     }
 
-    const order = data.orderBook.find((o: { orderTag: string, status: number, id: string }) => o.orderTag === clientOrderId);
+    const order = data.orderBook.find(
+      (o: { orderTag: string; status: number; id: string }) =>
+        o.orderTag === clientOrderId,
+    );
     if (!order) {
       return { clientOrderId, found: false };
     }
@@ -239,7 +242,9 @@ export class FyersBroker implements Broker {
 
     this.ws.on("message", (data) => {
       // Pass raw data to downstream normalizer
-      this.dataHandlers.forEach(function(h) { h(data); });
+      this.dataHandlers.forEach(function (h) {
+        h(data);
+      });
     });
 
     this.ws.on("close", () => {
@@ -288,7 +293,9 @@ export class FyersBroker implements Broker {
   private updateState(state: BrokerConnectionState) {
     if (this.connectionState === state) return;
     this.connectionState = state;
-    this.stateHandlers.forEach(function(h) { h(state); });
+    this.stateHandlers.forEach(function (h) {
+      h(state);
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await

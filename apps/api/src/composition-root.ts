@@ -145,7 +145,9 @@ export async function bootstrap(
       },
       readSessionOpen: async () => {
         const val = await redis.client.get(hotSessionKey());
-        return val ? (JSON.parse(val) as { phase: string }).phase === "open" : false;
+        return val
+          ? (JSON.parse(val) as { phase: string }).phase === "open"
+          : false;
       },
     });
 
@@ -154,12 +156,18 @@ export async function bootstrap(
         connect: () => fyersBroker.connect(),
         disconnect: () => fyersBroker.disconnect(),
         subscribe: (symbols) => fyersBroker.subscribe(symbols),
-        onData: (cb) => { fyersBroker.onData(cb); },
-        onConnectionChange: (cb) => { fyersBroker.onConnectionChange(cb); },
+        onData: (cb) => {
+          fyersBroker.onData(cb);
+        },
+        onConnectionChange: (cb) => {
+          fyersBroker.onConnectionChange(cb);
+        },
         execute: (order) => paper.execute(order),
         cancel: (id) => paper.cancel(id),
         status: (id) => paper.status(id),
-        onOrderUpdate: (cb) => { paper.onOrderUpdate(cb); },
+        onOrderUpdate: (cb) => {
+          paper.onOrderUpdate(cb);
+        },
       };
     } else {
       broker = paper;

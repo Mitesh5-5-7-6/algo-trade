@@ -296,8 +296,12 @@ describe("FyersBroker connection state", () => {
 
   it("registers onData and onOrderUpdate handlers without throwing", () => {
     const broker = new FyersBroker(deps());
-    expect(() => { broker.onData(function() {}); }).not.toThrow();
-    expect(() => { broker.onOrderUpdate(function() {}); }).not.toThrow();
+    expect(() => {
+      broker.onData(function () {});
+    }).not.toThrow();
+    expect(() => {
+      broker.onOrderUpdate(function () {});
+    }).not.toThrow();
   });
 
   it("disconnect is idempotent", async () => {
