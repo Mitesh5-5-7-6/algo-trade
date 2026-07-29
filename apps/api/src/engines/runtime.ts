@@ -27,12 +27,14 @@ import {
   StrategiesRepository,
   type MongoConnection,
 } from "@neelkanth/db";
-import { PaperBroker } from "@neelkanth/broker";
+import type { Broker } from "@neelkanth/broker";
+import { fyersNormalizer } from "./fyers-normalizer.js";
 import {
   computePortfolio,
   EquityCurveTracker,
   IndicatorEngine,
   istDateKey,
+  MarketDataEngine,
   OrderManager,
   PnlEngine,
   PositionEngine,
@@ -42,6 +44,7 @@ import {
   StrategyRunner,
   unrealizedPnl,
   type IndicatorPorts,
+  type MarketDataPorts,
   type OrderPorts,
   type PnlPorts,
   type PositionPorts,
@@ -86,6 +89,7 @@ export async function startEngineRuntime(deps: {
   redis: RedisConnections;
   mongo: MongoConnection;
   logger: Logger;
+  broker: Broker;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -137,6 +141,23 @@ export async function startEngineRuntime(deps: {
   const writeHot = (key: string, value: unknown): Promise<unknown> =>
     redis.client.set(key, JSON.stringify(value));
 
+  // --- Market Data Engine (Inbound) ---
+  const marketDataPorts: MarketDataPorts = {
+    writeHotPrice: (symbol, tick) => writeHot(hotPriceKey(symbol), tick).then(() => undefined),
+    writeHotSession: (phase) => writeHot(hotSessionKey(), { phase }).then(() => undefined),
+    saveCandle: (candle) => candles.upsert(candle),
+    publish,
+  };
+  const marketDataEngine = new MarketDataEngine({
+    ports: marketDataPorts,
+    normalizer: fyersNormalizer,
+    intervals: ["1m", "5m"], // Default intervals
+    session: sessionManager,
+    exchange: "NSE",
+    onError,
+  });
+  marketDataEngine.attach(deps.broker);
+
   // --- Projection chain: Position + PnL ---
   const positionPorts: PositionPorts = {
     writePosition: (position) => positions.upsert(position),
@@ -164,11 +185,7 @@ export async function startEngineRuntime(deps: {
     onError,
   });
 
-  // --- Execution: Paper Broker + Order Manager ---
-  const broker = new PaperBroker({
-    readPrice: (symbol) => Promise.resolve(lastPrices.get(symbol) ?? null),
-    readSessionOpen: () => Promise.resolve(state.session.phase === "open"),
-  });
+  // --- Execution: Broker + Order Manager ---
   const orderPorts: OrderPorts = {
     readTradingEnabled: () => Promise.resolve(state.tradingEnabled),
     persistOrder: (order) => orders.insert(order),
@@ -176,7 +193,7 @@ export async function startEngineRuntime(deps: {
     publish,
   };
   const orderManager = new OrderManager({
-    broker,
+    broker: deps.broker,
     ports: orderPorts,
     nextOrderId: () => `ord_${crypto.randomUUID()}`,
     onError,

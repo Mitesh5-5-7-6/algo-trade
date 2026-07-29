@@ -2,6 +2,8 @@ import type { Config } from "@neelkanth/config";
 import { componentLogger, type Logger } from "@neelkanth/logger";
 import {
   createRedisConnections,
+  hotPriceKey,
+  hotSessionKey,
   type RedisConnections,
 } from "@neelkanth/redis";
 import {
@@ -32,6 +34,7 @@ import {
 import { registerFyersAuthRoutes } from "./auth/fyers.js";
 import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
+import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
 const SESSION_POLL_MS = 15_000;
@@ -113,11 +116,60 @@ export async function bootstrap(
   const users = new UsersRepository(mongo.db);
   const brokerTokens = new BrokerTokensRepository(mongo.db, config.TOKEN_ENCRYPTION_KEY);
 
-  // Runtime creates its own PaperBroker internally (plan/11). When the live
-  // broker lands fully, the runtime will accept an injected Broker. For now
-  // the FyersBroker is constructed here so auth routes can reference it,
-  // but the pipeline still runs through the paper broker inside runtime.
-  const runtime = await startEngineRuntime({ redis, mongo, logger });
+  // --- Broker (plan/19 §2) ---
+  let broker: Broker;
+  let fyersBroker: FyersBroker | null = null;
+  if (config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
+    fyersBroker = new FyersBroker({
+      appId: config.FYERS_APP_ID,
+      getToken: async () => {
+        const user = await users.findFirstUser();
+        if (!user) return null;
+        const token = await brokerTokens.getDecryptedToken(user.userId);
+        return token ? token.accessToken : null;
+      },
+    });
+  }
+
+  if (config.BROKER_MODE === "live" && fyersBroker) {
+    broker = fyersBroker;
+  } else {
+    // Paper mode (plan/11): execution is simulated, data is real FYERS (if credentials exist)
+    const paper = new PaperBroker({
+      readPrice: async (symbol) => {
+        const val = await redis.client.get(hotPriceKey(symbol));
+        return val ? JSON.parse(val).ltp : null;
+      },
+      readSessionOpen: async () => {
+        const val = await redis.client.get(hotSessionKey());
+        return val ? JSON.parse(val).phase === "open" : false;
+      },
+    });
+
+    if (fyersBroker) {
+      broker = {
+        connect: () => fyersBroker!.connect(),
+        disconnect: () => fyersBroker!.disconnect(),
+        subscribe: (symbols) => fyersBroker!.subscribe(symbols),
+        onData: (cb) => fyersBroker!.onData(cb),
+        onConnectionChange: (cb) => fyersBroker!.onConnectionChange(cb),
+        execute: (order) => paper.execute(order),
+        cancel: (id) => paper.cancel(id),
+        status: (id) => paper.status(id),
+        onOrderUpdate: (cb) => paper.onOrderUpdate(cb),
+      };
+    } else {
+      broker = paper;
+    }
+  }
+
+  // --- Runtime (plan/05 §3) ---
+  const runtime = await startEngineRuntime({ redis, mongo, logger, broker });
+  
+  // Establish the broker data feed (plan/19 §4). 
+  // Done before enabling strategies so indicator warm-up has live prices.
+  await broker.connect();
+
   await runtime.syncSession(Date.now()); // initial session state
   const sessionTimer = setInterval(() => {
     void runtime.syncSession(Date.now());
