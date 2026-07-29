@@ -118,11 +118,21 @@ export interface UpdateSettingsBody {
 }
 
 export const api = {
-  login: (email: string, password: string) =>
-    apiFetch<{ userId: string; email: string; role: string }>("/auth/login", {
+  login: (email: string, password: string, totpToken?: string) =>
+    apiFetch<{ userId: string; email: string; role: string } | { error: string; requiresTotp: boolean }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, ...(totpToken ? { totpToken } : {}) }),
     }),
+  loginRaw: async (email: string, password: string, totpToken?: string) => {
+    const response = await fetch(`${API_BASE}/auth/login`, {
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ email, password, ...(totpToken ? { totpToken } : {}) }),
+    });
+    const data = await response.json() as Record<string, unknown>;
+    return { status: response.status, data };
+  },
   logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 
   positions: () => apiFetch<Position[]>("/positions"),
@@ -167,5 +177,19 @@ export const api = {
     apiFetch<{ tradingEnabled: boolean }>("/control/resume", {
       method: "POST",
       body: JSON.stringify({ stepUpPassword }),
+    }),
+
+  // TOTP 2FA management (plan/21 §8)
+  totpSetup: () =>
+    apiFetch<{ secret: string; url: string }>("/auth/totp/setup", { method: "POST" }),
+  totpVerify: (token: string, secret: string) =>
+    apiFetch<{ ok: boolean }>("/auth/totp/verify", {
+      method: "POST",
+      body: JSON.stringify({ token, secret }),
+    }),
+  totpDisable: (token: string) =>
+    apiFetch<{ ok: boolean }>("/auth/totp/disable", {
+      method: "POST",
+      body: JSON.stringify({ token }),
     }),
 };

@@ -312,6 +312,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      <TotpSection />
+
       {stepUp !== null && (
         <StepUpDialog
           title={stepUp.title}
@@ -329,5 +331,169 @@ export default function SettingsPage() {
         />
       )}
     </>
+  );
+}
+
+/**
+ * Self-contained TOTP panel (plan/21 §8). Three states:
+ *  1. Not set up  → "Enable 2FA" button → calls /auth/totp/setup
+ *  2. Setup done  → shows secret + OTP URI + 6-digit input to verify
+ *  3. Enabled     → "Disable 2FA" button (requires current code)
+ */
+function TotpSection() {
+  const [phase, setPhase] = useState<"idle" | "setup" | "disabling">("idle");
+  const [secret, setSecret] = useState("");
+  const [url, setUrl] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [enabled, setEnabled] = useState<boolean | null>(null); // null = unknown
+  const [busy, setBusy] = useState(false);
+
+  async function startSetup() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.totpSetup();
+      setSecret(result.secret);
+      setUrl(result.url);
+      setPhase("setup");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Setup failed");
+    }
+    setBusy(false);
+  }
+
+  async function verify() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.totpVerify(code, secret);
+      setEnabled(true);
+      setPhase("idle");
+      setCode("");
+      setSecret("");
+      setUrl("");
+    } catch {
+      setError("Invalid code — check your authenticator app.");
+    }
+    setBusy(false);
+  }
+
+  async function disable() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.totpDisable(code);
+      setEnabled(false);
+      setPhase("idle");
+      setCode("");
+    } catch {
+      setError("Invalid code — confirm with your authenticator app.");
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="panel" style={{ marginTop: 16 }}>
+      <p className="panel-title">Two-Factor Authentication</p>
+
+      {phase === "idle" && (
+        <>
+          <p className="hint" style={{ marginBottom: 12 }}>
+            {enabled === true
+              ? "✅ TOTP 2FA is enabled. You'll need your authenticator app to log in."
+              : "Add an extra layer of security with a TOTP authenticator app (e.g. Google Authenticator)."}
+          </p>
+          {enabled === true ? (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => { setPhase("disabling"); setCode(""); setError(null); }}
+            >
+              Disable 2FA…
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy}
+              onClick={() => { void startSetup(); }}
+            >
+              {busy ? "Setting up…" : "Enable 2FA"}
+            </button>
+          )}
+        </>
+      )}
+
+      {phase === "setup" && (
+        <>
+          <p className="hint" style={{ marginBottom: 8 }}>
+            Scan this URI in your authenticator app, or enter the secret manually:
+          </p>
+          <div className="field">
+            <label htmlFor="totp-secret">Secret</label>
+            <input id="totp-secret" type="text" readOnly value={secret} style={{ fontFamily: "monospace" }} />
+          </div>
+          <div className="field">
+            <label htmlFor="totp-url">OTP URL</label>
+            <input id="totp-url" type="text" readOnly value={url} style={{ fontSize: 12, wordBreak: "break-all" }} />
+          </div>
+          <div className="field">
+            <label htmlFor="totp-verify">Enter the 6-digit code from your app</label>
+            <input
+              id="totp-verify"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              placeholder="000000"
+              value={code}
+              onChange={(e) => { setCode(e.target.value); }}
+              autoFocus
+            />
+          </div>
+          {error && <p className="login-error">{error}</p>}
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={() => { setPhase("idle"); setError(null); }}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" disabled={code.length !== 6 || busy} onClick={() => { void verify(); }}>
+              {busy ? "Verifying…" : "Activate 2FA"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {phase === "disabling" && (
+        <>
+          <p className="hint" style={{ marginBottom: 8 }}>
+            Enter your current authenticator code to disable 2FA:
+          </p>
+          <div className="field">
+            <label htmlFor="totp-disable">6-digit code</label>
+            <input
+              id="totp-disable"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              placeholder="000000"
+              value={code}
+              onChange={(e) => { setCode(e.target.value); }}
+              autoFocus
+            />
+          </div>
+          {error && <p className="login-error">{error}</p>}
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={() => { setPhase("idle"); setError(null); }}>
+              Cancel
+            </button>
+            <button type="button" className="btn-primary" disabled={code.length !== 6 || busy} onClick={() => { void disable(); }}>
+              {busy ? "Disabling…" : "Disable 2FA"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

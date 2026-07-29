@@ -32,6 +32,7 @@ export async function createOperator(
     role: input.role ?? "operator",
     status: "active",
     createdAt: Date.now(),
+    totpEnabled: false,
   };
   const inserted = await users.create(user);
   return inserted

@@ -65,6 +65,20 @@ export class UsersRepository {
     await this.collection.updateOne({ userId }, { $set: { passwordHash } });
   }
 
+  async enableTotp(userId: string, secret: string): Promise<void> {
+    await this.collection.updateOne(
+      { userId },
+      { $set: { totpEnabled: true, totpSecret: secret } },
+    );
+  }
+
+  async disableTotp(userId: string): Promise<void> {
+    await this.collection.updateOne(
+      { userId },
+      { $set: { totpEnabled: false }, $unset: { totpSecret: "" } },
+    );
+  }
+
   /** How many operator accounts exist — the bootstrap CLI refuses a second. */
   async count(): Promise<number> {
     return this.collection.countDocuments();

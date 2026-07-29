@@ -30,6 +30,7 @@ function parse<T>(schema: ZodType<T>, data: unknown): T {
 const LoginBody = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  totpToken: z.string().optional(),
 });
 
 export interface AuthRoutesDeps {
@@ -71,6 +72,19 @@ export function registerAuthRoutes(app: ApiServer, deps: AuthRoutesDeps): void {
       throw new UnauthorizedError("invalid credentials");
     }
 
+    if (user.totpEnabled) {
+      if (!body.totpToken) {
+        reply.status(401);
+        return { error: "TOTP_REQUIRED", requiresTotp: true };
+      }
+      const { verifyTotpToken } = await import("./totp.js");
+      if (!user.totpSecret || !verifyTotpToken(body.totpToken, user.totpSecret)) {
+        await deps.rateLimiter.recordFailure(email);
+        await deps.rateLimiter.recordFailure(ip);
+        throw new UnauthorizedError("invalid credentials");
+      }
+    }
+
     await deps.rateLimiter.reset(email);
     await deps.rateLimiter.reset(ip);
     const sessionId = await deps.sessions.create(user.userId);
@@ -89,6 +103,50 @@ export function registerAuthRoutes(app: ApiServer, deps: AuthRoutesDeps): void {
     const sessionId = readCookie(request.headers.cookie, SESSION_COOKIE);
     if (sessionId !== undefined) await deps.sessions.destroy(sessionId);
     reply.header("set-cookie", clearSessionCookie(deps.secureCookies));
+    return { ok: true };
+  });
+
+  app.post("/auth/totp/setup", async (request) => {
+    if (!request.authUser) throw new UnauthorizedError("auth required");
+    const user = await deps.users.findById(request.authUser.userId);
+    if (!user) throw new UnauthorizedError("user not found");
+    if (user.totpEnabled) throw new Error("TOTP already enabled");
+
+    const { generateTotpSecret, generateTotpUrl } = await import("./totp.js");
+    const secret = generateTotpSecret();
+    const url = generateTotpUrl(user.email, secret);
+    return { secret, url };
+  });
+
+  app.post("/auth/totp/verify", async (request) => {
+    if (!request.authUser) throw new UnauthorizedError("auth required");
+    const body = parse(
+      z.object({ token: z.string().min(1), secret: z.string().min(1) }),
+      request.body,
+    );
+    const { verifyTotpToken } = await import("./totp.js");
+    if (!verifyTotpToken(body.token, body.secret)) {
+      throw new UnauthorizedError("Invalid TOTP code");
+    }
+
+    await deps.users.enableTotp(request.authUser.userId, body.secret);
+    return { ok: true };
+  });
+
+  app.post("/auth/totp/disable", async (request) => {
+    if (!request.authUser) throw new UnauthorizedError("auth required");
+    const body = parse(z.object({ token: z.string().min(1) }), request.body);
+    const user = await deps.users.findById(request.authUser.userId);
+    if (!user || !user.totpEnabled || !user.totpSecret) {
+      throw new Error("TOTP is not enabled");
+    }
+
+    const { verifyTotpToken } = await import("./totp.js");
+    if (!verifyTotpToken(body.token, user.totpSecret)) {
+      throw new UnauthorizedError("Invalid TOTP code");
+    }
+
+    await deps.users.disableTotp(user.userId);
     return { ok: true };
   });
 }

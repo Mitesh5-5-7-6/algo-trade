@@ -22,5 +22,8 @@ export const UserSchema = z.object({
   status: UserStatusSchema,
   createdAt: TimestampSchema,
   lastLoginAt: TimestampSchema.optional(),
+  totpEnabled: z.boolean().default(false),
+  /** base32 encoded secret */
+  totpSecret: z.string().optional(),
 });
 export type User = z.infer<typeof UserSchema>;
