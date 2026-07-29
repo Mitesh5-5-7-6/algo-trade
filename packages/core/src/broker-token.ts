@@ -2,7 +2,7 @@ import { z } from "zod";
 import { EntityIdSchema, TimestampSchema } from "./primitives.js";
 
 /**
- * Broker token (plan/07 `broker_tokens`, plan/19 §3). 
+ * Broker token (plan/07 `broker_tokens`, plan/19 §3).
  * Stores the access token needed to authenticate with the live broker (FYERS).
  * The token string MUST be encrypted at rest and is decrypted only when needed
  * by the Broker adapter.

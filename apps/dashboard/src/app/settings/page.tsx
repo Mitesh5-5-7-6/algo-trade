@@ -408,7 +408,11 @@ function TotpSection() {
             <button
               type="button"
               className="btn-ghost"
-              onClick={() => { setPhase("disabling"); setCode(""); setError(null); }}
+              onClick={() => {
+                setPhase("disabling");
+                setCode("");
+                setError(null);
+              }}
             >
               Disable 2FA…
             </button>
@@ -417,7 +421,9 @@ function TotpSection() {
               type="button"
               className="btn-primary"
               disabled={busy}
-              onClick={() => { void startSetup(); }}
+              onClick={() => {
+                void startSetup();
+              }}
             >
               {busy ? "Setting up…" : "Enable 2FA"}
             </button>
@@ -428,18 +434,33 @@ function TotpSection() {
       {phase === "setup" && (
         <>
           <p className="hint" style={{ marginBottom: 8 }}>
-            Scan this URI in your authenticator app, or enter the secret manually:
+            Scan this URI in your authenticator app, or enter the secret
+            manually:
           </p>
           <div className="field">
             <label htmlFor="totp-secret">Secret</label>
-            <input id="totp-secret" type="text" readOnly value={secret} style={{ fontFamily: "monospace" }} />
+            <input
+              id="totp-secret"
+              type="text"
+              readOnly
+              value={secret}
+              style={{ fontFamily: "monospace" }}
+            />
           </div>
           <div className="field">
             <label htmlFor="totp-url">OTP URL</label>
-            <input id="totp-url" type="text" readOnly value={url} style={{ fontSize: 12, wordBreak: "break-all" }} />
+            <input
+              id="totp-url"
+              type="text"
+              readOnly
+              value={url}
+              style={{ fontSize: 12, wordBreak: "break-all" }}
+            />
           </div>
           <div className="field">
-            <label htmlFor="totp-verify">Enter the 6-digit code from your app</label>
+            <label htmlFor="totp-verify">
+              Enter the 6-digit code from your app
+            </label>
             <input
               id="totp-verify"
               type="text"
@@ -448,16 +469,32 @@ function TotpSection() {
               maxLength={6}
               placeholder="000000"
               value={code}
-              onChange={(e) => { setCode(e.target.value); }}
+              onChange={(e) => {
+                setCode(e.target.value);
+              }}
               autoFocus
             />
           </div>
           {error && <p className="login-error">{error}</p>}
           <div className="modal-actions">
-            <button type="button" className="btn-ghost" onClick={() => { setPhase("idle"); setError(null); }}>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setPhase("idle");
+                setError(null);
+              }}
+            >
               Cancel
             </button>
-            <button type="button" className="btn-primary" disabled={code.length !== 6 || busy} onClick={() => { void verify(); }}>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={code.length !== 6 || busy}
+              onClick={() => {
+                void verify();
+              }}
+            >
               {busy ? "Verifying…" : "Activate 2FA"}
             </button>
           </div>
@@ -479,16 +516,32 @@ function TotpSection() {
               maxLength={6}
               placeholder="000000"
               value={code}
-              onChange={(e) => { setCode(e.target.value); }}
+              onChange={(e) => {
+                setCode(e.target.value);
+              }}
               autoFocus
             />
           </div>
           {error && <p className="login-error">{error}</p>}
           <div className="modal-actions">
-            <button type="button" className="btn-ghost" onClick={() => { setPhase("idle"); setError(null); }}>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setPhase("idle");
+                setError(null);
+              }}
+            >
               Cancel
             </button>
-            <button type="button" className="btn-primary" disabled={code.length !== 6 || busy} onClick={() => { void disable(); }}>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={code.length !== 6 || busy}
+              onClick={() => {
+                void disable();
+              }}
+            >
               {busy ? "Disabling…" : "Disable 2FA"}
             </button>
           </div>

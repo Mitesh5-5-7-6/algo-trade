@@ -78,7 +78,10 @@ export function registerAuthRoutes(app: ApiServer, deps: AuthRoutesDeps): void {
         return { error: "TOTP_REQUIRED", requiresTotp: true };
       }
       const { verifyTotpToken } = await import("./totp.js");
-      if (!user.totpSecret || !verifyTotpToken(body.totpToken, user.totpSecret)) {
+      if (
+        !user.totpSecret ||
+        !verifyTotpToken(body.totpToken, user.totpSecret)
+      ) {
         await deps.rateLimiter.recordFailure(email);
         await deps.rateLimiter.recordFailure(ip);
         throw new UnauthorizedError("invalid credentials");

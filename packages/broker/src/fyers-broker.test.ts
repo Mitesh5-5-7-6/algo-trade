@@ -36,7 +36,9 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
   });
 
   it("rejects when no access token is available", async () => {
-    const broker = new FyersBroker(deps({ getToken: () => Promise.resolve(null) }));
+    const broker = new FyersBroker(
+      deps({ getToken: () => Promise.resolve(null) }),
+    );
     const outcome = await broker.execute(order());
     expect(outcome.status).toBe("REJECTED");
     if (outcome.status === "REJECTED") {
@@ -87,7 +89,9 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     const broker = new FyersBroker(deps());
     await broker.execute(order({ type: "LIMIT", price: 2500, side: "SELL" }));
 
-    const body = JSON.parse((mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const body = JSON.parse(
+      (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
+    );
     expect(body.type).toBe(1); // LIMIT = 1
     expect(body.side).toBe(-1); // SELL = -1
     expect(body.limitPrice).toBe(2500);
@@ -102,9 +106,19 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
 
     const broker = new FyersBroker(deps());
     // entry at 100, SL at 95, target at 110
-    await broker.execute(order({ type: "LIMIT", price: 100, stopLoss: 95, takeProfit: 110, side: "BUY" }));
+    await broker.execute(
+      order({
+        type: "LIMIT",
+        price: 100,
+        stopLoss: 95,
+        takeProfit: 110,
+        side: "BUY",
+      }),
+    );
 
-    const body = JSON.parse((mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const body = JSON.parse(
+      (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
+    );
     expect(body.productType).toBe("BO");
     expect(body.stopLoss).toBe(5); // 100 - 95
     expect(body.takeProfit).toBe(10); // 110 - 100
@@ -118,19 +132,31 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     const broker = new FyersBroker(deps());
-    await broker.execute(order({ type: "LIMIT", price: 100, stopLoss: 95, side: "BUY" }));
+    await broker.execute(
+      order({ type: "LIMIT", price: 100, stopLoss: 95, side: "BUY" }),
+    );
 
-    const body = JSON.parse((mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const body = JSON.parse(
+      (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
+    );
     expect(body.productType).toBe("CO");
     expect(body.stopPrice).toBe(95); // CO sends absolute trigger price
     expect(body.stopLoss).toBeUndefined(); // stopLoss field is only for BO
   });
 
   it("returns REJECTED when FYERS API responds with an error", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: false,
-      json: () => Promise.resolve({ s: "error", message: "Insufficient margin", code: 1001 }),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: () =>
+          Promise.resolve({
+            s: "error",
+            message: "Insufficient margin",
+            code: 1001,
+          }),
+      }),
+    );
 
     const broker = new FyersBroker(deps());
     const outcome = await broker.execute(order());
@@ -142,7 +168,10 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
   });
 
   it("returns REJECTED on network failure", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNREFUSED")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
+    );
 
     const broker = new FyersBroker(deps());
     const outcome = await broker.execute(order());
@@ -154,10 +183,13 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
 
   it("invokes rate limiter before making the request", async () => {
     const checkRateLimit = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ s: "ok", id: "x" }),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ s: "ok", id: "x" }),
+      }),
+    );
 
     const broker = new FyersBroker(deps({ checkRateLimit }));
     await broker.execute(order());
@@ -171,41 +203,65 @@ describe("FyersBroker.status (plan/12 §8 reconciliation)", () => {
   });
 
   it("returns found:false when no token", async () => {
-    const broker = new FyersBroker(deps({ getToken: () => Promise.resolve(null) }));
+    const broker = new FyersBroker(
+      deps({ getToken: () => Promise.resolve(null) }),
+    );
     const s = await broker.status("ord_1");
     expect(s).toEqual({ clientOrderId: "ord_1", found: false });
   });
 
   it("maps FYERS status codes to internal status", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        s: "ok",
-        orderBook: [
-          { orderTag: "ord_filled", id: "f1", status: 2 },
-          { orderTag: "ord_rejected", id: "f2", status: 4 },
-          { orderTag: "ord_cancelled", id: "f3", status: 1 },
-          { orderTag: "ord_pending", id: "f4", status: 5 },
-        ],
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            s: "ok",
+            orderBook: [
+              { orderTag: "ord_filled", id: "f1", status: 2 },
+              { orderTag: "ord_rejected", id: "f2", status: 4 },
+              { orderTag: "ord_cancelled", id: "f3", status: 1 },
+              { orderTag: "ord_pending", id: "f4", status: 5 },
+            ],
+          }),
       }),
-    }));
+    );
 
     const broker = new FyersBroker(deps());
 
-    expect(await broker.status("ord_filled")).toMatchObject({ found: true, status: "FILLED" });
-    expect(await broker.status("ord_rejected")).toMatchObject({ found: true, status: "REJECTED" });
-    expect(await broker.status("ord_cancelled")).toMatchObject({ found: true, status: "CANCELLED" });
-    expect(await broker.status("ord_pending")).toMatchObject({ found: true, status: "PENDING" });
+    expect(await broker.status("ord_filled")).toMatchObject({
+      found: true,
+      status: "FILLED",
+    });
+    expect(await broker.status("ord_rejected")).toMatchObject({
+      found: true,
+      status: "REJECTED",
+    });
+    expect(await broker.status("ord_cancelled")).toMatchObject({
+      found: true,
+      status: "CANCELLED",
+    });
+    expect(await broker.status("ord_pending")).toMatchObject({
+      found: true,
+      status: "PENDING",
+    });
   });
 
   it("returns found:false when orderTag is not in the book", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ s: "ok", orderBook: [] }),
-    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ s: "ok", orderBook: [] }),
+      }),
+    );
 
     const broker = new FyersBroker(deps());
-    expect(await broker.status("ghost")).toEqual({ clientOrderId: "ghost", found: false });
+    expect(await broker.status("ghost")).toEqual({
+      clientOrderId: "ghost",
+      found: false,
+    });
   });
 });
 
@@ -216,7 +272,9 @@ describe("FyersBroker connection state", () => {
 
   it("stays disconnected when no token for connect()", async () => {
     const states: string[] = [];
-    const broker = new FyersBroker(deps({ getToken: () => Promise.resolve(null) }));
+    const broker = new FyersBroker(
+      deps({ getToken: () => Promise.resolve(null) }),
+    );
     broker.onConnectionChange((s) => states.push(s));
     await broker.connect();
     // Should have gone connecting → disconnected

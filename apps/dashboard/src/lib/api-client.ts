@@ -119,18 +119,29 @@ export interface UpdateSettingsBody {
 
 export const api = {
   login: (email: string, password: string, totpToken?: string) =>
-    apiFetch<{ userId: string; email: string; role: string } | { error: string; requiresTotp: boolean }>("/auth/login", {
+    apiFetch<
+      | { userId: string; email: string; role: string }
+      | { error: string; requiresTotp: boolean }
+    >("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password, ...(totpToken ? { totpToken } : {}) }),
+      body: JSON.stringify({
+        email,
+        password,
+        ...(totpToken ? { totpToken } : {}),
+      }),
     }),
   loginRaw: async (email: string, password: string, totpToken?: string) => {
     const response = await fetch(`${API_BASE}/auth/login`, {
       credentials: "include",
       headers: { "content-type": "application/json" },
       method: "POST",
-      body: JSON.stringify({ email, password, ...(totpToken ? { totpToken } : {}) }),
+      body: JSON.stringify({
+        email,
+        password,
+        ...(totpToken ? { totpToken } : {}),
+      }),
     });
-    const data = await response.json() as Record<string, unknown>;
+    const data = (await response.json()) as Record<string, unknown>;
     return { status: response.status, data };
   },
   logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" }),
@@ -181,7 +192,9 @@ export const api = {
 
   // TOTP 2FA management (plan/21 §8)
   totpSetup: () =>
-    apiFetch<{ secret: string; url: string }>("/auth/totp/setup", { method: "POST" }),
+    apiFetch<{ secret: string; url: string }>("/auth/totp/setup", {
+      method: "POST",
+    }),
   totpVerify: (token: string, secret: string) =>
     apiFetch<{ ok: boolean }>("/auth/totp/verify", {
       method: "POST",

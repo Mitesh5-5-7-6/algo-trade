@@ -35,8 +35,10 @@ async function main() {
   await sleep(5000);
   console.log("Restarting Redis container...");
   run("docker start algotrade-redis-1 || docker start algo-trade-redis-1");
-  console.log("Verify API logs. It should reconnect and resume operations cleanly.");
-  
+  console.log(
+    "Verify API logs. It should reconnect and resume operations cleanly.",
+  );
+
   await sleep(5000);
 
   console.log(`\n${GRN}--- Drill 2: API Container Crash ---${RST}`);
@@ -48,16 +50,26 @@ async function main() {
 
   console.log(`\n${GRN}--- Drill 3: MongoDB Backup/Restore ---${RST}`);
   console.log("Creating a dump of the Mongo database...");
-  run("docker exec algotrade-mongo-1 mongodump --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive || docker exec algo-trade-mongo-1 mongodump --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive");
+  run(
+    "docker exec algotrade-mongo-1 mongodump --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive || docker exec algo-trade-mongo-1 mongodump --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive",
+  );
   console.log("Simulating data loss (dropping DB)...");
-  run('docker exec algotrade-mongo-1 mongosh algotrade --eval "db.dropDatabase()" || docker exec algo-trade-mongo-1 mongosh algotrade --eval "db.dropDatabase()"');
+  run(
+    'docker exec algotrade-mongo-1 mongosh algotrade --eval "db.dropDatabase()" || docker exec algo-trade-mongo-1 mongosh algotrade --eval "db.dropDatabase()"',
+  );
   console.log("Restoring from dump...");
-  run("docker exec algotrade-mongo-1 mongorestore --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive || docker exec algo-trade-mongo-1 mongorestore --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive");
+  run(
+    "docker exec algotrade-mongo-1 mongorestore --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive || docker exec algo-trade-mongo-1 mongorestore --uri=mongodb://localhost:27017/algotrade --archive=/tmp/algotrade.archive",
+  );
   console.log("Database restored successfully.");
 
   console.log(`\n${GRN}=== All Chaos Drills Complete! ===${RST}`);
-  console.log("You can view logs via: docker-compose -f docker-compose.staging.yml logs -f");
-  console.log("To teardown: docker-compose -f docker-compose.staging.yml down -v");
+  console.log(
+    "You can view logs via: docker-compose -f docker-compose.staging.yml logs -f",
+  );
+  console.log(
+    "To teardown: docker-compose -f docker-compose.staging.yml down -v",
+  );
 }
 
 main().catch(console.error);

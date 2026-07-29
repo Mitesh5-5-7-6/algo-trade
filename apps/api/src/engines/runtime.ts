@@ -143,8 +143,10 @@ export async function startEngineRuntime(deps: {
 
   // --- Market Data Engine (Inbound) ---
   const marketDataPorts: MarketDataPorts = {
-    writeHotPrice: (symbol, tick) => writeHot(hotPriceKey(symbol), tick).then(() => undefined),
-    writeHotSession: (phase) => writeHot(hotSessionKey(), { phase }).then(() => undefined),
+    writeHotPrice: (symbol, tick) =>
+      writeHot(hotPriceKey(symbol), tick).then(() => undefined),
+    writeHotSession: (phase) =>
+      writeHot(hotSessionKey(), { phase }).then(() => undefined),
     saveCandle: (candle) => candles.upsert(candle),
     publish,
   };

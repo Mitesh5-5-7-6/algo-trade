@@ -20,7 +20,10 @@ function encrypt(text: string, keyHex: string): string {
   if (key.length !== 32) throw new Error("Invalid encryption key length");
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
+  const encrypted = Buffer.concat([
+    cipher.update(text, "utf8"),
+    cipher.final(),
+  ]);
   const authTag = cipher.getAuthTag();
   return Buffer.concat([iv, authTag, encrypted]).toString("base64");
 }
@@ -58,8 +61,10 @@ export class BrokerTokensRepository {
     rawRefreshToken?: string,
   ): Promise<void> {
     const encryptedToken = encrypt(rawAccessToken, this.keyHex);
-    const encryptedRefreshToken = rawRefreshToken ? encrypt(rawRefreshToken, this.keyHex) : undefined;
-    
+    const encryptedRefreshToken = rawRefreshToken
+      ? encrypt(rawRefreshToken, this.keyHex)
+      : undefined;
+
     const doc: BrokerToken = {
       userId,
       encryptedToken,
@@ -67,13 +72,13 @@ export class BrokerTokensRepository {
       expiresAt,
       updatedAt: Date.now(),
     };
-    
+
     const valid = BrokerTokenSchema.parse(doc);
-    
+
     await this.collection.updateOne(
       { userId },
       { $set: valid },
-      { upsert: true }
+      { upsert: true },
     );
   }
 
@@ -81,18 +86,28 @@ export class BrokerTokensRepository {
    * Retrieves and decrypts the broker token for a user.
    * Returns null if not found.
    */
-  async getDecryptedToken(userId: string): Promise<{ accessToken: string; refreshToken?: string; expiresAt: number } | null> {
+  async getDecryptedToken(userId: string): Promise<{
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt: number;
+  } | null> {
     const doc = await this.collection.findOne(
       { userId },
-      { projection: { _id: 0 } }
+      { projection: { _id: 0 } },
     );
     if (!doc) return null;
-    
+
     const tokenDoc = BrokerTokenSchema.parse(doc);
     const accessToken = decrypt(tokenDoc.encryptedToken, this.keyHex);
-    const refreshToken = tokenDoc.encryptedRefreshToken ? decrypt(tokenDoc.encryptedRefreshToken, this.keyHex) : undefined;
-    
-    const result: { accessToken: string; refreshToken?: string; expiresAt: number } = {
+    const refreshToken = tokenDoc.encryptedRefreshToken
+      ? decrypt(tokenDoc.encryptedRefreshToken, this.keyHex)
+      : undefined;
+
+    const result: {
+      accessToken: string;
+      refreshToken?: string;
+      expiresAt: number;
+    } = {
       accessToken,
       expiresAt: tokenDoc.expiresAt,
     };
@@ -101,7 +116,7 @@ export class BrokerTokensRepository {
     }
     return result;
   }
-  
+
   async deleteToken(userId: string): Promise<void> {
     await this.collection.deleteOne({ userId });
   }

@@ -114,7 +114,10 @@ export async function bootstrap(
   // Repositories needed by broker token lookup (declared before broker so
   // the getToken closure can reference them).
   const users = new UsersRepository(mongo.db);
-  const brokerTokens = new BrokerTokensRepository(mongo.db, config.TOKEN_ENCRYPTION_KEY);
+  const brokerTokens = new BrokerTokensRepository(
+    mongo.db,
+    config.TOKEN_ENCRYPTION_KEY,
+  );
 
   // --- Broker (plan/19 §2) ---
   let broker: Broker;
@@ -165,8 +168,8 @@ export async function bootstrap(
 
   // --- Runtime (plan/05 §3) ---
   const runtime = await startEngineRuntime({ redis, mongo, logger, broker });
-  
-  // Establish the broker data feed (plan/19 §4). 
+
+  // Establish the broker data feed (plan/19 §4).
   // Done before enabling strategies so indicator warm-up has live prices.
   await broker.connect();
 
@@ -181,7 +184,11 @@ export async function bootstrap(
   equityTimer.unref();
 
   let tokenLifecycle: { close(): Promise<void> } | undefined;
-  if (config.BROKER_MODE === "live" && config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
+  if (
+    config.BROKER_MODE === "live" &&
+    config.FYERS_APP_ID &&
+    config.FYERS_APP_SECRET
+  ) {
     tokenLifecycle = await startTokenLifecycleJobs({
       redis,
       brokerTokens,
@@ -234,7 +241,12 @@ export async function bootstrap(
   });
   registerAuthGuard(server, { sessions, users, secureCookies });
   registerAuthRoutes(server, { users, sessions, rateLimiter, secureCookies });
-  if (config.BROKER_MODE === "live" && config.FYERS_APP_ID && config.FYERS_APP_SECRET && config.FYERS_REDIRECT_URL) {
+  if (
+    config.BROKER_MODE === "live" &&
+    config.FYERS_APP_ID &&
+    config.FYERS_APP_SECRET &&
+    config.FYERS_REDIRECT_URL
+  ) {
     registerFyersAuthRoutes(server, {
       fyersAppId: config.FYERS_APP_ID,
       fyersAppSecret: config.FYERS_APP_SECRET,

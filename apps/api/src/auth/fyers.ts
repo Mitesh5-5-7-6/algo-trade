@@ -29,12 +29,17 @@ interface FyersTokenResponse {
 function parse<T>(schema: ZodType<T>, data: unknown): T {
   const result = schema.safeParse(data);
   if (!result.success) {
-    throw new ValidationError("invalid request", { issues: result.error.issues });
+    throw new ValidationError("invalid request", {
+      issues: result.error.issues,
+    });
   }
   return result.data;
 }
 
-export function registerFyersAuthRoutes(app: ApiServer, deps: FyersAuthRoutesDeps): void {
+export function registerFyersAuthRoutes(
+  app: ApiServer,
+  deps: FyersAuthRoutesDeps,
+): void {
   // Returns the URL the dashboard should redirect the operator to for FYERS login
   app.get("/auth/fyers/login-url", async (_request, _reply) => {
     // Requires authenticated operator (auth guard handled externally)
@@ -47,7 +52,9 @@ export function registerFyersAuthRoutes(app: ApiServer, deps: FyersAuthRoutesDep
     const query = parse(CallbackQuery, request.query);
 
     if (query.code !== "200" || !query.auth_code) {
-      throw new UnauthorizedError(`FYERS login failed: ${query.message ?? "No auth code"}`);
+      throw new UnauthorizedError(
+        `FYERS login failed: ${query.message ?? "No auth code"}`,
+      );
     }
 
     const appIdHash = createHash("sha256")
@@ -60,15 +67,20 @@ export function registerFyersAuthRoutes(app: ApiServer, deps: FyersAuthRoutesDep
       code: query.auth_code,
     };
 
-    const response = await fetch("https://api.fyers.in/api/v3/validate-authcode", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetch(
+      "https://api.fyers.in/api/v3/validate-authcode",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
 
     const data = (await response.json()) as FyersTokenResponse;
     if (!response.ok || data.s !== "ok") {
-      throw new UnauthorizedError(`Failed to exchange token: ${data.message ?? "unknown"}`);
+      throw new UnauthorizedError(
+        `Failed to exchange token: ${data.message ?? "unknown"}`,
+      );
     }
 
     // FYERS access tokens usually expire daily (~14 hours).

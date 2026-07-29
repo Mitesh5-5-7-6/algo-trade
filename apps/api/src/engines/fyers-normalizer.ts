@@ -7,7 +7,7 @@ const FyersRawTickSchema = z
   .object({
     symbol: z.string().min(1),
     ltp: z.number(),
-    vol_traded_today: z.number().optional(), 
+    vol_traded_today: z.number().optional(),
     v: z.number().optional(),
     bid: z.number().optional(),
     ask: z.number().optional(),
@@ -21,22 +21,30 @@ const previousVolume = new Map<string, number>();
 export const fyersNormalizer: TickNormalizer = (raw) => {
   let payload = raw;
   if (typeof raw === "string") {
-    try { payload = JSON.parse(raw); } catch { return null; }
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return null;
+    }
   } else if (Buffer.isBuffer(raw)) {
-    try { payload = JSON.parse(raw.toString("utf-8")); } catch { return null; }
+    try {
+      payload = JSON.parse(raw.toString("utf-8"));
+    } catch {
+      return null;
+    }
   }
 
   const parsed = FyersRawTickSchema.safeParse(payload);
   if (!parsed.success) return null;
   const r = parsed.data;
-  
+
   const currentTotalVol = r.vol_traded_today ?? r.v ?? 0;
   const prevTotalVol = previousVolume.get(r.symbol) ?? currentTotalVol;
   const deltaVol = Math.max(0, currentTotalVol - prevTotalVol);
   previousVolume.set(r.symbol, currentTotalVol);
 
   const tsSeconds = r.exch_feed_time ?? r.tt ?? Math.floor(Date.now() / 1000);
-  
+
   const tick = {
     symbol: r.symbol,
     ltp: r.ltp,

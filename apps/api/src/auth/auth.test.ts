@@ -354,7 +354,7 @@ describe("TOTP 2FA", () => {
 
   it("enables TOTP and requires it on next login", async () => {
     const cookie = sessionCookie(await login());
-    
+
     // Setup
     const setup = await app.inject({
       method: "POST",
@@ -362,11 +362,11 @@ describe("TOTP 2FA", () => {
       headers: { cookie },
     });
     const { secret } = setup.json<{ secret: string }>();
-    
+
     // Generate a valid token using our own TOTP implementation (same as server).
     const { generateTestToken } = await import("./totp.test-helper.js");
     const token = generateTestToken(secret);
-    
+
     // Verify
     const verify = await app.inject({
       method: "POST",
@@ -375,7 +375,7 @@ describe("TOTP 2FA", () => {
       payload: { token, secret },
     });
     expect(verify.statusCode).toBe(200);
-    
+
     // Now try logging in again without token
     const res = await app.inject({
       method: "POST",
@@ -383,8 +383,10 @@ describe("TOTP 2FA", () => {
       payload: { email: EMAIL, password: PASSWORD },
     });
     expect(res.statusCode).toBe(401);
-    expect(res.json<{ error: string }>()).toMatchObject({ error: "TOTP_REQUIRED" });
-    
+    expect(res.json<{ error: string }>()).toMatchObject({
+      error: "TOTP_REQUIRED",
+    });
+
     // Now login with token
     const token2 = generateTestToken(secret);
     const res2 = await app.inject({
@@ -396,4 +398,3 @@ describe("TOTP 2FA", () => {
     expect(String(res2.headers["set-cookie"])).toContain("HttpOnly");
   });
 });
-

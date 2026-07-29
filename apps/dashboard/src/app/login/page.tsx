@@ -127,11 +127,7 @@ export default function LoginPage() {
         {error !== null && <p className="login-error">{error}</p>}
 
         <button type="submit" className="btn-primary" disabled={busy}>
-          {busy
-            ? "Signing in…"
-            : needsTotp
-              ? "Verify & Sign in"
-              : "Sign in"}
+          {busy ? "Signing in…" : needsTotp ? "Verify & Sign in" : "Sign in"}
         </button>
       </form>
     </div>
