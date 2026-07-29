@@ -2,6 +2,7 @@ export * from "./password.js";
 export * from "./sessions.js";
 export * from "./rate-limit.js";
 export * from "./cookie.js";
+export * from "./fyers.js";
 export * from "./config.js";
 export * from "./redis-kv.js";
 export * from "./plugin.js";

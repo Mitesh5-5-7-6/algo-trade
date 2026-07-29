@@ -9,6 +9,7 @@ import {
   ensureIndexes,
   SettingsRepository,
   UsersRepository,
+  BrokerTokensRepository,
   type MongoConnection,
 } from "@neelkanth/db";
 import cors from "@fastify/cors";
@@ -28,6 +29,8 @@ import {
   SESSION_ABSOLUTE_MAX_SECONDS,
   SESSION_IDLE_TTL_SECONDS,
 } from "./auth/index.js";
+import { registerFyersAuthRoutes } from "./auth/fyers.js";
+import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
@@ -104,6 +107,16 @@ export async function bootstrap(
   // strategies + warm indicators) runs inside. The Market Data Engine + FYERS
   // feed attach to the same bus once broker credentials exist (plan/19).
   log.info("wiring engines");
+
+  // Repositories needed by broker token lookup (declared before broker so
+  // the getToken closure can reference them).
+  const users = new UsersRepository(mongo.db);
+  const brokerTokens = new BrokerTokensRepository(mongo.db, config.TOKEN_ENCRYPTION_KEY);
+
+  // Runtime creates its own PaperBroker internally (plan/11). When the live
+  // broker lands fully, the runtime will accept an injected Broker. For now
+  // the FyersBroker is constructed here so auth routes can reference it,
+  // but the pipeline still runs through the paper broker inside runtime.
   const runtime = await startEngineRuntime({ redis, mongo, logger });
   await runtime.syncSession(Date.now()); // initial session state
   const sessionTimer = setInterval(() => {
@@ -114,6 +127,17 @@ export async function bootstrap(
     runtime.sampleEquity(Date.now());
   }, EQUITY_SAMPLE_MS);
   equityTimer.unref();
+
+  let tokenLifecycle: { close(): Promise<void> } | undefined;
+  if (config.BROKER_MODE === "live" && config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
+    tokenLifecycle = await startTokenLifecycleJobs({
+      redis,
+      brokerTokens,
+      logger,
+      fyersAppId: config.FYERS_APP_ID,
+      fyersAppSecret: config.FYERS_APP_SECRET,
+    });
+  }
 
   // --- Readiness probes (plan/23 §4) ---
   const readinessChecks: DependencyCheck[] = [
@@ -137,7 +161,6 @@ export async function bootstrap(
   // Sessions + login throttle live in Redis; the guard hook must be registered
   // before the routes it protects, so it runs on them. Cookies are Secure only
   // in production (dev serves plain HTTP).
-  const users = new UsersRepository(mongo.db);
   const sessions = new SessionStore(
     redisSessionKV(redis.client),
     SESSION_IDLE_TTL_SECONDS,
@@ -159,6 +182,14 @@ export async function bootstrap(
   });
   registerAuthGuard(server, { sessions, users, secureCookies });
   registerAuthRoutes(server, { users, sessions, rateLimiter, secureCookies });
+  if (config.BROKER_MODE === "live" && config.FYERS_APP_ID && config.FYERS_APP_SECRET && config.FYERS_REDIRECT_URL) {
+    registerFyersAuthRoutes(server, {
+      fyersAppId: config.FYERS_APP_ID,
+      fyersAppSecret: config.FYERS_APP_SECRET,
+      fyersRedirectUrl: config.FYERS_REDIRECT_URL,
+      brokerTokens,
+    });
+  }
   registerControlPlane(server, {
     db: mongo.db,
     runtime,
@@ -199,6 +230,12 @@ export async function bootstrap(
       await bridge.close().catch((err: unknown) => {
         shutdownLog.error({ err }, "error closing realtime bridge");
       });
+      if (tokenLifecycle) {
+        shutdownLog.info("closing token lifecycle jobs");
+        await tokenLifecycle.close().catch((err: unknown) => {
+          shutdownLog.error({ err }, "error closing token lifecycle");
+        });
+      }
       shutdownLog.info("closing engine runtime");
       await runtime.shutdown().catch((err: unknown) => {
         shutdownLog.error({ err }, "error closing runtime");

@@ -43,6 +43,11 @@ export class UsersRepository {
     return doc === null ? null : UserSchema.parse(doc);
   }
 
+  async findFirstUser(): Promise<User | null> {
+    const doc = await this.collection.findOne({}, { projection: { _id: 0 } });
+    return doc === null ? null : UserSchema.parse(doc);
+  }
+
   async findById(userId: string): Promise<User | null> {
     const doc = await this.collection.findOne(
       { userId },

@@ -19,9 +19,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@neelkanth/core": "workspace:*"
+    "@neelkanth/core": "workspace:*",
+    "fyers-api-v3": "^2.0.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"
   }
