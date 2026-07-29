@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TickSchema, type Tick } from "@neelkanth/core";
+import { TickSchema } from "@neelkanth/core";
 import type { TickNormalizer } from "@neelkanth/engines";
 
 // FYERS WebSocket V3 data format for L2/L1 quotes.

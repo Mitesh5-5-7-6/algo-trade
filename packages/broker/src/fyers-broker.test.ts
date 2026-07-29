@@ -8,8 +8,21 @@ import { FyersBroker, type FyersBrokerDeps } from "./fyers-broker.js";
  * the request shaping, response normalization, and error handling.
  */
 
-const APP_ID = "TEST_APP";
-const ACCESS_TOKEN = "test_token_abc";
+const APP_ID = "T123456";
+const ACCESS_TOKEN = "test_token";
+
+interface FyersOrderPayload {
+  symbol?: string;
+  qty?: number;
+  type?: number;
+  side?: number;
+  limitPrice?: number;
+  stopPrice?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  orderTag?: string;
+  productType?: string;
+}
 
 function deps(overrides: Partial<FyersBrokerDeps> = {}): FyersBrokerDeps {
   return {
@@ -71,7 +84,7 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     expect(headers["Authorization"]).toBe(`${APP_ID}:${ACCESS_TOKEN}`);
 
     // Verify the order payload shape
-    const body = JSON.parse(options.body as string);
+    const body = JSON.parse(options.body as string) as FyersOrderPayload;
     expect(body.symbol).toBe("NSE:RELIANCE-EQ");
     expect(body.qty).toBe(10);
     expect(body.type).toBe(2); // MARKET = 2
@@ -91,7 +104,7 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
 
     const body = JSON.parse(
       (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
-    );
+    ) as FyersOrderPayload;
     expect(body.type).toBe(1); // LIMIT = 1
     expect(body.side).toBe(-1); // SELL = -1
     expect(body.limitPrice).toBe(2500);
@@ -118,7 +131,7 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
 
     const body = JSON.parse(
       (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
-    );
+    ) as FyersOrderPayload;
     expect(body.productType).toBe("BO");
     expect(body.stopLoss).toBe(5); // 100 - 95
     expect(body.takeProfit).toBe(10); // 110 - 100
@@ -138,7 +151,7 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
 
     const body = JSON.parse(
       (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
-    );
+    ) as FyersOrderPayload;
     expect(body.productType).toBe("CO");
     expect(body.stopPrice).toBe(95); // CO sends absolute trigger price
     expect(body.stopLoss).toBeUndefined(); // stopLoss field is only for BO
@@ -283,8 +296,8 @@ describe("FyersBroker connection state", () => {
 
   it("registers onData and onOrderUpdate handlers without throwing", () => {
     const broker = new FyersBroker(deps());
-    expect(() => broker.onData(() => {})).not.toThrow();
-    expect(() => broker.onOrderUpdate(() => {})).not.toThrow();
+    expect(() => { broker.onData(function() {}); }).not.toThrow();
+    expect(() => { broker.onOrderUpdate(function() {}); }).not.toThrow();
   });
 
   it("disconnect is idempotent", async () => {

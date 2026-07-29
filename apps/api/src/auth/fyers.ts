@@ -41,7 +41,7 @@ export function registerFyersAuthRoutes(
   deps: FyersAuthRoutesDeps,
 ): void {
   // Returns the URL the dashboard should redirect the operator to for FYERS login
-  app.get("/auth/fyers/login-url", async (_request, _reply) => {
+  app.get("/auth/fyers/login-url", () => {
     // Requires authenticated operator (auth guard handled externally)
     const url = `https://api.fyers.in/api/v3/generate-authcode?client_id=${deps.fyersAppId}&redirect_uri=${deps.fyersRedirectUrl}&response_type=code&state=fyers_auth`;
     return { url };

@@ -37,7 +37,7 @@ function decrypt(cipherTextBase64: string, keyHex: string): string {
   const encrypted = data.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
-  return decipher.update(encrypted) + decipher.final("utf8");
+  return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
 }
 
 export class BrokerTokensRepository {

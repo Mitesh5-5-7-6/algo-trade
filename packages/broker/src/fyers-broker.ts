@@ -137,11 +137,11 @@ export class FyersBroker implements Broker {
         clientOrderId: order.clientOrderId,
         brokerOrderId: data.id || "unknown",
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       return {
         status: "REJECTED",
         clientOrderId: order.clientOrderId,
-        reason: err.message || "Network error",
+        reason: (err as Error).message || "Network error",
       };
     }
   }
@@ -188,7 +188,7 @@ export class FyersBroker implements Broker {
       return { clientOrderId, found: false };
     }
 
-    const order = data.orderBook.find((o: any) => o.orderTag === clientOrderId);
+    const order = data.orderBook.find((o: { orderTag: string, status: number, id: string }) => o.orderTag === clientOrderId);
     if (!order) {
       return { clientOrderId, found: false };
     }
@@ -233,13 +233,13 @@ export class FyersBroker implements Broker {
     this.ws.on("open", () => {
       this.updateState("connected");
       if (this.subscribedSymbols.length > 0) {
-        this.subscribe(this.subscribedSymbols); // Re-establish subscriptions
+        void this.subscribe(this.subscribedSymbols); // Re-establish subscriptions
       }
     });
 
     this.ws.on("message", (data) => {
       // Pass raw data to downstream normalizer
-      this.dataHandlers.forEach((h) => h(data));
+      this.dataHandlers.forEach(function(h) { h(data); });
     });
 
     this.ws.on("close", () => {
@@ -252,6 +252,7 @@ export class FyersBroker implements Broker {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async disconnect(): Promise<void> {
     if (this.ws) {
       this.ws.close();
@@ -260,6 +261,7 @@ export class FyersBroker implements Broker {
     this.updateState("disconnected");
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async subscribe(symbols: readonly string[]): Promise<void> {
     this.subscribedSymbols = symbols;
     if (this.connectionState !== "connected" || !this.ws) return;
@@ -286,9 +288,10 @@ export class FyersBroker implements Broker {
   private updateState(state: BrokerConnectionState) {
     if (this.connectionState === state) return;
     this.connectionState = state;
-    this.stateHandlers.forEach((h) => h(state));
+    this.stateHandlers.forEach(function(h) { h(state); });
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   private async getHeaders(token: string) {
     return {
       "Content-Type": "application/json",

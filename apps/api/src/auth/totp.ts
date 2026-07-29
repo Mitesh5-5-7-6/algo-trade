@@ -20,12 +20,12 @@ function base32Encode(buffer: Buffer): string {
     value = (value << 8) | byte;
     bits += 8;
     while (bits >= 5) {
-      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
+      output += BASE32_ALPHABET.charAt((value >>> (bits - 5)) & 31);
       bits -= 5;
     }
   }
   if (bits > 0) {
-    output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
+    output += BASE32_ALPHABET.charAt((value << (5 - bits)) & 31);
   }
   return output;
 }
@@ -59,12 +59,12 @@ function generateHOTP(secret: Buffer, counter: bigint): string {
   hmac.update(counterBuffer);
   const hash = hmac.digest();
 
-  const offset = hash[hash.length - 1]! & 0x0f;
+  const offset = (hash[hash.length - 1] as number) & 0x0f;
   const code =
-    ((hash[offset]! & 0x7f) << 24) |
-    ((hash[offset + 1]! & 0xff) << 16) |
-    ((hash[offset + 2]! & 0xff) << 8) |
-    (hash[offset + 3]! & 0xff);
+    (((hash[offset] as number) & 0x7f) << 24) |
+    (((hash[offset + 1] as number) & 0xff) << 16) |
+    (((hash[offset + 2] as number) & 0xff) << 8) |
+    ((hash[offset + 3] as number) & 0xff);
 
   return String(code % 1_000_000).padStart(6, "0");
 }

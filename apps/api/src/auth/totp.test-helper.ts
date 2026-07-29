@@ -36,12 +36,12 @@ export function generateTestToken(base32Secret: string): string {
   hmac.update(counterBuffer);
   const hash = hmac.digest();
 
-  const offset = hash[hash.length - 1]! & 0x0f;
+  const offset = (hash[hash.length - 1] as number) & 0x0f;
   const code =
-    ((hash[offset]! & 0x7f) << 24) |
-    ((hash[offset + 1]! & 0xff) << 16) |
-    ((hash[offset + 2]! & 0xff) << 8) |
-    (hash[offset + 3]! & 0xff);
+    (((hash[offset] as number) & 0x7f) << 24) |
+    (((hash[offset + 1] as number) & 0xff) << 16) |
+    (((hash[offset + 2] as number) & 0xff) << 8) |
+    ((hash[offset + 3] as number) & 0xff);
 
   return String(code % 1_000_000).padStart(6, "0");
 }

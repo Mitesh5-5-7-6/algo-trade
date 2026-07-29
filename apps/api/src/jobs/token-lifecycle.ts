@@ -2,7 +2,6 @@ import { Queue, Worker, type Job } from "bullmq";
 import type { RedisConnections } from "@neelkanth/redis";
 import { BrokerTokensRepository } from "@neelkanth/db";
 import type { Logger } from "@neelkanth/logger";
-import { createHash } from "crypto";
 
 export interface TokenLifecycleDeps {
   redis: RedisConnections;
@@ -26,7 +25,7 @@ export async function startTokenLifecycleJobs(deps: TokenLifecycleDeps) {
 
   const worker = new Worker(
     QUEUE_NAME,
-    async (job: Job) => {
+    (job: Job) => {
       if (job.name === "refresh-tokens") {
         deps.logger.info("Running token refresh job");
 

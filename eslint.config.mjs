@@ -15,6 +15,7 @@ export default tseslint.config(
       "**/.turbo/**",
       "**/coverage/**",
       "**/next-env.d.ts",
+      "**/scripts/**",
     ],
   },
   js.configs.recommended,

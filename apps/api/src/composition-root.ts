@@ -141,25 +141,25 @@ export async function bootstrap(
     const paper = new PaperBroker({
       readPrice: async (symbol) => {
         const val = await redis.client.get(hotPriceKey(symbol));
-        return val ? JSON.parse(val).ltp : null;
+        return val ? (JSON.parse(val) as { ltp: number }).ltp : null;
       },
       readSessionOpen: async () => {
         const val = await redis.client.get(hotSessionKey());
-        return val ? JSON.parse(val).phase === "open" : false;
+        return val ? (JSON.parse(val) as { phase: string }).phase === "open" : false;
       },
     });
 
     if (fyersBroker) {
       broker = {
-        connect: () => fyersBroker!.connect(),
-        disconnect: () => fyersBroker!.disconnect(),
-        subscribe: (symbols) => fyersBroker!.subscribe(symbols),
-        onData: (cb) => fyersBroker!.onData(cb),
-        onConnectionChange: (cb) => fyersBroker!.onConnectionChange(cb),
+        connect: () => fyersBroker.connect(),
+        disconnect: () => fyersBroker.disconnect(),
+        subscribe: (symbols) => fyersBroker.subscribe(symbols),
+        onData: (cb) => { fyersBroker.onData(cb); },
+        onConnectionChange: (cb) => { fyersBroker.onConnectionChange(cb); },
         execute: (order) => paper.execute(order),
         cancel: (id) => paper.cancel(id),
         status: (id) => paper.status(id),
-        onOrderUpdate: (cb) => paper.onOrderUpdate(cb),
+        onOrderUpdate: (cb) => { paper.onOrderUpdate(cb); },
       };
     } else {
       broker = paper;
