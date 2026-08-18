@@ -11,7 +11,9 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@neelkanth/core": ["../../packages/core/dist/index.d.ts"],
+      "@neelkanth/contracts": ["../../packages/contracts/dist/index.d.ts"]
     }
   },
   "include": ["next-env.d.ts", "src", ".next/types/**/*.ts"],
