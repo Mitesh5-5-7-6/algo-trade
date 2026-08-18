@@ -25,7 +25,7 @@ export async function startTokenLifecycleJobs(deps: TokenLifecycleDeps) {
 
   const worker = new Worker(
     QUEUE_NAME,
-    (job: Job) => {
+    async (job: Job) => {
       if (job.name === "refresh-tokens") {
         deps.logger.info("Running token refresh job");
 
