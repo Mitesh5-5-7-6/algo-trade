@@ -2,5 +2,3 @@
   "buildCommand": "turbo run build --filter=@neelkanth/dashboard...",
   "outputDirectory": "apps/dashboard/out"
 }
-
-
