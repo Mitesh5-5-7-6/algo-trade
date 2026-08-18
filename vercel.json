@@ -1,6 +1,0 @@
-{
-  "buildCommand": "turbo run build --filter=@neelkanth/dashboard...",
-  "outputDirectory": "out"
-}
-
-
