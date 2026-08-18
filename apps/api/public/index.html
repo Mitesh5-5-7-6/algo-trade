@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Neelkanth API — not served here</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0b0d10;
+        color: #c8cdd4;
+        font: 15px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      main { max-width: 34rem; padding: 2rem; }
+      h1 { font-size: 1rem; color: #f0f3f6; margin: 0 0 1rem; }
+      p { margin: 0 0 0.75rem; }
+      code { color: #7fd1b9; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Neelkanth API — no service at this origin</h1>
+      <p>
+        This deployment exists only to build and typecheck
+        <code>@neelkanth/api</code> on push. No API is served here.
+      </p>
+      <p>
+        The control-plane API is a long-lived Fastify process (socket.io,
+        BullMQ workers, MongoDB and Redis pools) and runs on its own host.
+      </p>
+    </main>
+  </body>
+</html>
