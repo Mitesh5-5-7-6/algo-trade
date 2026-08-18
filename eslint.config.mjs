@@ -4,7 +4,6 @@
 // custom rules per the 25 §10 roadmap once the packages they police exist.
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
-import nextPlugin from "eslint-plugin-next";
 
 export default tseslint.config(
   {
@@ -21,7 +20,6 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
-  nextPlugin.configs.recommended,
   {
     files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {
