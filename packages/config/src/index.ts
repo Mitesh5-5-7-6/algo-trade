@@ -29,6 +29,17 @@ const EnvSchema = z
     API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
     /** Browser origin allowed to call the API (CORS + socket handshake). */
     DASHBOARD_ORIGIN: z.string().url().default("http://localhost:3000"),
+    /**
+     * This API's own public origin. Used only to work out whether the
+     * dashboard is a different *site*, which decides SameSite on the session
+     * cookie (see apps/api/src/auth/same-site.ts). Unset ⇒ assumed cross-site,
+     * because that failure mode costs CSRF hardening while the reverse
+     * silently breaks every authenticated request.
+     */
+    PUBLIC_API_ORIGIN: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().url().optional(),
+    ),
 
     // --- Infrastructure ---
     MONGO_URI: z.string().min(1).startsWith("mongodb"),

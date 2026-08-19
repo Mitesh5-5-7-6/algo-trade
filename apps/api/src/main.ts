@@ -1,6 +1,7 @@
 import { loadConfig, ConfigValidationError } from "@neelkanth/config";
 import { createLogger } from "@neelkanth/logger";
 import { bootstrap } from "./composition-root.js";
+import { platformEnv } from "./platform-env.js";
 
 /**
  * The process entrypoint (plan/05 §3, plan/22 §4).
@@ -15,7 +16,7 @@ async function main(): Promise<void> {
   // is legible. process.env is read HERE (the one edge), not in the loader.
   let config;
   try {
-    config = loadConfig(process.env);
+    config = loadConfig(platformEnv(process.env));
   } catch (error) {
     if (error instanceof ConfigValidationError) {
       console.error(error.message); // pre-logger boot failure: stderr is all we have

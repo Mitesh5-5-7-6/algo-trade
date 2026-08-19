@@ -36,6 +36,7 @@ import {
 } from "./auth/index.js";
 import { registerFyersAuthRoutes } from "./auth/fyers.js";
 import { registerFyersWebhookRoutes } from "./webhooks/index.js";
+import { isCrossSite } from "./auth/same-site.js";
 import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
@@ -242,6 +243,20 @@ export async function bootstrap(
     LOGIN_RATE_LIMIT,
   );
   const secureCookies = config.NODE_ENV === "production";
+  // A dashboard on a different registrable domain never receives a
+  // SameSite=Lax cookie, so the session would silently never arrive and every
+  // authenticated request would 401 (see auth/same-site.ts).
+  const crossSiteCookies = isCrossSite(
+    config.DASHBOARD_ORIGIN,
+    config.PUBLIC_API_ORIGIN,
+  );
+  if (crossSiteCookies) {
+    log.warn(
+      { dashboardOrigin: config.DASHBOARD_ORIGIN },
+      "dashboard is a different site than the API: session cookies use " +
+        "SameSite=None, forfeiting the CSRF protection of plan/21 §3",
+    );
+  }
 
   const server = buildServer({ logger, readinessChecks });
   // CORS with credentials so the dashboard (a separate origin in dev; same
@@ -251,8 +266,19 @@ export async function bootstrap(
     origin: config.DASHBOARD_ORIGIN,
     credentials: true,
   });
-  registerAuthGuard(server, { sessions, users, secureCookies });
-  registerAuthRoutes(server, { users, sessions, rateLimiter, secureCookies });
+  registerAuthGuard(server, {
+    sessions,
+    users,
+    secureCookies,
+    crossSiteCookies,
+  });
+  registerAuthRoutes(server, {
+    users,
+    sessions,
+    rateLimiter,
+    secureCookies,
+    crossSiteCookies,
+  });
   if (
     config.BROKER_MODE === "live" &&
     config.FYERS_APP_ID &&

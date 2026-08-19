@@ -10,6 +10,27 @@ export const SESSION_COOKIE = "nk_session";
 export interface CookieOptions {
   maxAgeSeconds: number;
   secure: boolean;
+  /**
+   * Set when the dashboard and the API are on different registrable domains —
+   * e.g. two `*.vercel.app` subdomains, which are separate *sites* because
+   * `vercel.app` is on the Public Suffix List. A `SameSite=Lax` cookie is not
+   * sent on cross-site XHR at all, so the session would simply never arrive.
+   *
+   * `SameSite=None` is the only value browsers send cross-site, and it gives
+   * up the CSRF protection plan/21 §3 leans on. Prefer co-locating the two on
+   * one registrable domain (`app.example.com` + `api.example.com`) and leaving
+   * this off; reach for it only when that is genuinely not an option.
+   */
+  crossSite?: boolean;
+}
+
+/**
+ * `SameSite=None` is meaningless — and rejected by browsers — without
+ * `Secure`, so cross-site implies secure regardless of what was asked for.
+ */
+function sameSiteAttrs(secure: boolean, crossSite: boolean): string[] {
+  if (!crossSite) return secure ? ["SameSite=Lax", "Secure"] : ["SameSite=Lax"];
+  return ["SameSite=None", "Secure"];
 }
 
 export function readCookie(
@@ -31,26 +52,29 @@ export function serializeSessionCookie(
   value: string,
   options: CookieOptions,
 ): string {
-  const attrs = [
+  return [
     `${SESSION_COOKIE}=${encodeURIComponent(value)}`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    ...sameSiteAttrs(options.secure, options.crossSite ?? false),
     `Max-Age=${String(options.maxAgeSeconds)}`,
-  ];
-  if (options.secure) attrs.push("Secure");
-  return attrs.join("; ");
+  ].join("; ");
 }
 
-/** A cookie that deletes itself — logout / failed-resolution cleanup. */
-export function clearSessionCookie(secure: boolean): string {
-  const attrs = [
+/**
+ * A cookie that deletes itself — logout / failed-resolution cleanup. The
+ * attributes must match the ones it was set with or the browser keeps the
+ * original: a clear that does not clear leaves a dead session id in place.
+ */
+export function clearSessionCookie(
+  secure: boolean,
+  crossSite = false,
+): string {
+  return [
     `${SESSION_COOKIE}=`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    ...sameSiteAttrs(secure, crossSite),
     "Max-Age=0",
-  ];
-  if (secure) attrs.push("Secure");
-  return attrs.join("; ");
+  ].join("; ");
 }

@@ -26,6 +26,8 @@ export interface AuthGuardDeps {
   users: UsersRepository;
   /** Secure flag on cleared cookies — off in dev (plain HTTP), on in prod. */
   secureCookies: boolean;
+  /** Must match how the cookie was SET, or the browser ignores the clear. */
+  crossSiteCookies?: boolean;
 }
 
 /**
@@ -68,7 +70,10 @@ export function registerAuthGuard(app: ApiServer, deps: AuthGuardDeps): void {
 
     const session = await deps.sessions.resolve(sessionId);
     if (session === null) {
-      reply.header("set-cookie", clearSessionCookie(deps.secureCookies));
+      reply.header(
+        "set-cookie",
+        clearSessionCookie(deps.secureCookies, deps.crossSiteCookies ?? false),
+      );
       throw new UnauthorizedError("session expired or invalid");
     }
 
@@ -76,7 +81,10 @@ export function registerAuthGuard(app: ApiServer, deps: AuthGuardDeps): void {
     if (user === null || user.status !== "active") {
       // The session outlived the account (disabled/removed) — fail closed.
       await deps.sessions.destroy(sessionId);
-      reply.header("set-cookie", clearSessionCookie(deps.secureCookies));
+      reply.header(
+        "set-cookie",
+        clearSessionCookie(deps.secureCookies, deps.crossSiteCookies ?? false),
+      );
       throw new UnauthorizedError("account is not active");
     }
 

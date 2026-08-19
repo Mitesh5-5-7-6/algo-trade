@@ -38,6 +38,8 @@ export interface AuthRoutesDeps {
   sessions: SessionStore;
   rateLimiter: LoginRateLimiter;
   secureCookies: boolean;
+  /** Dashboard on a different registrable domain than this API (see cookie.ts). */
+  crossSiteCookies?: boolean;
 }
 
 /**
@@ -97,6 +99,7 @@ export function registerAuthRoutes(app: ApiServer, deps: AuthRoutesDeps): void {
       serializeSessionCookie(sessionId, {
         maxAgeSeconds: SESSION_IDLE_TTL_SECONDS,
         secure: deps.secureCookies,
+        crossSite: deps.crossSiteCookies ?? false,
       }),
     );
     return { userId: user.userId, email: user.email, role: user.role };
@@ -105,7 +108,10 @@ export function registerAuthRoutes(app: ApiServer, deps: AuthRoutesDeps): void {
   app.post("/auth/logout", async (request, reply) => {
     const sessionId = readCookie(request.headers.cookie, SESSION_COOKIE);
     if (sessionId !== undefined) await deps.sessions.destroy(sessionId);
-    reply.header("set-cookie", clearSessionCookie(deps.secureCookies));
+    reply.header(
+      "set-cookie",
+      clearSessionCookie(deps.secureCookies, deps.crossSiteCookies ?? false),
+    );
     return { ok: true };
   });
 

@@ -59,3 +59,10 @@ export const webhookInboxKey = (source: string) => `webhooks:${source}:inbox`;
 export const webhookChannel = (source: string) => `webhooks:${source}`;
 /** How many raw deliveries the inbox retains before dropping the oldest. */
 export const WEBHOOK_INBOX_MAX = 1000;
+
+/**
+ * `control:` — operator commands that must reach a RUNNING engine (plan/12 §4).
+ * Used when the control plane and the engines are in different processes: the
+ * durable write is the record, this publish is what makes it take effect now.
+ */
+export const controlChannel = () => "control:commands";
