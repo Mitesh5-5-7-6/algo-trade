@@ -2,13 +2,21 @@ import { describe, expect, it } from "vitest";
 import type { Redis } from "ioredis";
 import {
   redactRedisUrl,
+  RedisNotWritableError,
   RedisUnreachableError,
   verifyRedisConnection,
 } from "./client.js";
 
-/** Just enough of a client to answer (or refuse) a PING. */
-function fakeClient(ping: () => Promise<string>): Pick<Redis, "ping"> {
-  return { ping } as Pick<Redis, "ping">;
+/** Just enough of a client for the boot probe: a PING and a SET/DEL pair. */
+function fakeClient(options: {
+  ping?: () => Promise<string>;
+  set?: () => Promise<"OK">;
+}): Redis {
+  return {
+    ping: options.ping ?? (() => Promise.resolve("PONG")),
+    set: options.set ?? (() => Promise.resolve("OK")),
+    del: () => Promise.resolve(1),
+  } as unknown as Redis;
 }
 
 describe("redactRedisUrl", () => {
@@ -44,37 +52,35 @@ describe("redactRedisUrl", () => {
 });
 
 describe("verifyRedisConnection (plan/22 §4: die legibly, not late)", () => {
-  it("resolves when Redis answers", async () => {
+  const URL_WITH_SECRET = "redis://default:hunter2@my-redis.example.com:6379";
+
+  it("resolves when Redis answers and accepts a write", async () => {
     await expect(
       verifyRedisConnection(
-        { client: fakeClient(() => Promise.resolve("PONG")) as Redis },
+        { client: fakeClient({}) },
         "redis://localhost:6379",
       ),
     ).resolves.toBeUndefined();
   });
 
-  it("throws a named error that says WHICH Redis failed", async () => {
-    const url = "redis://default:hunter2@my-redis.example.com:6379";
+  it("throws RedisUnreachableError when PING fails", async () => {
     await expect(
       verifyRedisConnection(
         {
-          client: fakeClient(() =>
-            Promise.reject(new Error("MaxRetriesPerRequestError")),
-          ) as Redis,
+          client: fakeClient({
+            ping: () => Promise.reject(new Error("MaxRetriesPerRequestError")),
+          }),
         },
-        url,
+        URL_WITH_SECRET,
       ),
     ).rejects.toThrow(RedisUnreachableError);
   });
 
   it("names the host and the TLS trap, and never the password", async () => {
-    const url = "redis://default:hunter2@my-redis.example.com:6379";
     try {
       await verifyRedisConnection(
-        {
-          client: fakeClient(() => Promise.reject(new Error("boom"))) as Redis,
-        },
-        url,
+        { client: fakeClient({ ping: () => Promise.reject(new Error("boom")) }) },
+        URL_WITH_SECRET,
       );
       expect.unreachable("should have thrown");
     } catch (error) {
@@ -85,11 +91,51 @@ describe("verifyRedisConnection (plan/22 §4: die legibly, not late)", () => {
     }
   });
 
+  it("catches read-only credentials that PING alone would wave through", async () => {
+    // Exactly the Upstash/ACL case: PING is permitted, SET is NOPERM. Without
+    // the write probe this passes boot and dies seconds later inside the
+    // engines, in a stack trace from the Redis parser.
+    await expect(
+      verifyRedisConnection(
+        {
+          client: fakeClient({
+            set: () =>
+              Promise.reject(
+                new Error(
+                  "NOPERM this user has no permissions to run the 'set' command",
+                ),
+              ),
+          }),
+        },
+        URL_WITH_SECRET,
+      ),
+    ).rejects.toThrow(RedisNotWritableError);
+  });
+
+  it("says read-only plainly, and still never leaks the password", async () => {
+    try {
+      await verifyRedisConnection(
+        {
+          client: fakeClient({
+            set: () => Promise.reject(new Error("NOPERM")),
+          }),
+        },
+        URL_WITH_SECRET,
+      );
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      const message = (error as Error).message;
+      expect(message).toContain("read-only");
+      expect(message).toContain("my-redis.example.com:6379");
+      expect(message).not.toContain("hunter2");
+    }
+  });
+
   it("keeps the original failure as the cause", async () => {
     const cause = new Error("ECONNREFUSED");
     try {
       await verifyRedisConnection(
-        { client: fakeClient(() => Promise.reject(cause)) as Redis },
+        { client: fakeClient({ ping: () => Promise.reject(cause) }) },
         "redis://localhost:6379",
       );
       expect.unreachable("should have thrown");

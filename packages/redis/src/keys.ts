@@ -66,3 +66,10 @@ export const WEBHOOK_INBOX_MAX = 1000;
  * durable write is the record, this publish is what makes it take effect now.
  */
 export const controlChannel = () => "control:commands";
+
+/**
+ * The key the boot probe writes and deletes to prove Redis is WRITABLE
+ * (plan/22 §4). Under `hot:` because it is ephemeral and carries no meaning
+ * beyond the instant it is checked.
+ */
+export const bootProbeKey = () => "hot:boot-probe";

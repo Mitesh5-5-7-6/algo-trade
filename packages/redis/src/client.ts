@@ -1,4 +1,5 @@
 import { Redis } from "ioredis";
+import { bootProbeKey } from "./keys.js";
 
 /**
  * The one place a Redis connection is created (plan/03 §5, Rule 2).
@@ -107,13 +108,46 @@ export class RedisUnreachableError extends Error {
 }
 
 /**
- * Prove Redis answers before the process claims to have started (plan/22 §4).
+ * Redis answered, but refused to be written to. Almost always read-only
+ * credentials — which PING happily accepts, so nothing earlier catches it.
+ */
+export class RedisNotWritableError extends Error {
+  constructor(
+    readonly url: string,
+    override readonly cause: unknown,
+  ) {
+    super(
+      `Redis at ${redactRedisUrl(url)} answered PING but refused a write.\n` +
+        `  The credentials in REDIS_URL are read-only. This system cannot run\n` +
+        `  read-only: the session phase, hot prices, risk counters, rate limits\n` +
+        `  and operator sessions are all Redis WRITES (plan/08).\n` +
+        `  - Upstash: use the database's default credentials, not a read-only\n` +
+        `    token and not a read-region endpoint\n` +
+        `  - Redis with ACLs: the user needs write access to the key prefixes\n` +
+        `    this system owns (hot:, cache:, risk:, session:, ratelimit:,\n` +
+        `    jobs:, webhooks:, control:)`,
+    );
+    this.name = "RedisNotWritableError";
+  }
+}
+
+/**
+ * Prove Redis is usable before the process claims to have started (plan/22 §4).
  *
- * Without this the first *command* fails instead — somewhere inside engine
- * wiring, as a bare `MaxRetriesPerRequestError` naming neither the host nor
- * Redis itself. Mongo is already verified this way at boot (`connectMongo`
- * pings); this closes the gap so a money-mover that cannot reach its hot state
- * dies immediately and legibly rather than half-started.
+ * Two checks, because they fail differently and a passing PING proves less than
+ * it looks:
+ *
+ *  1. **Reachable** — otherwise the first command fails somewhere inside engine
+ *     wiring as a bare `MaxRetriesPerRequestError`, naming neither the host nor
+ *     Redis itself.
+ *  2. **Writable** — a read-only user answers PING fine and then rejects the
+ *     first `SET` with `NOPERM`, several seconds later, from a stack trace
+ *     inside the Redis parser. Every hot path here writes, so read-only access
+ *     is not a degraded mode; it is a dead process that has not noticed yet.
+ *
+ * Mongo is already verified this way at boot (`connectMongo` pings). This is
+ * the matching gate, so a money-mover that cannot own its hot state dies
+ * immediately and legibly instead of half-started.
  */
 export async function verifyRedisConnection(
   connections: Pick<RedisConnections, "client">,
@@ -123,5 +157,14 @@ export async function verifyRedisConnection(
     await connections.client.ping();
   } catch (error) {
     throw new RedisUnreachableError(url, error);
+  }
+
+  // A short TTL on the probe key means even a failure between SET and DEL
+  // cleans itself up rather than leaving litter in the keyspace.
+  try {
+    await connections.client.set(bootProbeKey(), "1", "EX", 10);
+    await connections.client.del(bootProbeKey());
+  } catch (error) {
+    throw new RedisNotWritableError(url, error);
   }
 }
