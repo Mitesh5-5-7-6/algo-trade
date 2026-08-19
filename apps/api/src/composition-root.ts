@@ -4,6 +4,9 @@ import {
   createRedisConnections,
   hotPriceKey,
   hotSessionKey,
+  webhookChannel,
+  webhookInboxKey,
+  WEBHOOK_INBOX_MAX,
   type RedisConnections,
 } from "@neelkanth/redis";
 import {
@@ -32,6 +35,7 @@ import {
   SESSION_IDLE_TTL_SECONDS,
 } from "./auth/index.js";
 import { registerFyersAuthRoutes } from "./auth/fyers.js";
+import { registerFyersWebhookRoutes } from "./webhooks/index.js";
 import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
@@ -259,9 +263,35 @@ export async function bootstrap(
       fyersAppId: config.FYERS_APP_ID,
       fyersAppSecret: config.FYERS_APP_SECRET,
       fyersRedirectUrl: config.FYERS_REDIRECT_URL,
+      dashboardOrigin: config.DASHBOARD_ORIGIN,
       brokerTokens,
     });
   }
+  // --- Broker webhooks (plan/19 §4) ---
+  // FYERS posts order/trade callbacks here. The handler does not touch the
+  // engines directly: it parks the delivery in Redis and returns. A webhook is
+  // fire-and-forget from the broker's side — there is no redelivery — so the
+  // only thing that must happen inside the request is durable persistence.
+  // Consumers drain the inbox at their own pace and stay idempotent
+  // (plan/09 §5), which also means a slow pipeline can never make the broker
+  // time out and disable the webhook.
+  registerFyersWebhookRoutes(server, {
+    secret: config.FYERS_WEBHOOK_SECRET,
+    deliver: async (event) => {
+      const record = JSON.stringify(event);
+      const inbox = webhookInboxKey("fyers");
+      // One round trip: the list is the record, the publish is a nudge for
+      // consumers already listening (plan/08 §3). LTRIM caps the backlog so a
+      // stalled consumer degrades to lost history, never to a full Redis.
+      await redis.client
+        .multi()
+        .lpush(inbox, record)
+        .ltrim(inbox, 0, WEBHOOK_INBOX_MAX - 1)
+        .publish(webhookChannel("fyers"), record)
+        .exec();
+    },
+  });
+
   registerControlPlane(server, {
     db: mongo.db,
     runtime,

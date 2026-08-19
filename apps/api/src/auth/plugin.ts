@@ -6,6 +6,7 @@ import { StepUpRequiredError, UnauthorizedError } from "../errors.js";
 import type { SessionStore } from "./sessions.js";
 import { verifyPassword } from "./password.js";
 import { SESSION_COOKIE, clearSessionCookie, readCookie } from "./cookie.js";
+import { FYERS_WEBHOOK_PATH } from "../webhooks/routes.js";
 
 /** The authenticated operator attached to a request once the guard passes. */
 export interface AuthUser {
@@ -29,11 +30,19 @@ export interface AuthGuardDeps {
 
 /**
  * Requests exempt from the guard: the health probes (supervisors call them,
- * they expose no money state — plan/05 §4.1) and login itself (you can't be
- * authenticated to authenticate). Everything else — every read of money state,
- * every mutation — requires a live session (plan/21 §4).
+ * they expose no money state — plan/05 §4.1), login itself (you can't be
+ * authenticated to authenticate), and the FYERS webhook — a broker cannot
+ * hold an operator cookie, so it authenticates with a shared secret inside
+ * the route instead, and that path is write-only so it echoes no money state
+ * back. Everything else — every read of money state, every mutation —
+ * requires a live session (plan/21 §4).
  */
-const PUBLIC_PATHS = new Set(["/health/live", "/health/ready", "/auth/login"]);
+const PUBLIC_PATHS = new Set([
+  "/health/live",
+  "/health/ready",
+  "/auth/login",
+  FYERS_WEBHOOK_PATH,
+]);
 
 /**
  * The authentication guard (plan/21 §4): an `onRequest` hook that resolves the

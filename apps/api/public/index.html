@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
-    <title>Neelkanth API — not served here</title>
+    <title>Neelkanth API — webhook ingest only</title>
     <style>
       body {
         margin: 0;
@@ -23,14 +23,17 @@
   </head>
   <body>
     <main>
-      <h1>Neelkanth API — no service at this origin</h1>
+      <h1>Neelkanth API — webhook ingest only</h1>
       <p>
-        This deployment exists only to build and typecheck
-        <code>@neelkanth/api</code> on push. No API is served here.
+        This deployment builds and typechecks <code>@neelkanth/api</code> on
+        push, and serves exactly one endpoint:
+        <code>/api/webhooks/fyers</code>. It accepts broker callbacks and
+        parks them in Redis — nothing else.
       </p>
       <p>
         The control-plane API is a long-lived Fastify process (socket.io,
-        BullMQ workers, MongoDB and Redis pools) and runs on its own host.
+        BullMQ workers, MongoDB and Redis pools) and runs on its own host. It
+        drains the webhook inbox from there.
       </p>
     </main>
   </body>

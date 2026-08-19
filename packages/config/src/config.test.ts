@@ -59,7 +59,7 @@ describe("loadConfig (plan/04 §6 fail-fast)", () => {
       BROKER_MODE: "live",
       FYERS_APP_ID: "APP-100",
       FYERS_APP_SECRET: "secret",
-      FYERS_REDIRECT_URL: "https://example.com/fyers/callback",
+      FYERS_REDIRECT_URL: "https://example.com/auth/fyers/callback",
     });
     expect(live.BROKER_MODE).toBe("live");
   });
@@ -72,5 +72,64 @@ describe("loadConfig (plan/04 §6 fail-fast)", () => {
     expect(() => loadConfig({ ...validEnv, BROKER_MODE: "simulated" })).toThrow(
       ConfigValidationError,
     );
+  });
+});
+
+describe("FYERS redirect URL (must match the route apps/api serves)", () => {
+  const liveEnv = {
+    ...validEnv,
+    BROKER_MODE: "live",
+    FYERS_APP_ID: "APP-100",
+    FYERS_APP_SECRET: "secret",
+  };
+
+  it("accepts the callback path the API actually registers", () => {
+    const config = loadConfig({
+      ...liveEnv,
+      FYERS_REDIRECT_URL: "https://api.example.com/auth/fyers/callback",
+    });
+    expect(config.FYERS_REDIRECT_URL).toBe(
+      "https://api.example.com/auth/fyers/callback",
+    );
+  });
+
+  it("rejects an /api-prefixed path — a 404 that would surface only at login", () => {
+    expect(() =>
+      loadConfig({
+        ...liveEnv,
+        FYERS_REDIRECT_URL: "https://api.example.com/api/auth/fyers/callback",
+      }),
+    ).toThrow(/must end in \/auth\/fyers\/callback/);
+  });
+
+  it("rejects a path that exists nowhere in the codebase", () => {
+    expect(() =>
+      loadConfig({
+        ...liveEnv,
+        FYERS_REDIRECT_URL: "http://localhost:3000/api/broker/fyers/callback",
+      }),
+    ).toThrow(/must end in \/auth\/fyers\/callback/);
+  });
+
+  it("leaves paper mode alone — the check gates on live, like the credentials", () => {
+    expect(
+      loadConfig({
+        ...validEnv,
+        FYERS_REDIRECT_URL: "http://localhost:3000/whatever",
+      }).FYERS_REDIRECT_URL,
+    ).toBe("http://localhost:3000/whatever");
+  });
+});
+
+describe("FYERS_WEBHOOK_SECRET", () => {
+  it("reads an empty value as unset, not as a zero-length secret", () => {
+    expect(loadConfig({ ...validEnv, FYERS_WEBHOOK_SECRET: "" })
+      .FYERS_WEBHOOK_SECRET).toBeUndefined();
+  });
+
+  it("rejects a secret too short to be worth having", () => {
+    expect(() =>
+      loadConfig({ ...validEnv, FYERS_WEBHOOK_SECRET: "short" }),
+    ).toThrow(ConfigValidationError);
   });
 });

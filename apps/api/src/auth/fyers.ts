@@ -7,7 +7,17 @@ import { createHash } from "crypto";
 export interface FyersAuthRoutesDeps {
   fyersAppId: string;
   fyersAppSecret: string;
+  /**
+   * Must be an absolute URL on THIS origin, path `/auth/fyers/callback`, and
+   * byte-identical to what is registered at myapi.fyers.in — FYERS matches it
+   * exactly. It has to be this origin because the callback runs behind the
+   * auth guard: the session cookie is `SameSite=Lax`, so it rides along on
+   * the broker's top-level GET redirect, but only back to the origin that set
+   * it. A callback pointed at the dashboard arrives with no session.
+   */
   fyersRedirectUrl: string;
+  /** Where the operator's browser is sent once the token is stored. */
+  dashboardOrigin: string;
   brokerTokens: BrokerTokensRepository;
 }
 
@@ -42,9 +52,19 @@ export function registerFyersAuthRoutes(
 ): void {
   // Returns the URL the dashboard should redirect the operator to for FYERS login
   app.get("/auth/fyers/login-url", () => {
-    // Requires authenticated operator (auth guard handled externally)
-    const url = `https://api.fyers.in/api/v3/generate-authcode?client_id=${deps.fyersAppId}&redirect_uri=${deps.fyersRedirectUrl}&response_type=code&state=fyers_auth`;
-    return { url };
+    // Requires authenticated operator (auth guard handled externally).
+    // Every value is percent-encoded: the redirect URL carries `://` and `/`,
+    // and an unencoded query parameter is what makes FYERS reject the
+    // redirect as not matching the one registered on the app.
+    const params = new URLSearchParams({
+      client_id: deps.fyersAppId,
+      redirect_uri: deps.fyersRedirectUrl,
+      response_type: "code",
+      state: "fyers_auth",
+    });
+    return {
+      url: `https://api.fyers.in/api/v3/generate-authcode?${params.toString()}`,
+    };
   });
 
   // The callback from FYERS — this is an OAuth redirect, so we check authUser
@@ -99,7 +119,9 @@ export function registerFyersAuthRoutes(
       data.refresh_token,
     );
 
-    // Redirect back to dashboard successfully
-    reply.redirect("/");
+    // Back to the dashboard — an absolute URL, because we are on the API
+    // origin here, not the dashboard's. `reply.redirect("/")` would land the
+    // operator on the API root, which serves nothing.
+    reply.redirect(deps.dashboardOrigin);
   });
 }
