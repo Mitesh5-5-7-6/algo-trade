@@ -2,6 +2,8 @@ import type { Config } from "@neelkanth/config";
 import { componentLogger, type Logger } from "@neelkanth/logger";
 import {
   createRedisConnections,
+  redactRedisUrl,
+  verifyRedisConnection,
   hotPriceKey,
   hotSessionKey,
   webhookChannel,
@@ -92,6 +94,13 @@ export async function bootstrap(
       redisLog.warn({ err: error, source }, "redis connection error");
     }
   });
+
+  // Prove Redis answers before going further. Mongo was verified by its own
+  // ping above; without the matching check here the first failure would be a
+  // bare MaxRetriesPerRequestError thrown from deep inside engine wiring,
+  // naming neither Redis nor the host (plan/22 §4: die legibly, not late).
+  await verifyRedisConnection(redis, config.REDIS_URL);
+  log.info({ redis: redactRedisUrl(config.REDIS_URL) }, "redis reachable");
 
   // --- Database design as code (plan/07): indexes idempotently ensured ---
   log.info("ensuring indexes");

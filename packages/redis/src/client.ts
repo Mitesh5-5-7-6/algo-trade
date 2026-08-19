@@ -74,3 +74,54 @@ export function createRedisConnections(
     },
   };
 }
+
+/**
+ * A Redis URL safe to put in a log line or an error message: the password is
+ * replaced, the host and port kept. The host is the whole point — an operator
+ * staring at "connection failed" needs to know *which* Redis, and a redacted
+ * URL is the difference between a two-minute fix and an afternoon.
+ *
+ * Hand-rolled rather than `new URL`, so this stays usable anywhere.
+ */
+export function redactRedisUrl(url: string): string {
+  return url.replace(/^(rediss?:\/\/)([^@/]*)@/i, "$1***@");
+}
+
+/** Redis did not answer at boot. Carries the cause, never the password. */
+export class RedisUnreachableError extends Error {
+  constructor(
+    readonly url: string,
+    override readonly cause: unknown,
+  ) {
+    super(
+      `cannot reach Redis at ${redactRedisUrl(url)}\n` +
+        `  - is the host reachable from this machine? a managed Redis is often\n` +
+        `    private to one region/account, and a localhost URL never works\n` +
+        `    from a deployed container\n` +
+        `  - does the provider require TLS? use rediss:// (two s) — plain\n` +
+        `    redis:// against a TLS-only endpoint fails exactly like this\n` +
+        `  - are the credentials in the URL current?`,
+    );
+    this.name = "RedisUnreachableError";
+  }
+}
+
+/**
+ * Prove Redis answers before the process claims to have started (plan/22 §4).
+ *
+ * Without this the first *command* fails instead — somewhere inside engine
+ * wiring, as a bare `MaxRetriesPerRequestError` naming neither the host nor
+ * Redis itself. Mongo is already verified this way at boot (`connectMongo`
+ * pings); this closes the gap so a money-mover that cannot reach its hot state
+ * dies immediately and legibly rather than half-started.
+ */
+export async function verifyRedisConnection(
+  connections: Pick<RedisConnections, "client">,
+  url: string,
+): Promise<void> {
+  try {
+    await connections.client.ping();
+  } catch (error) {
+    throw new RedisUnreachableError(url, error);
+  }
+}
