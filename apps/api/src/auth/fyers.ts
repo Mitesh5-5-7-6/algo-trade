@@ -63,7 +63,7 @@ export function registerFyersAuthRoutes(
       state: "fyers_auth",
     });
     return {
-      url: `https://api.fyers.in/api/v3/generate-authcode?${params.toString()}`,
+      url: `https://api-t1.fyers.in/api/v3/generate-authcode?${params.toString()}`,
     };
   });
 
@@ -88,7 +88,7 @@ export function registerFyersAuthRoutes(
     };
 
     const response = await fetch(
-      "https://api.fyers.in/api/v3/validate-authcode",
+      "https://api-t1.fyers.in/api/v3/validate-authcode",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

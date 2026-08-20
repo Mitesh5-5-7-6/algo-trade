@@ -78,7 +78,9 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     // Verify the fetch was called with the right URL and auth header
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://api.fyers.in/api/v3/orders/sync");
+    // api-t1 is the live v3 host; api.fyers.in answers every v3 path with a
+    // generic 500 (verified 2026-08-20).
+    expect(url).toBe("https://api-t1.fyers.in/api/v3/orders/sync");
     expect(options.method).toBe("POST");
     const headers = options.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe(`${APP_ID}:${ACCESS_TOKEN}`);

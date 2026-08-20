@@ -113,7 +113,7 @@ export class FyersBroker implements Broker {
 
     try {
       const headers = await this.getHeaders(token);
-      const response = await fetch("https://api.fyers.in/api/v3/orders/sync", {
+      const response = await fetch("https://api-t1.fyers.in/api/v3/orders/sync", {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
@@ -160,7 +160,7 @@ export class FyersBroker implements Broker {
     const token = await this.deps.getToken();
     if (!token) throw new Error("No access token");
     const headers = await this.getHeaders(token);
-    const response = await fetch("https://api.fyers.in/api/v3/orders/sync", {
+    const response = await fetch("https://api-t1.fyers.in/api/v3/orders/sync", {
       method: "DELETE",
       headers,
       body: JSON.stringify({ id: stat.brokerOrderId }),
@@ -178,7 +178,7 @@ export class FyersBroker implements Broker {
     if (!token) return { clientOrderId, found: false };
 
     const headers = await this.getHeaders(token);
-    const response = await fetch("https://api.fyers.in/api/v3/orders", {
+    const response = await fetch("https://api-t1.fyers.in/api/v3/orders", {
       method: "GET",
       headers,
     });
@@ -230,6 +230,18 @@ export class FyersBroker implements Broker {
 
     const token = `${this.deps.appId}:${accessToken}`;
     this.ws = new WebSocket(
+      // ⚠ BROKEN — this host is gone. Verified 2026-08-20:
+      //   api.fyers.in/socket/v3/endpoints/data      → 500 "Invalid Request"
+      //   api-t1.fyers.in/socket/v3/endpoints/data   → 404 (host live, no path)
+      //   socket.fyers.in/hsm/v1-5/prod              → 101 Switching Protocols
+      // The surviving endpoint speaks the HSM protocol: binary frames and an
+      // auth handshake *after* the upgrade, not this `SUB_DATA` JSON with the
+      // token in the query string. Repointing the URL alone would connect and
+      // then receive nothing — and `updateState("connected")` on `open` would
+      // report a healthy feed that never delivers a tick. Left pointing at the
+      // dead host deliberately: it fails, and a failed feed reads as
+      // disconnected, which is true. Fixing this means implementing the HSM
+      // client against the v3 docs with a live token to test.
       `wss://api.fyers.in/socket/v3/endpoints/data?access_token=${token}`,
     );
 
