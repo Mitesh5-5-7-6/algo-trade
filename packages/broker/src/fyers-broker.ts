@@ -6,7 +6,10 @@ import type {
   OrderUpdate,
 } from "@neelkanth/core";
 import type { Broker } from "./broker.js";
-import { WebSocket } from "ws";
+import {
+  fyersDataSocket,
+  type FyersDataSocketInstance,
+} from "fyers-api-v3";
 
 export interface FyersBrokerDeps {
   appId: string;
@@ -27,13 +30,19 @@ interface FyersResponse {
 }
 
 /**
- * FyersBroker implements the Broker interface for the live FYERS environment (plan/19).
- * - Uses native fetch for REST execution API.
- * - Uses 'ws' for the market data WebSocket feed.
+ * FyersBroker implements the Broker interface for the live FYERS environment
+ * (plan/19).
+ * - Execution: native fetch against the v3 REST API on api-t1.fyers.in.
+ * - Market data: the vendor SDK, which speaks the HSM protobuf feed.
+ *
+ * The SDK import is contained here on purpose. It is the only third-party
+ * broker client in the process, and the `Broker` port keeps it out of the
+ * engines, strategies and risk layer entirely.
  */
 export class FyersBroker implements Broker {
   private readonly deps: FyersBrokerDeps;
-  private ws: WebSocket | null = null;
+  /** The vendor SDK's feed client. Null until `connect` succeeds. */
+  private socket: FyersDataSocketInstance | null = null;
   private connectionState: BrokerConnectionState = "disconnected";
   private readonly dataHandlers: ((raw: unknown) => void)[] = [];
   private readonly stateHandlers: ((state: BrokerConnectionState) => void)[] =
@@ -215,81 +224,99 @@ export class FyersBroker implements Broker {
   onOrderUpdate(handler: (update: OrderUpdate) => void): void {
     this.orderUpdateHandlers.push(handler);
   }
+  // --- Market Data (HSM feed, via the vendor SDK) ---
 
-  // --- Market Data (WebSocket) ---
-
+  /**
+   * Open the FYERS market-data feed (plan/19 §4).
+   *
+   * The feed is the HSM protocol — protobuf frames over
+   * `wss://socket.fyers.in/hsm/v1-5/prod` — so this delegates to the vendor's
+   * own client rather than speaking it directly. The previous implementation
+   * hand-rolled a JSON socket against `api.fyers.in`, a host that now answers
+   * every v3 path with a 500; it could never have received a tick.
+   *
+   * The SDK is confined to this method and `subscribe`/`disconnect` below.
+   * Everything upstream still sees only the `Broker` port.
+   */
   async connect(): Promise<void> {
     if (this.connectionState === "connected") return;
     this.updateState("connecting");
 
     const accessToken = await this.deps.getToken();
     if (!accessToken) {
+      // No token means the operator has not completed the FYERS OAuth round
+      // trip. Stay disconnected and say so — the control plane reports this,
+      // and a feed that silently never delivers is the failure we most need
+      // to be visible (plan/06 §7).
       this.updateState("disconnected");
       return;
     }
 
-    const token = `${this.deps.appId}:${accessToken}`;
-    this.ws = new WebSocket(
-      // ⚠ BROKEN — this host is gone. Verified 2026-08-20:
-      //   api.fyers.in/socket/v3/endpoints/data      → 500 "Invalid Request"
-      //   api-t1.fyers.in/socket/v3/endpoints/data   → 404 (host live, no path)
-      //   socket.fyers.in/hsm/v1-5/prod              → 101 Switching Protocols
-      // The surviving endpoint speaks the HSM protocol: binary frames and an
-      // auth handshake *after* the upgrade, not this `SUB_DATA` JSON with the
-      // token in the query string. Repointing the URL alone would connect and
-      // then receive nothing — and `updateState("connected")` on `open` would
-      // report a healthy feed that never delivers a tick. Left pointing at the
-      // dead host deliberately: it fails, and a failed feed reads as
-      // disconnected, which is true. Fixing this means implementing the HSM
-      // client against the v3 docs with a live token to test.
-      `wss://api.fyers.in/socket/v3/endpoints/data?access_token=${token}`,
-    );
+    // `APPID:AccessToken` — the SDK decodes the token half as a JWT for its
+    // expiry, so a stale or malformed token throws here rather than failing
+    // later as an empty feed.
+    let socket: FyersDataSocketInstance;
+    try {
+      socket = fyersDataSocket.getInstance(
+        `${this.deps.appId}:${accessToken}`,
+        "",
+        false, // the SDK's own file logging; ours is structured (plan/23 §3)
+      );
+    } catch {
+      this.updateState("disconnected");
+      return;
+    }
 
-    this.ws.on("open", () => {
+    this.socket = socket;
+
+    socket.on("connect", () => {
       this.updateState("connected");
+      // Subscriptions do not survive a reconnect (plan/17 §7), and the SDK
+      // reconnects on its own — so re-establish them on every connect, not
+      // just the first.
       if (this.subscribedSymbols.length > 0) {
-        void this.subscribe(this.subscribedSymbols); // Re-establish subscriptions
+        socket.subscribe(this.subscribedSymbols);
       }
     });
 
-    this.ws.on("message", (data) => {
-      // Pass raw data to downstream normalizer
-      this.dataHandlers.forEach(function (h) {
-        h(data);
-      });
+    socket.on("message", (message) => {
+      // Forwarded untranslated; `fyersNormalizer` owns the shape (plan/04 §4).
+      for (const handler of this.dataHandlers) handler(message);
     });
 
-    this.ws.on("close", () => {
+    socket.on("close", () => {
       this.updateState("disconnected");
-      this.ws = null;
     });
 
-    this.ws.on("error", () => {
-      // Error will trigger close, state will be updated there
+    socket.on("error", () => {
+      // A socket error is followed by `close`, which owns the state change.
+      // Swallowed here rather than double-reporting a single outage.
     });
+
+    socket.connect();
+    socket.autoreconnect();
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async disconnect(): Promise<void> {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    const socket = this.socket;
+    this.socket = null;
+    if (socket) {
+      // Neither method is documented in the README, so both are optional in
+      // our declaration and feature-checked rather than assumed.
+      if (typeof socket.close === "function") socket.close();
+      else if (typeof socket.disconnect === "function") socket.disconnect();
     }
     this.updateState("disconnected");
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async subscribe(symbols: readonly string[]): Promise<void> {
+    // Remembered unconditionally: `connect` replays them, so subscribing
+    // before the socket is up is valid and ordering-independent.
     this.subscribedSymbols = symbols;
-    if (this.connectionState !== "connected" || !this.ws) return;
-
-    const payload = {
-      T: "SUB_DATA",
-      L2list: symbols, // L2 quotes
-      SUB_T: 1, // 1 for Subscribe
-    };
-
-    this.ws.send(JSON.stringify(payload));
+    if (this.connectionState !== "connected" || this.socket === null) return;
+    this.socket.subscribe(symbols);
   }
 
   onData(handler: (raw: unknown) => void): void {

@@ -143,8 +143,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       fyers-api-v3:
-        specifier: ^2.0.0
-        version: 2.0.0
+        specifier: ^2.1.0
+        version: 2.1.0
       ws:
         specifier: ^8.21.1
         version: 8.21.1
@@ -1580,8 +1580,8 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  fyers-api-v3@2.0.0:
-    resolution: {integrity: sha512-46ItJjCo6abBzJ7Owo5lKJsuqZhDt+tWytR5OqTWui2kX8yzF+PyqcizxxJwCUmC2TN5+7rIQV1g/5U7Fk8uMQ==}
+  fyers-api-v3@2.1.0:
+    resolution: {integrity: sha512-U5qup6FbyJeWPvcjhRU00EMYvMWJpQbrcLl+hHIaOvxozKwnAxJgrMSY+MuoRPdUmFbF4Ctb4bv39ObR2hi82g==}
 
   get-intrinsic@1.3.0:
     resolution: {integrity: sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==}
@@ -3201,7 +3201,7 @@ snapshots:
       cors: 2.8.6
       debug: 4.4.3
       engine.io-parser: 5.2.3
-      ws: 8.21.0
+      ws: 8.21.1
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -3417,7 +3417,7 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  fyers-api-v3@2.0.0:
+  fyers-api-v3@2.1.0:
     dependencies:
       axios: 1.18.1
       jsonwebtoken: 9.0.3
@@ -3889,7 +3889,7 @@ snapshots:
   socket.io-adapter@2.5.8:
     dependencies:
       debug: 4.4.3
-      ws: 8.21.0
+      ws: 8.21.1
     transitivePeerDependencies:
       - bufferutil
       - supports-color

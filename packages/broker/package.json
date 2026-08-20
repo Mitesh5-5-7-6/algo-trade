@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@neelkanth/core": "workspace:*",
-    "fyers-api-v3": "^2.0.0",
+    "fyers-api-v3": "^2.1.0",
     "ws": "^8.21.1"
   },
   "devDependencies": {
