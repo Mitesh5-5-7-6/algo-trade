@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Redis } from "ioredis";
+import { createRedisConnections } from "./client.js";
 import {
   redactRedisUrl,
   RedisNotWritableError,
@@ -141,6 +142,64 @@ describe("verifyRedisConnection (plan/22 §4: die legibly, not late)", () => {
       expect.unreachable("should have thrown");
     } catch (error) {
       expect((error as RedisUnreachableError).cause).toBe(cause);
+    }
+  });
+});
+
+describe("createRedisConnections (plan/03 §5: the only place Redis is opened)", () => {
+  // Never connects: an unroutable port fails instantly and the error handler
+  // swallows it, which is enough to read back the options each socket was
+  // constructed with.
+  const URL = "redis://127.0.0.1:1";
+
+  it("gives BullMQ a connection with unbounded retries", async () => {
+    // BullMQ THROWS at worker construction on anything else:
+    // "Your redis options maxRetriesPerRequest must be null". A worker parks
+    // on a blocking command waiting for a job, so a bounded retry is wrong.
+    const conns = createRedisConnections(URL, () => undefined);
+    try {
+      expect(conns.blocking.options.maxRetriesPerRequest).toBeNull();
+      expect(conns.blocking.options.enableReadyCheck).toBe(false);
+    } finally {
+      await conns.quit();
+    }
+  });
+
+  it("keeps the command connections fail-closed (plan/08 §11)", async () => {
+    // The opposite posture: ordinary commands must surface a dead Redis as an
+    // error rather than hanging on it forever.
+    const conns = createRedisConnections(URL, () => undefined);
+    try {
+      expect(conns.client.options.maxRetriesPerRequest).toBe(2);
+      expect(conns.publisher.options.maxRetriesPerRequest).toBe(2);
+      expect(conns.subscriber.options.maxRetriesPerRequest).toBe(2);
+    } finally {
+      await conns.quit();
+    }
+  });
+
+  it("gives the worker its own socket, not the shared client", async () => {
+    // Sharing would let a worker blocked on BRPOPLPUSH stall every other
+    // command queued behind it.
+    const conns = createRedisConnections(URL, () => undefined);
+    try {
+      expect(conns.blocking).not.toBe(conns.client);
+      expect(conns.blocking).not.toBe(conns.subscriber);
+    } finally {
+      await conns.quit();
+    }
+  });
+
+  it("labels blocking-connection errors so an outage names the right socket", async () => {
+    const sources: string[] = [];
+    const conns = createRedisConnections(URL, (_error, source) => {
+      sources.push(source);
+    });
+    try {
+      conns.blocking.emit("error", new Error("boom"));
+      expect(sources).toContain("blocking");
+    } finally {
+      await conns.quit();
     }
   });
 });

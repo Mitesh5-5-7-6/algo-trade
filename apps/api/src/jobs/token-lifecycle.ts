@@ -38,7 +38,11 @@ export async function startTokenLifecycleJobs(deps: TokenLifecycleDeps) {
         deps.logger.info("Token refresh stub executed");
       }
     },
-    { connection: deps.redis.client },
+    // The worker gets the blocking connection, the queue above keeps the
+    // ordinary one. Sharing a single socket would let a worker parked on
+    // BRPOPLPUSH stall every `queue.add` behind it — and BullMQ rejects the
+    // command connection's bounded retry setting outright.
+    { connection: deps.redis.blocking },
   );
 
   // Schedule to run every day at 08:00 AM IST (or standard time)

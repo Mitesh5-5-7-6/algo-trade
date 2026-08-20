@@ -16,7 +16,16 @@ export interface RedisConnections {
   publisher: Redis;
   /** Dedicated subscriber (in subscriber mode; commands forbidden on it). */
   subscriber: Redis;
-  /** Close all three, cleanly (plan/22 §4 shutdown step). */
+  /**
+   * For BullMQ workers (plan/08 §6) — and nothing else. A worker parks on
+   * blocking commands (BRPOPLPUSH) waiting for a job, so the bounded
+   * `maxRetriesPerRequest` the other connections use is not merely wrong here,
+   * BullMQ refuses to start with it. It needs its own socket for the same
+   * reason the subscriber does: a connection blocked on a job cannot also
+   * serve ordinary commands.
+   */
+  blocking: Redis;
+  /** Close all four, cleanly (plan/22 §4 shutdown step). */
   quit(): Promise<void>;
 }
 
@@ -31,7 +40,7 @@ export interface RedisConnections {
  */
 export type RedisErrorHandler = (
   error: Error,
-  source: "client" | "publisher" | "subscriber",
+  source: "client" | "publisher" | "subscriber" | "blocking",
 ) => void;
 
 export function createRedisConnections(
@@ -49,6 +58,16 @@ export function createRedisConnections(
   const client = new Redis(url, options);
   const publisher = new Redis(url, options);
   const subscriber = new Redis(url, options);
+  // BullMQ validates these and throws at construction if they are wrong
+  // (`Your redis options maxRetriesPerRequest must be null`). `null` means
+  // "retry forever", which is right for a worker that is *supposed* to sit
+  // waiting on an empty queue. The ready check is off because it issues INFO,
+  // which managed providers commonly withhold from application users.
+  const blocking = new Redis(url, {
+    ...options,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  });
 
   // Always attach a handler — never leave an ioredis `error` event unhandled.
   const handler = onError ?? (() => undefined);
@@ -61,16 +80,21 @@ export function createRedisConnections(
   subscriber.on("error", (error: Error) => {
     handler(error, "subscriber");
   });
+  blocking.on("error", (error: Error) => {
+    handler(error, "blocking");
+  });
 
   return {
     client,
     publisher,
     subscriber,
+    blocking,
     async quit() {
       await Promise.allSettled([
         client.quit(),
         publisher.quit(),
         subscriber.quit(),
+        blocking.quit(),
       ]);
     },
   };
