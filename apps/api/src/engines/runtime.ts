@@ -67,6 +67,24 @@ function istMinuteOfDay(now: number): number {
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
 }
 
+/**
+ * The market-data working set: every symbol any enabled strategy needs, once
+ * (plan/17 §7).
+ *
+ * Deduplicated because two strategies on the same instrument must produce one
+ * subscription, not two — the broker counts subscriptions against a quota, and
+ * a duplicated symbol would also duplicate every tick downstream.
+ *
+ * Extracted so the derivation is testable on its own. The wiring that calls it
+ * is what was missing before: the engine's `subscribe` existed and was tested,
+ * but nothing in the runtime ever invoked it.
+ */
+export function deriveWorkingSet(
+  enabled: Iterable<{ symbols: readonly string[] }>,
+): string[] {
+  return [...new Set([...enabled].flatMap((config) => config.symbols))];
+}
+
 export interface EngineRuntime extends RuntimeControls {
   readonly bus: EventBus;
   readonly positionEngine: PositionEngine;
@@ -121,7 +139,13 @@ export async function startEngineRuntime(deps: {
   // --- In-memory runtime state (single process; the fast read path) ---
   const lastPrices = new Map<string, number>();
   const candleWindows = new Map<string, Candle[]>();
-  const enabledConfigs = new Map<string, { riskRules?: RiskRules }>();
+  // Symbols ride along with the risk rules because the market-data working
+  // set is derived from them: subscribing is not a side effect of enabling a
+  // strategy, it IS how an enabled strategy receives anything at all.
+  const enabledConfigs = new Map<
+    string,
+    { riskRules?: RiskRules; symbols: readonly string[] }
+  >();
   const settings = await settingsRepo.getGlobal();
   const state = {
     tradingEnabled: settings.tradingEnabled,
@@ -175,6 +199,25 @@ export async function startEngineRuntime(deps: {
     onError,
   });
   marketDataEngine.attach(deps.broker);
+
+  /**
+   * Point the feed at the union of the enabled strategies' symbols (plan/17 §7).
+   *
+   * This is the link between "a strategy is enabled" and "its instrument
+   * actually streams". It was missing: `MarketDataEngine.subscribe()` was never
+   * called from anywhere, so the working set stayed empty, the guard inside it
+   * skipped `feed.subscribe()`, and FYERS was asked for nothing. The socket
+   * connected — the Broker chip even read FEED LIVE, truthfully — while zero
+   * ticks arrived. No ticks, no candles, no indicators, no signals, no orders.
+   *
+   * Called after every change to the enabled set, and the engine re-applies it
+   * on reconnect since subscriptions do not survive one.
+   */
+  const syncWorkingSet = async (): Promise<void> => {
+    const symbols = deriveWorkingSet(enabledConfigs.values());
+    await marketDataEngine.subscribe(symbols);
+    log.info({ symbols, count: symbols.length }, "market data working set");
+  };
 
   // --- Projection chain: Position + PnL ---
   const positionPorts: PositionPorts = {
@@ -338,12 +381,15 @@ export async function startEngineRuntime(deps: {
     await orderManager.reconcile(order);
   }
   for (const config of await strategiesRepo.findEnabled()) {
-    enabledConfigs.set(
-      config.strategyId,
-      config.riskRules === undefined ? {} : { riskRules: config.riskRules },
-    );
+    enabledConfigs.set(config.strategyId, {
+      symbols: config.symbols,
+      ...(config.riskRules === undefined ? {} : { riskRules: config.riskRules }),
+    });
     await runner.enable(config);
   }
+  // Without this the feed connects and subscribes to nothing: the socket is
+  // up, the chip reads healthy, and not one tick ever arrives.
+  await syncWorkingSet();
   log.info(
     { openPositions: positionEngine.getOpenPositions().length },
     "engine runtime wired",
@@ -368,15 +414,23 @@ export async function startEngineRuntime(deps: {
       state.tradingEnabled = enabled;
     },
     async enableStrategy(config) {
-      enabledConfigs.set(
-        config.strategyId,
-        config.riskRules === undefined ? {} : { riskRules: config.riskRules },
-      );
+      enabledConfigs.set(config.strategyId, {
+        symbols: config.symbols,
+        ...(config.riskRules === undefined
+          ? {}
+          : { riskRules: config.riskRules }),
+      });
       await runner.enable(config);
+      await syncWorkingSet();
     },
     disableStrategy(strategyId) {
       runner.disable(strategyId);
       enabledConfigs.delete(strategyId);
+      // Fire-and-forget: RuntimeControls.disableStrategy is synchronous, and
+      // an unsubscribe that fails costs redundant ticks, never a missed one.
+      void syncWorkingSet().catch((error: unknown) => {
+        onError(error, { at: "syncWorkingSet" });
+      });
     },
     applyGlobalSettings({ limits, allocatedCapital }) {
       state.limits = limits;

@@ -5,7 +5,13 @@ import type { StepUpVerifier } from "../control-plane/controls.js";
 import { StepUpRequiredError, UnauthorizedError } from "../errors.js";
 import type { SessionStore } from "./sessions.js";
 import { verifyPassword } from "./password.js";
-import { SESSION_COOKIE, clearSessionCookie, readCookie } from "./cookie.js";
+import {
+  SESSION_COOKIE,
+  clearSessionCookie,
+  readCookie,
+  serializeSessionCookie,
+} from "./cookie.js";
+import { SESSION_IDLE_TTL_SECONDS } from "./config.js";
 import { FYERS_WEBHOOK_PATH } from "../webhooks/routes.js";
 
 /** The authenticated operator attached to a request once the guard passes. */
@@ -87,6 +93,27 @@ export function registerAuthGuard(app: ApiServer, deps: AuthGuardDeps): void {
       );
       throw new UnauthorizedError("account is not active");
     }
+
+    // Slide the COOKIE, not just the session.
+    //
+    // `sessions.resolve` above already extended the server-side idle window on
+    // every request. The cookie was not: its `Max-Age` was written once at
+    // login and never renewed, so the browser discarded it exactly
+    // SESSION_IDLE_TTL_SECONDS after sign-in no matter how active the operator
+    // was. The session stayed alive in Redis; the browser simply stopped
+    // sending its id — which reads as being logged out mid-work for no reason.
+    //
+    // Both halves of the idle window now advance together. The absolute
+    // ceiling is unaffected: it lives in the session record, and once it
+    // passes, `resolve` destroys the session and this line is never reached.
+    reply.header(
+      "set-cookie",
+      serializeSessionCookie(sessionId, {
+        maxAgeSeconds: SESSION_IDLE_TTL_SECONDS,
+        secure: deps.secureCookies,
+        crossSite: deps.crossSiteCookies ?? false,
+      }),
+    );
 
     request.authUser = { userId: user.userId, sessionId, role: user.role };
   });

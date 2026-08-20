@@ -39,6 +39,7 @@ import {
 import { registerFyersAuthRoutes } from "./auth/fyers.js";
 import { registerFyersWebhookRoutes } from "./webhooks/index.js";
 import { isCrossSite } from "./auth/same-site.js";
+import { corsOptions } from "./cors.js";
 import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
@@ -271,10 +272,7 @@ export async function bootstrap(
   // CORS with credentials so the dashboard (a separate origin in dev; same
   // origin behind the reverse proxy in prod, plan/22 §2) can send the session
   // cookie. Exactly one origin is allowed — never `*` with credentials.
-  await server.register(cors, {
-    origin: config.DASHBOARD_ORIGIN,
-    credentials: true,
-  });
+  await server.register(cors, corsOptions(config.DASHBOARD_ORIGIN));
   registerAuthGuard(server, {
     sessions,
     users,

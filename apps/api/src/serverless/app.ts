@@ -25,6 +25,7 @@ import { registerFyersAuthRoutes } from "../auth/fyers.js";
 import { registerFyersWebhookRoutes, FYERS_WEBHOOK_PATH } from "../webhooks/index.js";
 import { createRuntimeProjection } from "./runtime-projection.js";
 import { isCrossSite } from "../auth/same-site.js";
+import { corsOptions } from "../cors.js";
 import {
   webhookChannel,
   webhookInboxKey,
@@ -133,10 +134,7 @@ async function build(): Promise<Cached> {
 
   // Exactly one origin, never `*` — `credentials: true` forbids the wildcard,
   // and the dashboard must send the session cookie.
-  await app.register(cors, {
-    origin: required("DASHBOARD_ORIGIN"),
-    credentials: true,
-  });
+  await app.register(cors, corsOptions(required("DASHBOARD_ORIGIN")));
 
   // The projection serves synchronous reads, so the durable state has to be in
   // hand before any handler runs. Skipped for the probes and the webhook:

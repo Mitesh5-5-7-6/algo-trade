@@ -35,7 +35,17 @@ export function Providers({ children }: { children: ReactNode }) {
         defaultOptions: {
           queries: {
             retry: false,
-            staleTime: 5_000,
+            // How long a cached read model is reused before a mounting
+            // component refetches it. At 5s, every tab change re-ran all nine
+            // read models — twice that in requests once each one's CORS
+            // preflight is counted.
+            //
+            // 30s is safe because freshness does not depend on this: the
+            // socket invalidates the exact queries an event touches the
+            // instant it happens (see event-map). This refetch is the safety
+            // net for anything the stream missed, not the primary path
+            // (plan/06 §5 snapshot-then-stream).
+            staleTime: 30_000,
             refetchOnWindowFocus: false,
           },
         },
