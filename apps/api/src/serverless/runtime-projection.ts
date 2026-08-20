@@ -155,6 +155,14 @@ export function createRuntimeProjection(
      */
     equityCurve: (): readonly EquityPoint[] => [],
 
+    /**
+     * Always disconnected, and truthfully so. The market-data feed is a
+     * long-lived WebSocket owned by the engine process; this deployment runs
+     * *instead of* that process, so no feed exists here. Reporting anything
+     * else would recreate exactly the lie this field was added to kill.
+     */
+    brokerConnection: () => ({ state: "disconnected", connected: false }),
+
     setTradingEnabled(enabled) {
       notify("setTradingEnabled", { enabled });
     },

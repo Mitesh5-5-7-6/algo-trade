@@ -54,6 +54,7 @@ function fakeRuntime(): RuntimeControls {
     unrealizedPnl: () => 0,
     session: (): SessionContext => ({ phase: "closed", minutesSinceOpen: -1 }),
     equityCurve: (): readonly EquityPoint[] => [],
+    brokerConnection: () => ({ state: "connected", connected: true }),
   };
 }
 

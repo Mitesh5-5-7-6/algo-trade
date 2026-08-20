@@ -111,13 +111,30 @@ describe("FYERS redirect URL (must match the route apps/api serves)", () => {
     ).toThrow(/must end in \/auth\/fyers\/callback/);
   });
 
-  it("leaves paper mode alone — the check gates on live, like the credentials", () => {
-    expect(
+  it("checks paper mode too — paper trading runs on the real FYERS feed", () => {
+    // Paper mode simulates execution but takes prices from the live feed
+    // (plan/19 §2), so the OAuth round trip is load-bearing there as well. A
+    // wrong callback path used to pass validation in paper mode and then fail
+    // as a broker login that silently never completes.
+    expect(() =>
       loadConfig({
         ...validEnv,
         FYERS_REDIRECT_URL: "http://localhost:3000/whatever",
+      }),
+    ).toThrow(/must end in \/auth\/fyers\/callback/);
+  });
+
+  it("accepts a correct callback path in paper mode", () => {
+    expect(
+      loadConfig({
+        ...validEnv,
+        FYERS_REDIRECT_URL: "http://localhost:4000/auth/fyers/callback",
       }).FYERS_REDIRECT_URL,
-    ).toBe("http://localhost:3000/whatever");
+    ).toBe("http://localhost:4000/auth/fyers/callback");
+  });
+
+  it("stays optional — an unset redirect URL is not an error in paper mode", () => {
+    expect(loadConfig(validEnv).FYERS_REDIRECT_URL).toBeUndefined();
   });
 });
 

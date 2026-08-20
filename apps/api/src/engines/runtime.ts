@@ -1,4 +1,5 @@
 import type {
+  BrokerConnectionState,
   Candle,
   RiskLimits,
   RiskRules,
@@ -128,6 +129,21 @@ export async function startEngineRuntime(deps: {
     allocatedCapital: settings.capitalAllocation,
     session: { phase: "closed", minutesSinceOpen: -1 } as SessionContext,
   };
+
+  // Market-data feed state, tracked so the control plane can report it
+  // (plan/19 §4). Starts `disconnected` and is only ever moved by the broker
+  // itself — a feed that never connects must read as never connected, which is
+  // exactly the case a missing FYERS token produces.
+  const brokerState: { state: BrokerConnectionState; since?: number } = {
+    state: "disconnected",
+  };
+  deps.broker.onConnectionChange((next) => {
+    if (next === brokerState.state) return;
+    brokerState.state = next;
+    brokerState.since = Date.now();
+    log.info({ broker: next }, "broker connection state changed");
+  });
+
   const openMinute = parseHHMM(settings.marketHours.open);
   const sessionManager = new SessionManager({
     preOpen: "09:00",
@@ -380,6 +396,13 @@ export async function startEngineRuntime(deps: {
     },
     equityCurve() {
       return equityTracker.points();
+    },
+    brokerConnection() {
+      return {
+        state: brokerState.state,
+        connected: brokerState.state === "connected",
+        since: brokerState.since,
+      };
     },
     sampleEquity(now) {
       // sessionManager.phase — the PURE query; evaluate() here would consume

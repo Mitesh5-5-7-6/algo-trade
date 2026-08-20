@@ -89,6 +89,12 @@ export interface ControlStatus {
   tradingEnabled: boolean;
   session: { phase: string; minutesSinceOpen: number };
   openPositions: number;
+  /** Market-data feed health (plan/19 §4). Optional: an older API omits it. */
+  broker?: {
+    state: "connected" | "connecting" | "disconnected";
+    connected: boolean;
+    since?: number;
+  };
 }
 
 /** POST /strategies body — the create form's shape. */
@@ -178,6 +184,8 @@ export const api = {
   pnl: () => apiFetch<PnlSummary>("/pnl"),
   pnlCurve: () => apiFetch<EquityPoint[]>("/pnl/curve"),
   controlStatus: () => apiFetch<ControlStatus>("/control/status"),
+  /** Where to send the operator to authorise FYERS (plan/19 §2). */
+  fyersLoginUrl: () => apiFetch<{ url: string }>("/auth/fyers/login-url"),
 
   pause: () =>
     apiFetch<{ tradingEnabled: boolean }>("/control/pause", { method: "POST" }),

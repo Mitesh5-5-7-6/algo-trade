@@ -131,7 +131,16 @@ export function useDashboardData(enabled = true): LiveDashboard {
 
   const status: SystemStatus = {
     mode: mock.status.mode, // TODO(read-model): expose broker mode
-    broker: mock.status.broker, // TODO(read-model): live broker health
+    // Live feed health. Reported honestly as DISCONNECTED when the API does
+    // not say otherwise — this used to be a hardcoded "connected · 44ms",
+    // which made a feed that never authenticated look perfectly healthy
+    // while no market data arrived at all (plan/06 §7: broken must never
+    // look healthy).
+    broker: {
+      name: "FYERS",
+      connected: control.data?.broker?.connected ?? false,
+      state: control.data?.broker?.state ?? "disconnected",
+    },
     market: {
       exchange: mock.status.market.exchange,
       phase: control.data

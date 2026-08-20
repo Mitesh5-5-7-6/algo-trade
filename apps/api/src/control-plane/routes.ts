@@ -299,6 +299,10 @@ export function registerControlPlane(
       tradingEnabled: global.tradingEnabled,
       session: runtime.session(),
       openPositions: runtime.getOpenPositions().length,
+      // The market-data feed (plan/19 §4). Without this the dashboard cannot
+      // tell "running and waiting for a signal" from "running with no data
+      // arriving at all" — they look identical, and only one of them is fine.
+      broker: runtime.brokerConnection(),
     };
   });
 

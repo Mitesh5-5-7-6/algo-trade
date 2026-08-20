@@ -288,8 +288,13 @@ export async function bootstrap(
     secureCookies,
     crossSiteCookies,
   });
+  // Registered in BOTH modes, not just live. Paper trading executes on the
+  // simulator but takes its prices from the real FYERS feed (plan/19 §2), and
+  // that feed needs an access token — which only this OAuth round trip can
+  // produce. Gating these routes on live mode left paper mode unable to obtain
+  // the token it depends on: the feed then fails closed and silently, and the
+  // system looks alive while no market data ever arrives.
   if (
-    config.BROKER_MODE === "live" &&
     config.FYERS_APP_ID &&
     config.FYERS_APP_SECRET &&
     config.FYERS_REDIRECT_URL

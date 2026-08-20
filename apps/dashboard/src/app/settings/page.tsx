@@ -12,6 +12,7 @@ import { qk } from "@/lib/query-keys";
 import { useDashboardData } from "@/lib/live";
 import { formatIN, formatPct } from "@/lib/format";
 import { StepUpDialog } from "@/components/step-up-dialog";
+import { BrokerPanel } from "@/components/broker-panel";
 
 type Limits = LiveSettings["globalRiskLimits"];
 interface Draft {
@@ -144,6 +145,8 @@ export default function SettingsPage() {
           </button>
         </div>
       )}
+
+      <BrokerPanel connected={snapshot.status.broker.connected} />
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <p className="panel-title">Capital</p>

@@ -16,7 +16,13 @@ import type { Order, Position, StrategyConfig } from "@neelkanth/core";
 
 export interface SystemStatus {
   mode: "paper" | "live";
-  broker: { name: string; connected: boolean; latencyMs: number };
+  /** Market-data feed. No latency field: nothing measures it, and a made-up
+   * number is worse than none (plan/06 §7). */
+  broker: {
+    name: string;
+    connected: boolean;
+    state: "connected" | "connecting" | "disconnected";
+  };
   market: {
     exchange: string;
     phase: "pre-open" | "open" | "closed";
@@ -306,7 +312,7 @@ export function getMockSnapshot(): DashboardSnapshot {
   return {
     status: {
       mode: "paper",
-      broker: { name: "FYERS", connected: true, latencyMs: 44 },
+      broker: { name: "FYERS", connected: true, state: "connected" },
       market: { exchange: "NSE", phase: "open", ts: NOW },
       engine: { state: "running", signalsToday: 26 },
       tradingEnabled: true,

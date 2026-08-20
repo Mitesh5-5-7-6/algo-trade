@@ -102,34 +102,38 @@ const EnvSchema = z
         }
       }
 
-      // The redirect URL must point at the route that actually exists
-      // (apps/api `GET /auth/fyers/callback`). Getting this wrong does not
-      // fail at boot on its own — it fails much later, as a broker login that
-      // silently never completes, which is the worst possible time to learn
-      // about it. Checked in live mode only, where FYERS auth is load-bearing.
-      //
-      // The path is spelled out here rather than imported: packages/ may not
-      // depend on apps/ (plan/03). It is asserted from the route's own side in
-      // apps/api's webhook + auth tests, so the two cannot drift silently.
-      const redirectUrl = env.FYERS_REDIRECT_URL;
-      if (redirectUrl !== undefined) {
-        // Pulled apart with a regex rather than `new URL`: this package takes
-        // `process.env` as an argument precisely so it depends on nothing but
-        // zod — no Node types, no runtime globals. `.url()` above already
-        // guarantees the string parses, so the match cannot fail here.
-        const path = (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+([^?#]*)/i
-          .exec(redirectUrl)?.[1] ?? "").replace(/\/$/, "");
-        if (path !== FYERS_CALLBACK_PATH) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ["FYERS_REDIRECT_URL"],
-            message:
-              `must end in ${FYERS_CALLBACK_PATH} (the route apps/api serves), ` +
-              `got "${path}". It must also be on the API's own origin — the ` +
-              `callback needs the operator session cookie — and match the URL ` +
-              `registered at myapi.fyers.in byte for byte.`,
-          });
-        }
+    }
+
+    // The redirect URL must point at the route that actually exists (apps/api
+    // `GET /auth/fyers/callback`). Getting this wrong does not fail at boot on
+    // its own — it fails much later, as a broker login that silently never
+    // completes, which is the worst possible time to learn about it.
+    //
+    // Checked whenever the URL is SET, not only in live mode: paper trading
+    // runs on the real FYERS data feed (plan/19 §2), so the OAuth round trip
+    // is load-bearing there too.
+    //
+    // The path is spelled out here rather than imported: packages/ may not
+    // depend on apps/ (plan/03). It is asserted from the route's own side in
+    // apps/api's auth tests, so the two cannot drift silently.
+    const redirectUrl = env.FYERS_REDIRECT_URL;
+    if (redirectUrl !== undefined) {
+      // Pulled apart with a regex rather than `new URL`: this package takes
+      // `process.env` as an argument precisely so it depends on nothing but
+      // zod — no Node types, no runtime globals. `.url()` above already
+      // guarantees the string parses, so the match cannot fail here.
+      const path = (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+([^?#]*)/i
+        .exec(redirectUrl)?.[1] ?? "").replace(/\/$/, "");
+      if (path !== FYERS_CALLBACK_PATH) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["FYERS_REDIRECT_URL"],
+          message:
+            `must end in ${FYERS_CALLBACK_PATH} (the route apps/api serves), ` +
+            `got "${path}". It must also be on the API's own origin — the ` +
+            `callback needs the operator session cookie — and match the URL ` +
+            `registered at myapi.fyers.in byte for byte.`,
+        });
       }
     }
   });

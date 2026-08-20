@@ -1,4 +1,5 @@
 import type {
+  BrokerConnectionState,
   Position,
   RiskLimits,
   SessionContext,
@@ -30,6 +31,22 @@ export interface RuntimeControls {
   session(): SessionContext;
   /** Today's intraday equity samples, oldest first (plan/06 §4 day curve). */
   equityCurve(): readonly EquityPoint[];
+  /**
+   * Live market-data feed state (plan/19 §4). Surfaced because a disconnected
+   * feed is invisible from every other signal: the process is up, the engines
+   * are wired, strategies are enabled — and no candle ever arrives, so nothing
+   * ever fires. The operator has to be able to see that difference.
+   */
+  brokerConnection(): BrokerConnection;
+}
+
+/** What the control plane reports about the market-data feed. */
+export interface BrokerConnection {
+  state: BrokerConnectionState;
+  /** True only while the feed can actually deliver ticks. */
+  connected: boolean;
+  /** When the state last changed; undefined if it never has. */
+  since?: number | undefined;
 }
 
 /**
