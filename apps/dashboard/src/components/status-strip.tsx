@@ -17,9 +17,17 @@ function brokerLabel(state: SystemStatus["broker"]["state"]): string {
 }
 
 export function StatusStrip({ status }: { status: SystemStatus }) {
+  // "0 signals" alone is ambiguous: a strategy that evaluates all day and
+  // finds no setup reads identically to one that never ran. Showing the
+  // evaluation count next to it separates them at a glance — "0 signals /
+  // 1284 evaluated" is a working quiet day; "0 signals / 0 evaluated" is a
+  // broken pipeline (plan/06 §7).
+  const evaluated = status.engine.evaluationsToday;
   const engineLabel =
     status.engine.state === "running"
-      ? `RUNNING · ${String(status.engine.signalsToday)} signals`
+      ? evaluated === undefined
+        ? `RUNNING · ${String(status.engine.signalsToday)} signals`
+        : `RUNNING · ${String(status.engine.signalsToday)} signals / ${String(evaluated)} evaluated`
       : status.engine.state.toUpperCase();
 
   return (

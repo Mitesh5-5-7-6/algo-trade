@@ -70,7 +70,14 @@ export interface PnlSummary {
 export interface StrategyDayStats {
   strategyId: string;
   dayRealizedPnl: number;
+  /** BUY/SELL verdicts only — zero on any quiet day. */
   signalsToday: number;
+  /**
+   * Every verdict including HOLD: proof the strategy is actually evaluating.
+   * Optional so an older API build degrades to hiding it rather than showing
+   * a fabricated zero.
+   */
+  evaluationsToday?: number;
 }
 
 /** One `/pnl/curve` sample — the intraday day-curve point (plan/06 §4). */

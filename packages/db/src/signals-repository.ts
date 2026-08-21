@@ -60,6 +60,31 @@ export class SignalsRepository {
    * is not a raised signal — counting it would swamp the number with one row
    * per evaluation (plan/18 §6). Feeds the day stats read model (plan/06 §4).
    */
+  /**
+   * EVERY verdict since `since`, HOLD included — the strategy's pulse.
+   *
+   * `countActionableByStrategySince` answers "did it want to trade?", which is
+   * zero on any quiet day and therefore cannot distinguish a working strategy
+   * from one that never ran. This answers "did it look?", and the two together
+   * are what make "0 signals" interpretable instead of ambiguous.
+   */
+  async countEvaluationsByStrategySince(
+    since: number,
+  ): Promise<Map<string, number>> {
+    const rows = await this.collection
+      .aggregate([
+        { $match: { ts: { $gte: since } } },
+        { $group: { _id: "$strategyId", count: { $sum: 1 } } },
+      ])
+      .toArray();
+    const result = new Map<string, number>();
+    for (const raw of rows) {
+      const row = CountByStrategyRowSchema.parse(raw);
+      result.set(row._id, row.count);
+    }
+    return result;
+  }
+
   async countActionableByStrategySince(
     since: number,
   ): Promise<Map<string, number>> {

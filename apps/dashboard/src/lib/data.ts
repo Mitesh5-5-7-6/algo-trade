@@ -28,7 +28,19 @@ export interface SystemStatus {
     phase: "pre-open" | "open" | "closed";
     ts: number;
   };
-  engine: { state: "running" | "paused" | "killed"; signalsToday: number };
+  engine: {
+    state: "running" | "paused" | "killed";
+    /** BUY/SELL verdicts only — legitimately 0 on a quiet day. */
+    signalsToday: number;
+    /**
+     * Every verdict including HOLD. This is what separates "the strategy is
+     * evaluating and finding nothing" from "the strategy never ran" — two
+     * situations that both show 0 signals and need opposite responses.
+     * Undefined when the API does not report it, so the UI omits it rather
+     * than showing a zero it cannot vouch for.
+     */
+    evaluationsToday?: number;
+  };
   tradingEnabled: boolean;
 }
 
@@ -48,6 +60,8 @@ export interface StrategyRow {
   config: StrategyConfig;
   dayRealizedPnl: number;
   signalsToday: number;
+  /** All verdicts incl. HOLD; undefined when the API does not report it. */
+  evaluationsToday?: number;
   openPositions: number;
 }
 

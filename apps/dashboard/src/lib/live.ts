@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, ApiError } from "./api-client";
+import { api, ApiError, type StrategyDayStats } from "./api-client";
 import { qk } from "./query-keys";
 import {
   getMockSnapshot,
@@ -55,7 +55,9 @@ export function useDashboardData(enabled = true): LiveDashboard {
     initialData: mock.strategies.map((row) => row.config),
     enabled,
   });
-  const strategyStats = useQuery({
+  // Typed explicitly: inferring from the mock initialData would drop
+  // evaluationsToday, which the mock has no value for.
+  const strategyStats = useQuery<StrategyDayStats[]>({
     queryKey: qk.strategyStats,
     queryFn: api.strategyStats,
     initialData: mock.strategies.map((row) => ({
@@ -115,6 +117,9 @@ export function useDashboardData(enabled = true): LiveDashboard {
       config,
       dayRealizedPnl: stats?.dayRealizedPnl ?? 0,
       signalsToday: stats?.signalsToday ?? 0,
+      ...(stats?.evaluationsToday === undefined
+        ? {}
+        : { evaluationsToday: stats.evaluationsToday }),
       openPositions: openByStrategy(config.strategyId),
     };
   });
@@ -122,6 +127,13 @@ export function useDashboardData(enabled = true): LiveDashboard {
     (sum, row) => sum + row.signalsToday,
     0,
   );
+  // Total verdicts incl. HOLD. Undefined (not 0) when no strategy reported it,
+  // so the chip omits the figure rather than claiming a confident zero.
+  const evaluationsToday = strategyStats.data.some(
+    (row) => row.evaluationsToday !== undefined,
+  )
+    ? strategyStats.data.reduce((sum, row) => sum + (row.evaluationsToday ?? 0), 0)
+    : undefined;
 
   const realized = pnl.data?.realizedPnl ?? mock.dayPnl.realized;
   const unrealized = pnl.data?.unrealizedPnl ?? mock.dayPnl.unrealized;
@@ -155,6 +167,7 @@ export function useDashboardData(enabled = true): LiveDashboard {
           : "paused"
         : mock.status.engine.state,
       signalsToday,
+      ...(evaluationsToday === undefined ? {} : { evaluationsToday }),
     },
     tradingEnabled: control.data?.tradingEnabled ?? mock.status.tradingEnabled,
   };

@@ -175,15 +175,22 @@ export function registerControlPlane(
   // Static segment — registered alongside /strategies/:id, static wins.
   app.get("/strategies/stats", async () => {
     const since = startOfDayIST(Date.now());
-    const [configs, realizedByStrategy, signalsByStrategy] = await Promise.all([
-      strategies.listByOwner(OPERATOR_ID),
-      positions.sumRealizedByStrategySince(since),
-      signals.countActionableByStrategySince(since),
-    ]);
+    const [configs, realizedByStrategy, signalsByStrategy, evaluationsByStrategy] =
+      await Promise.all([
+        strategies.listByOwner(OPERATOR_ID),
+        positions.sumRealizedByStrategySince(since),
+        signals.countActionableByStrategySince(since),
+        signals.countEvaluationsByStrategySince(since),
+      ]);
     return configs.map((config) => ({
       strategyId: config.strategyId,
       dayRealizedPnl: realizedByStrategy.get(config.strategyId) ?? 0,
       signalsToday: signalsByStrategy.get(config.strategyId) ?? 0,
+      // Every verdict, HOLD included. Zero here means the strategy never ran —
+      // a wiring or data problem. Non-zero with signalsToday at 0 means it ran
+      // and found no setup, which is a normal quiet day. Without this the two
+      // are indistinguishable (plan/06 §7: never look healthier than you are).
+      evaluationsToday: evaluationsByStrategy.get(config.strategyId) ?? 0,
     }));
   });
 
