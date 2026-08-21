@@ -45,6 +45,35 @@ export function buildServer(options: BuildServerOptions) {
       });
     }
 
+    // Fastify's own framework errors — empty JSON body, malformed JSON,
+    // unsupported media type, payload too large — carry their own 4xx
+    // `statusCode` but set no `validation`. They were falling through to the
+    // 500 below, which is two failures at once: the caller is told the server
+    // broke when the request was malformed, and a genuine 500 is buried in
+    // logs full of client mistakes.
+    //
+    // A bodyless `POST` sent with `content-type: application/json` is the
+    // common case — that is FST_ERR_CTP_EMPTY_JSON_BODY, a 400, and it is how
+    // pause, kill, logout and strategy enable/disable all reported 500.
+    //
+    // Only 4xx is honored. A 5xx from the framework is still ours to own, and
+    // still answered opaquely below.
+    const status = error.statusCode;
+    if (typeof status === "number" && status >= 400 && status < 500) {
+      request.log.warn(
+        { err: error, code: error.code, statusCode: status },
+        "client error",
+      );
+      return reply.status(status).send({
+        error: {
+          code: error.code,
+          // Fastify's messages for these name the actual problem and contain
+          // nothing internal, so they are worth passing through.
+          message: error.message,
+        },
+      });
+    }
+
     // Anything else is unexpected: log full, return an opaque 500. The
     // process stays up (PM2 would restart on a real crash, plan/05 §8).
     request.log.error({ err: error }, "unhandled error");

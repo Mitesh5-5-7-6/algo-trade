@@ -115,3 +115,77 @@ describe("central error handler (plan/05 §5)", () => {
     expect(res.body).not.toContain("secret internal detail");
   });
 });
+
+describe("framework errors keep their own status (not a blanket 500)", () => {
+  let app: ApiServer;
+  afterEach(async () => {
+    await app.close();
+  });
+
+  /** A route that takes no body — pause, kill, logout, enable/disable. */
+  function bodylessPostServer(): ApiServer {
+    const app = makeServer([]);
+    app.post("/control/pause", () => ({ tradingEnabled: false }));
+    return app;
+  }
+
+  it("rejects a bodyless JSON POST as 400, not 500", async () => {
+    // The exact shape the dashboard used to send: content-type declares JSON,
+    // no body follows. Fastify raises FST_ERR_CTP_EMPTY_JSON_BODY, a 400 —
+    // which the handler was discarding, reporting the server as broken and
+    // burying real 500s in logs full of client mistakes.
+    app = bodylessPostServer();
+    const res = await app.inject({
+      method: "POST",
+      url: "/control/pause",
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).not.toMatchObject({ error: { code: "INTERNAL_ERROR" } });
+  });
+
+  it("succeeds when no content-type is declared, as the client now sends", async () => {
+    app = bodylessPostServer();
+    const res = await app.inject({ method: "POST", url: "/control/pause" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ tradingEnabled: false });
+  });
+
+  it("reports malformed JSON as 400", async () => {
+    app = bodylessPostServer();
+    const res = await app.inject({
+      method: "POST",
+      url: "/control/pause",
+      headers: { "content-type": "application/json" },
+      payload: "{not json",
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("names the failure instead of an opaque message", async () => {
+    app = bodylessPostServer();
+    const res = await app.inject({
+      method: "POST",
+      url: "/control/pause",
+      headers: { "content-type": "application/json" },
+    });
+    expect(res.body).not.toContain("Internal server error");
+    expect(res.body).not.toContain("INTERNAL_ERROR");
+  });
+
+  it("still answers a genuine handler throw opaquely with 500", async () => {
+    // A bug in our code must not leak its message to the caller.
+    app = makeServer([]);
+    app.get("/boom", () => {
+      throw new Error("secret internal detail");
+    });
+    const res = await app.inject({ method: "GET", url: "/boom" });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).not.toContain("secret internal detail");
+    expect(res.json()).toMatchObject({ error: { code: "INTERNAL_ERROR" } });
+  });
+});

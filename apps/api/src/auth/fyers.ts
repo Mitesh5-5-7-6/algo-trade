@@ -19,6 +19,13 @@ export interface FyersAuthRoutesDeps {
   /** Where the operator's browser is sent once the token is stored. */
   dashboardOrigin: string;
   brokerTokens: BrokerTokensRepository;
+  /**
+   * Called after a fresh token lands, so the market-data feed can be brought
+   * back up. Without it, reconnecting stores a valid token and changes
+   * nothing: broker.connect() only runs at boot, so the feed stays down until
+   * the process restarts — and the whole point of the button is to avoid that.
+   */
+  onTokenStored?: () => Promise<void>;
 }
 
 const CallbackQuery = z.object({
@@ -118,6 +125,19 @@ export function registerFyersAuthRoutes(
       expiresAt,
       data.refresh_token,
     );
+
+    // Bring the feed up with the new token before redirecting, so the
+    // dashboard renders the result of this action rather than a stale
+    // NO FEED the operator would have to refresh past. A failure here is not
+    // the login's failure — the token IS stored — so it must not turn a
+    // successful auth into an error page.
+    if (deps.onTokenStored) {
+      try {
+        await deps.onTokenStored();
+      } catch (error) {
+        request.log.error({ err: error }, "broker reconnect after token store failed");
+      }
+    }
 
     // Back to the dashboard — an absolute URL, because we are on the API
     // origin here, not the dashboard's. `reply.redirect("/")` would land the

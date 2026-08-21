@@ -27,10 +27,20 @@ export function isStepUpRequired(error: unknown): boolean {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // `content-type: application/json` is set only when there IS a body.
+  // Declaring a JSON body and sending none makes Fastify reject the request
+  // outright (FST_ERR_CTP_EMPTY_JSON_BODY) — which is what broke every
+  // bodyless POST: pause, kill, logout, and strategy enable/disable.
+  // `Headers` rather than object spread: `HeadersInit` may be an array of
+  // pairs or a Headers instance, and spreading either yields nonsense.
+  const headers = new Headers(init?.headers);
+  if (init?.body !== undefined && init.body !== null) {
+    headers.set("content-type", "application/json");
+  }
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
-    headers: { "content-type": "application/json" },
     ...init,
+    headers,
   });
   if (!response.ok) {
     let message = response.statusText;

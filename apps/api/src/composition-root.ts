@@ -135,16 +135,42 @@ export async function bootstrap(
   );
 
   // --- Broker (plan/19 §2) ---
+  const brokerLog = componentLogger(logger, "api.broker");
   let broker: Broker;
   let fyersBroker: FyersBroker | null = null;
   if (config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
     fyersBroker = new FyersBroker({
       appId: config.FYERS_APP_ID,
+      // FYERS access tokens last about a day, and nothing refreshes them yet
+      // (jobs/token-lifecycle is still a stub). So the ordinary morning state
+      // is "a token exists and is stale" — and handing a stale one to the SDK
+      // just makes it throw while decoding the JWT, which surfaced as a bare
+      // NO FEED indistinguishable from a network fault.
+      //
+      // Checked here, where a logger exists, so the reason is stated once and
+      // plainly instead of being inferred from a silent disconnect.
       getToken: async () => {
         const user = await users.findFirstUser();
-        if (!user) return null;
+        if (!user) {
+          brokerLog.warn("no operator account — cannot load a FYERS token");
+          return null;
+        }
         const token = await brokerTokens.getDecryptedToken(user.userId);
-        return token ? token.accessToken : null;
+        if (!token) {
+          brokerLog.warn(
+            "no FYERS token stored — connect the broker from Settings",
+          );
+          return null;
+        }
+        if (token.expiresAt <= Date.now()) {
+          brokerLog.warn(
+            { expiredAt: new Date(token.expiresAt).toISOString() },
+            "FYERS access token EXPIRED — reconnect from Settings; the feed " +
+              "stays down until a fresh token is stored (plan/19 §3)",
+          );
+          return null;
+        }
+        return token.accessToken;
       },
     });
   }
@@ -303,6 +329,13 @@ export async function bootstrap(
       fyersRedirectUrl: config.FYERS_REDIRECT_URL,
       dashboardOrigin: config.DASHBOARD_ORIGIN,
       brokerTokens,
+      // Reconnect the feed with the token that was just stored. The daily
+      // expiry makes this the normal morning path, and without it the button
+      // would store a valid token while the feed stayed down until a restart.
+      onTokenStored: async () => {
+        brokerLog.info("fresh FYERS token stored — reconnecting the feed");
+        await broker.connect();
+      },
     });
   }
   // --- Broker webhooks (plan/19 §4) ---
