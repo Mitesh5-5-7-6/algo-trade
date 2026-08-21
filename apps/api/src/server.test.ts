@@ -5,6 +5,7 @@ import {
   NotFoundError,
   RiskViolationError,
   StepUpRequiredError,
+  ValidationError,
 } from "./errors.js";
 import type { DependencyCheck } from "./health.js";
 
@@ -129,11 +130,12 @@ describe("framework errors keep their own status (not a blanket 500)", () => {
     return app;
   }
 
-  it("rejects a bodyless JSON POST as 400, not 500", async () => {
-    // The exact shape the dashboard used to send: content-type declares JSON,
-    // no body follows. Fastify raises FST_ERR_CTP_EMPTY_JSON_BODY, a 400 —
-    // which the handler was discarding, reporting the server as broken and
-    // burying real 500s in logs full of client mistakes.
+  it("accepts a bodyless JSON POST — the shape every client actually sends", async () => {
+    // content-type declares JSON, no body follows. Fastify default-rejects
+    // this (FST_ERR_CTP_EMPTY_JSON_BODY); our parser treats it as no body,
+    // because a route that needs none has nothing to complain about. Relying
+    // on clients never doing this is not tenable — a cached bundle or a curl
+    // call does it too.
     app = bodylessPostServer();
     const res = await app.inject({
       method: "POST",
@@ -141,8 +143,27 @@ describe("framework errors keep their own status (not a blanket 500)", () => {
       headers: { "content-type": "application/json" },
     });
 
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ tradingEnabled: false });
+  });
+
+  it("hands a body-requiring route undefined, so ITS validation reports", async () => {
+    // The transport stops complaining; the route names the missing fields.
+    app = makeServer([]);
+    app.post("/needs-body", (request) => {
+      if (request.body === undefined) throw new ValidationError("body required");
+      return { ok: true };
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/needs-body",
+      headers: { "content-type": "application/json" },
+    });
+
     expect(res.statusCode).toBe(400);
-    expect(res.json()).not.toMatchObject({ error: { code: "INTERNAL_ERROR" } });
+    expect(res.json()).toMatchObject({
+      error: { code: "VALIDATION_ERROR" },
+    });
   });
 
   it("succeeds when no content-type is declared, as the client now sends", async () => {
@@ -153,7 +174,7 @@ describe("framework errors keep their own status (not a blanket 500)", () => {
     expect(res.json()).toEqual({ tradingEnabled: false });
   });
 
-  it("reports malformed JSON as 400", async () => {
+  it("still reports malformed JSON as 400", async () => {
     app = bodylessPostServer();
     const res = await app.inject({
       method: "POST",

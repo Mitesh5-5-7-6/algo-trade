@@ -1,6 +1,6 @@
 import Fastify, { type FastifyError } from "fastify";
 import type { Logger } from "@neelkanth/logger";
-import { isDomainError } from "./errors.js";
+import { isDomainError, ValidationError } from "./errors.js";
 import { checkReadiness, type DependencyCheck } from "./health.js";
 
 export interface BuildServerOptions {
@@ -23,6 +23,38 @@ export function buildServer(options: BuildServerOptions) {
     // Trust the reverse proxy in front of us for client IPs (plan/22 §2).
     trustProxy: true,
   });
+
+  // --- Body parsing (plan/04 §4) ---
+  // An empty body is not an error. Fastify's default JSON parser rejects one
+  // outright (FST_ERR_CTP_EMPTY_JSON_BODY), which broke every route that
+  // legitimately takes no body — pause, kill, logout, strategy
+  // enable/disable/delete — because clients routinely set
+  // `content-type: application/json` on every request they send.
+  //
+  // Fixing the client is not enough on its own: a cached bundle, a curl call,
+  // or any other caller would hit the same wall. The server is the right place
+  // to be liberal here.
+  //
+  // Routes that DO need a body are unaffected — they get `undefined` and their
+  // own Zod parse rejects it with our VALIDATION_ERROR envelope, which names
+  // the missing fields instead of complaining about the transport.
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_request, body, done) => {
+      if (typeof body !== "string" || body.trim() === "") {
+        done(null, undefined);
+        return;
+      }
+      try {
+        done(null, JSON.parse(body));
+      } catch {
+        // A DomainError, so the central handler renders it as a 400 in our
+        // envelope rather than letting a framework error through.
+        done(new ValidationError("malformed JSON body"), undefined);
+      }
+    },
+  );
 
   // --- Central error handler (plan/05 §5) ---
   // One place maps typed domain errors → status + logs with context, so
