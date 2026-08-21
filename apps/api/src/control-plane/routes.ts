@@ -29,10 +29,25 @@ import { buildActivityFeed } from "./activity.js";
 const OPERATOR_ID = "operator";
 const LIST_LIMIT = 100;
 
+/**
+ * Validate at the boundary (plan/04 §4) and tell the caller what was wrong.
+ *
+ * The message carries the field paths and reasons, because a bare "invalid
+ * request" makes the operator guess. Zod's issues describe only the request
+ * they just sent — no internal detail — so passing them through costs nothing
+ * and turns a dead end into an instruction. They stay in `context` too, for
+ * the structured log.
+ */
 function parse<T>(schema: ZodType<T>, data: unknown): T {
   const result = schema.safeParse(data);
   if (!result.success) {
-    throw new ValidationError("invalid request", {
+    const detail = result.error.issues
+      .map((issue) => {
+        const path = issue.path.join(".");
+        return path === "" ? issue.message : `${path}: ${issue.message}`;
+      })
+      .join("; ");
+    throw new ValidationError(detail === "" ? "invalid request" : detail, {
       issues: result.error.issues,
     });
   }
@@ -41,11 +56,39 @@ function parse<T>(schema: ZodType<T>, data: unknown): T {
 
 const IdParams = z.object({ id: z.string().min(1) });
 
+/**
+ * A symbol the broker can actually stream: `EXCHANGE:INSTRUMENT`, e.g.
+ * `NSE:RELIANCE-EQ` (plan/17 §7, and the form documented on `SymbolSchema`).
+ *
+ * Enforced HERE, at the write boundary, rather than on `SymbolSchema` itself.
+ * Tightening the core schema would make existing rows unreadable — a strategy
+ * saved with a bare ticker would throw on every `GET /strategies` instead of
+ * being fixable through the UI.
+ *
+ * Why reject rather than normalize `RELIANCE` to `NSE:RELIANCE-EQ`: that guess
+ * picks an exchange and a segment on the operator's behalf. The same ticker
+ * exists on BSE, and as futures and options. Silently choosing one and
+ * trading it is exactly the "mostly right" this system refuses (plan/02 §10).
+ *
+ * The failure this prevents is invisible and expensive: a bare ticker is
+ * accepted, subscribed, and matches nothing. The feed reports healthy, the
+ * strategy sits enabled, and it produces no signal — for an entire session,
+ * with nothing anywhere saying why.
+ */
+const NormalizedSymbol = z
+  .string()
+  .regex(
+    /^[A-Z]{2,6}:[A-Za-z0-9][A-Za-z0-9._&-]*$/,
+    'must be EXCHANGE:INSTRUMENT, e.g. "NSE:RELIANCE-EQ" — a bare ticker ' +
+      'like "RELIANCE" is not an instrument the broker can stream, so it ' +
+      "would subscribe successfully and never deliver a tick",
+  );
+
 const CreateStrategyBody = z.object({
   type: z.string().min(1),
   name: z.string().min(1),
   params: z.record(z.string(), z.unknown()),
-  symbols: z.array(z.string().min(1)).min(1),
+  symbols: z.array(NormalizedSymbol).min(1),
   riskRules: RiskRulesSchema.optional(),
   enabled: z.boolean().default(false),
 });
@@ -53,7 +96,7 @@ const CreateStrategyBody = z.object({
 const UpdateStrategyBody = z.object({
   name: z.string().min(1).optional(),
   params: z.record(z.string(), z.unknown()).optional(),
-  symbols: z.array(z.string().min(1)).min(1).optional(),
+  symbols: z.array(NormalizedSymbol).min(1).optional(),
   riskRules: RiskRulesSchema.optional(),
 });
 
