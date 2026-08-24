@@ -216,7 +216,13 @@ export async function bootstrap(
   }
 
   // --- Runtime (plan/05 §3) ---
-  const runtime = await startEngineRuntime({ redis, mongo, logger, broker });
+  const runtime = await startEngineRuntime({
+    redis,
+    mongo,
+    logger,
+    broker,
+    mode: config.BROKER_MODE,
+  });
 
   // Establish the broker data feed (plan/19 §4).
   // Done before enabling strategies so indicator warm-up has live prices.

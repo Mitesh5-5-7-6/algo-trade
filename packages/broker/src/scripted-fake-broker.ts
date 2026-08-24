@@ -36,9 +36,21 @@ export class ScriptedFakeBroker implements Broker {
 
   private readonly options: ScriptedFakeBrokerOptions;
   private readonly scripted = new Map<string, ExecutionOutcome>();
+  /**
+   * What this broker would tell us on a `status()` query. Fill details are
+   * kept, not just the status: a real broker reports the price it filled at,
+   * and reconciliation after a crash cannot rebuild the position without it.
+   * A fake that omits them would let a reconcile bug pass its tests.
+   */
   private readonly known = new Map<
     string,
-    { status: OrderStatus; brokerOrderId?: string }
+    {
+      status: OrderStatus;
+      brokerOrderId?: string;
+      filledPrice?: number;
+      filledQty?: number;
+      filledAt?: number;
+    }
   >();
   private readonly orderUpdateHandlers: ((u: OrderUpdate) => void)[] = [];
   private readonly dataHandlers: ((raw: unknown) => void)[] = [];
@@ -110,6 +122,11 @@ export class ScriptedFakeBroker implements Broker {
       ...(known.brokerOrderId === undefined
         ? {}
         : { brokerOrderId: known.brokerOrderId }),
+      ...(known.filledPrice === undefined
+        ? {}
+        : { filledPrice: known.filledPrice }),
+      ...(known.filledQty === undefined ? {} : { filledQty: known.filledQty }),
+      ...(known.filledAt === undefined ? {} : { filledAt: known.filledAt }),
     });
   }
 
@@ -177,6 +194,9 @@ export class ScriptedFakeBroker implements Broker {
     if (outcome.status === "FILLED") {
       this.known.set(clientOrderId, {
         status: "FILLED",
+        filledPrice: outcome.fill.filledPrice,
+        filledQty: outcome.fill.filledQty,
+        filledAt: outcome.fill.filledAt,
         ...(outcome.fill.brokerOrderId === undefined
           ? {}
           : { brokerOrderId: outcome.fill.brokerOrderId }),
@@ -195,6 +215,9 @@ export class ScriptedFakeBroker implements Broker {
     if (update.status === "FILLED") {
       this.known.set(update.fill.clientOrderId, {
         status: "FILLED",
+        filledPrice: update.fill.filledPrice,
+        filledQty: update.fill.filledQty,
+        filledAt: update.fill.filledAt,
         ...(update.fill.brokerOrderId === undefined
           ? {}
           : { brokerOrderId: update.fill.brokerOrderId }),

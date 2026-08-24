@@ -36,10 +36,27 @@ export const BrokerOrderRequestSchema = z.object({
   type: OrderTypeSchema,
   /** Required for LIMIT, absent for MARKET. */
   price: PriceSchema.optional(),
-  /** Stop loss trigger price (if a bracket/cover order). */
+  /** Stop loss trigger price (absolute). */
   stopLoss: PriceSchema.optional(),
-  /** Take profit target price (if a bracket order). */
+  /** Take profit target price (absolute). */
   takeProfit: PriceSchema.optional(),
+  /**
+   * The price the strategy's `stopLoss`/`takeProfit` were computed against —
+   * the decision-time close for a MARKET order, the limit for a LIMIT one.
+   *
+   * Our contract states SL/TP as ABSOLUTE prices, because that is what a
+   * strategy reasons in. FYERS states them as OFFSETS in points from the
+   * entry. Converting between the two needs an entry price, and a MARKET
+   * order does not have one until it fills — so the adapter would have
+   * nothing to subtract from, and the previous code resolved that by
+   * refusing the order outright ("LIMIT price required").
+   *
+   * This carries the missing term. It is explicitly NOT a limit price: it
+   * never becomes one, and it never changes the order type. It exists only so
+   * a protective leg can be expressed in the units the broker wants, using
+   * the same reference the strategy used when it sized the risk.
+   */
+  referencePrice: PriceSchema.optional(),
 });
 export type BrokerOrderRequest = z.infer<typeof BrokerOrderRequestSchema>;
 
@@ -116,6 +133,22 @@ export const BrokerOrderStatusSchema = z.object({
   found: z.boolean(),
   status: OrderStatusSchema.optional(),
   brokerOrderId: z.string().optional(),
+  /**
+   * Fill details, present when `status` is FILLED and the broker reports them.
+   *
+   * Reconciliation after a crash needs these. Marking an order FILLED without
+   * a price closes the order row but leaves the Position and PnL engines
+   * ignorant of the trade — the books silently disagree with the broker. And
+   * publishing a fill with a *guessed* price is worse still: it corrupts the
+   * position's average entry and every P&L figure derived from it.
+   *
+   * So they are optional here and their ABSENCE is meaningful: it means the
+   * fill cannot be reconstructed faithfully and must be escalated rather than
+   * approximated (plan/12 §8, plan/02 §10).
+   */
+  filledPrice: PriceSchema.optional(),
+  filledQty: QuantitySchema.optional(),
+  filledAt: TimestampSchema.optional(),
 });
 export type BrokerOrderStatus = z.infer<typeof BrokerOrderStatusSchema>;
 

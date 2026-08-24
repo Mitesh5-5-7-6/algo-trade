@@ -20,6 +20,7 @@ interface FyersOrderPayload {
   stopPrice?: number;
   stopLoss?: number;
   takeProfit?: number;
+  legType?: number;
   orderTag?: string;
   productType?: string;
 }
@@ -112,37 +113,44 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     expect(body.limitPrice).toBe(2500);
   });
 
-  it("maps a Bracket Order correctly (BO)", async () => {
+  it("sends a MARKET entry's stop/target as point offsets on INTRADAY", async () => {
+    // The regression this locks down: SL+TP used to select productType "BO",
+    // which demanded a LIMIT price to subtract from. The Order Manager only
+    // ever builds MARKET orders, so every strategy entry — all three attach a
+    // stop and a target — was refused here, locally, before a request was
+    // made. FYERS v3 takes the legs as offsets on an ordinary INTRADAY order.
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ s: "ok", id: "fyers_bo" }),
+      json: () => Promise.resolve({ s: "ok", id: "fyers_legs" }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
     const broker = new FyersBroker(deps());
-    // entry at 100, SL at 95, target at 110
-    await broker.execute(
+    const outcome = await broker.execute(
       order({
-        type: "LIMIT",
-        price: 100,
+        type: "MARKET",
+        referencePrice: 100,
         stopLoss: 95,
         takeProfit: 110,
         side: "BUY",
       }),
     );
 
+    expect(outcome.status).toBe("PENDING");
     const body = JSON.parse(
       (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
     ) as FyersOrderPayload;
-    expect(body.productType).toBe("BO");
-    expect(body.stopLoss).toBe(5); // 100 - 95
-    expect(body.takeProfit).toBe(10); // 110 - 100
+    expect(body.productType).toBe("INTRADAY");
+    expect(body.type).toBe(2); // still a MARKET entry
+    expect(body.stopLoss).toBe(5); // 100 - 95, in points
+    expect(body.takeProfit).toBe(10); // 110 - 100, in points
+    expect(body.legType).toBe(1); // 1 = points
   });
 
-  it("maps a Cover Order correctly (CO)", async () => {
+  it("measures the offsets from the limit price when the order has one", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ s: "ok", id: "fyers_co" }),
+      json: () => Promise.resolve({ s: "ok", id: "fyers_lim" }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -154,9 +162,88 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     const body = JSON.parse(
       (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
     ) as FyersOrderPayload;
-    expect(body.productType).toBe("CO");
-    expect(body.stopPrice).toBe(95); // CO sends absolute trigger price
-    expect(body.stopLoss).toBeUndefined(); // stopLoss field is only for BO
+    expect(body.productType).toBe("INTRADAY");
+    expect(body.stopLoss).toBe(5);
+    expect(body.takeProfit).toBeUndefined(); // none was asked for
+  });
+
+  it("inverts the offsets for a SELL entry", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ s: "ok", id: "fyers_short" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const broker = new FyersBroker(deps());
+    // Short at 100: the stop sits ABOVE at 104, the target BELOW at 92.
+    await broker.execute(
+      order({
+        type: "MARKET",
+        referencePrice: 100,
+        stopLoss: 104,
+        takeProfit: 92,
+        side: "SELL",
+      }),
+    );
+
+    const body = JSON.parse(
+      (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
+    ) as FyersOrderPayload;
+    expect(body.stopLoss).toBe(4);
+    expect(body.takeProfit).toBe(8);
+  });
+
+  it("sends no leg fields when the order asked for none", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ s: "ok", id: "fyers_bare" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const broker = new FyersBroker(deps());
+    await broker.execute(order({ referencePrice: 100 }));
+
+    const body = JSON.parse(
+      (mockFetch.mock.calls[0] as [string, RequestInit])[1].body as string,
+    ) as FyersOrderPayload;
+    expect(body.stopLoss).toBeUndefined();
+    expect(body.takeProfit).toBeUndefined();
+    expect(body.legType).toBeUndefined();
+  });
+
+  it("refuses, rather than placing an unprotected entry, with no reference price", async () => {
+    // Fails closed: dropping the leg would leave a live naked position that
+    // the strategy and the risk engine both believe is protected.
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const broker = new FyersBroker(deps());
+    const outcome = await broker.execute(
+      order({ stopLoss: 95, takeProfit: 110 }), // no referencePrice
+    );
+
+    expect(outcome.status).toBe("REJECTED");
+    if (outcome.status === "REJECTED") {
+      expect(outcome.reason).toMatch(/referencePrice/);
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("refuses a stop on the wrong side of the entry", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+
+    const broker = new FyersBroker(deps());
+    // A BUY whose "stop" sits above the entry is not a stop at all.
+    const outcome = await broker.execute(
+      order({ referencePrice: 100, stopLoss: 105 }),
+    );
+
+    expect(outcome.status).toBe("REJECTED");
+    if (outcome.status === "REJECTED") {
+      expect(outcome.reason).toMatch(/protective side/);
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("returns REJECTED when FYERS API responds with an error", async () => {

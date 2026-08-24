@@ -18,5 +18,15 @@ export interface OrderPorts {
   persistOrder(order: Order): Promise<boolean>;
   /** Patch an order toward a terminal state (plan/12 §5). */
   updateOrder(orderId: string, patch: Partial<Order>): Promise<void>;
+  /**
+   * Read one order back by our own `orderId`.
+   *
+   * Needed by the async update path (plan/19 §5): a live fill arrives from the
+   * broker carrying only its own reference and the fill itself. Everything the
+   * projection chain needs to attribute that fill — strategy, symbol, side,
+   * signal, mode — lives on the order row and nowhere else, so the row has to
+   * be re-read before ORDER_FILLED can be published.
+   */
+  readOrder(orderId: string): Promise<Order | null>;
   publish: PublishFn;
 }

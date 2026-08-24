@@ -4,11 +4,21 @@
  * null on invalid input; the form shows the error and never submits nulls.
  */
 
-/** "nse:infy-eq, NSE:TCS-EQ" → ["NSE:INFY-EQ", "NSE:TCS-EQ"]; null if empty. */
+/**
+ * "nse:infy-eq, NSE:TCS-EQ" → ["NSE:INFY-EQ", "NSE:TCS-EQ"]; null if empty.
+ *
+ * Quotes and brackets are stripped because the natural thing to paste into a
+ * "comma-separated" box is a chunk of a JSON array — `"NSE:INFY-EQ",
+ * "NSE:TCS-EQ"` — and this used to keep the quote characters as part of the
+ * symbol. That produced a strategy subscribed to `"NSE:INFY-EQ"` (quotes
+ * included), which the broker accepts and never streams: enabled strategy,
+ * healthy feed, not one tick, no signal, no order, and nothing anywhere
+ * saying why. Three live strategies were sitting in exactly that state.
+ */
 export function parseSymbols(input: string): string[] | null {
   const symbols = input
     .split(/[,\s]+/)
-    .map((s) => s.trim().toUpperCase())
+    .map((s) => s.replace(/^["'[\]]+|["'[\]]+$/g, "").trim().toUpperCase())
     .filter((s) => s.length > 0);
   return symbols.length > 0 ? symbols : null;
 }

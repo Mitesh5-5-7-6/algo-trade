@@ -1,6 +1,7 @@
 import type {
   BrokerConnectionState,
   Candle,
+  TradeMode,
   RiskLimits,
   RiskRules,
   SessionContext,
@@ -109,6 +110,8 @@ export async function startEngineRuntime(deps: {
   mongo: MongoConnection;
   logger: Logger;
   broker: Broker;
+  /** Stamped on every order and fill event — the audit trail (plan/12 §4). */
+  mode: TradeMode;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -251,13 +254,42 @@ export async function startEngineRuntime(deps: {
     readTradingEnabled: () => Promise.resolve(state.tradingEnabled),
     persistOrder: (order) => orders.insert(order),
     updateOrder: (orderId, patch) => orders.update(orderId, patch),
+    readOrder: (orderId) => orders.findByOrderId(orderId),
     publish,
   };
   const orderManager = new OrderManager({
     broker: deps.broker,
     ports: orderPorts,
+    // From BROKER_MODE, not from which broker object was wired: the paper
+    // path can be given a LIVE data feed, so the object identity does not
+    // answer "is this real money?".
+    mode: deps.mode,
     nextOrderId: () => `ord_${crypto.randomUUID()}`,
     onError,
+  });
+
+  // The plan/12 §7 halt. It existed only as an untouched setter: nothing in
+  // production ever called it, so the Order Manager's `brokerConnected` sat at
+  // its `true` default forever and orders could be fired at a broker we had
+  // already lost contact with.
+  //
+  // LIVE ONLY, for the same reason `mode` is injected rather than sniffed: in
+  // paper mode this state describes the FYERS *data* feed while execution is
+  // the in-process simulator, which cannot disconnect. Halting paper execution
+  // on a feed blip would invent an outage that isn't there — and a paper order
+  // with no price is already refused by the Paper Broker on its own terms.
+  if (deps.mode === "live") {
+    deps.broker.onConnectionChange((next) => {
+      orderManager.setBrokerConnected(next === "connected");
+    });
+  }
+
+  // The async half of a live submission (plan/19 §5). `execute()` returns
+  // PENDING and the fill arrives here, later, on the broker's order stream.
+  // Nothing consumed that stream before, so a live order never left PENDING:
+  // no ORDER_FILLED, no position, no PnL, against money that had moved.
+  deps.broker.onOrderUpdate((update) => {
+    void orderManager.onBrokerUpdate(update);
   });
 
   // --- Risk Engine ---
@@ -269,13 +301,25 @@ export async function startEngineRuntime(deps: {
       Promise.resolve(positionEngine.getOpenPositions().length),
     readPosition: (strategyId, symbol) =>
       Promise.resolve(positionEngine.getPosition(strategyId, symbol)),
-    hasInflightIntent: (strategyId, symbol, side) => {
+    // "in flight OR open" — the port contract (plan/14 §4.2). Only the OPEN
+    // half was implemented, leaving the window this check exists to close:
+    // an order is PLACED and submitted, the fill has not returned, so no
+    // position exists yet — and a second signal arriving in that gap sees
+    // nothing, passes, and doubles the entry. Ticks arrive milliseconds
+    // apart, so that window is real.
+    //
+    // Position first because it is in memory and free; the order query only
+    // runs when the cheap answer is no.
+    hasInflightIntent: async (strategyId, symbol, side) => {
       const p = positionEngine.getPosition(strategyId, symbol);
-      if (p === null) return Promise.resolve(false);
-      return Promise.resolve(
-        (side === "BUY" && p.side === "LONG") ||
-          (side === "SELL" && p.side === "SHORT"),
-      );
+      if (
+        p !== null &&
+        ((side === "BUY" && p.side === "LONG") ||
+          (side === "SELL" && p.side === "SHORT"))
+      ) {
+        return true;
+      }
+      return await orders.hasInflightOrder(strategyId, symbol, side);
     },
     readPortfolio: () => {
       const p = computePortfolio(
@@ -475,7 +519,14 @@ export async function startEngineRuntime(deps: {
         minutesSinceOpen: istMinuteOfDay(now) - openMinute,
       };
       if (evaluation.phaseChanged) {
-        await writeHot(hotSessionKey(), evaluation.phase);
+        // Through the Market Data Engine's port, NOT a raw write. There were
+        // two writers of this key and they disagreed: this one stored the
+        // bare string `"open"`, the port stores `{ phase: "open" }`, and the
+        // Paper Broker reads `.phase`. So `readSessionOpen()` was permanently
+        // false and every paper order was refused "market is closed" — while
+        // the golden run, which hardcodes the session open, stayed green.
+        // One writer, one shape (plan/02 §8: sole writer).
+        await marketDataPorts.writeHotSession(evaluation.phase);
       }
       if (evaluation.marketOpened) {
         indicatorEngine.onMarketOpen();

@@ -56,6 +56,16 @@ export const OrderSchema = z.object({
   charges: z.number().nonnegative().optional(),
   filledPrice: PriceSchema.optional(),
   filledAt: TimestampSchema.optional(),
+  /**
+   * Why the broker refused it, in the broker's own words.
+   *
+   * There was nowhere to record this, so the reason was discarded at the very
+   * moment it was learned. A REJECTED row with no explanation is the hardest
+   * kind of failure to chase — the answer existed, briefly, and was dropped.
+   */
+  rejectReason: z.string().optional(),
+  /** The broker's error code, when it supplied one. */
+  rejectCode: z.string().optional(),
   createdAt: TimestampSchema,
 });
 export type Order = z.infer<typeof OrderSchema>;

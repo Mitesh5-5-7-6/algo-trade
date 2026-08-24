@@ -1,5 +1,10 @@
 import type { Db } from "mongodb";
-import { OrderSchema, type Order, type OrderStatus } from "@neelkanth/core";
+import {
+  OrderSchema,
+  type Order,
+  type OrderSide,
+  type OrderStatus,
+} from "@neelkanth/core";
 import { COLLECTIONS } from "./collections.js";
 
 function isDuplicateKeyError(error: unknown): boolean {
@@ -47,6 +52,34 @@ export class OrdersRepository {
       .find({ status: { $in: [...statuses] } }, { projection: { _id: 0 } })
       .toArray();
     return docs.map((doc) => OrderSchema.parse(doc));
+  }
+
+  /**
+   * Is an order for this strategy+symbol+side still live at the broker?
+   *
+   * The window this closes: an order is PLACED and submitted, but the fill has
+   * not come back yet, so no position exists. A second signal arriving in that
+   * gap sees no position, passes the duplicate check, and doubles the intended
+   * entry. Ticks arrive milliseconds apart, so the window is real.
+   *
+   * Counts PLACED and PENDING only — an order that FILLED is represented by a
+   * position, and one that was REJECTED or CANCELLED is not live.
+   */
+  async hasInflightOrder(
+    strategyId: string,
+    symbol: string,
+    side: OrderSide,
+  ): Promise<boolean> {
+    const found = await this.collection.findOne(
+      {
+        strategyId,
+        symbol,
+        side,
+        status: { $in: ["PLACED", "PENDING"] },
+      },
+      { projection: { _id: 1 } },
+    );
+    return found !== null;
   }
 
   async findByOrderId(orderId: string): Promise<Order | null> {

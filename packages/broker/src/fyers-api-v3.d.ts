@@ -53,6 +53,59 @@ declare module "fyers-api-v3" {
     readonly LiteMode?: unknown;
   }
 
+  /**
+   * One order-book row as the order socket delivers it, after the SDK's own
+   * `ordersocket/mapper.js` renames the wire fields. `status` has already been
+   * translated by the SDK into the same 1–6 codes the REST order book uses
+   * (1 Cancelled, 2 Traded, 3 Transit, 4 Rejected, 5 Pending, 6 Expired).
+   */
+  export interface FyersOrderUpdate {
+    orderTag?: string;
+    id?: string;
+    status?: number;
+    tradedPrice?: number;
+    filledQty?: number;
+    qty?: number;
+    /** The OMS's own message — the rejection reason, when it rejects. */
+    message?: string;
+    /** Epoch SECONDS. */
+    orderDateTime?: number | string;
+    [key: string]: unknown;
+  }
+
+  export interface FyersOrderSocketInstance {
+    on(event: "connect" | "close", handler: () => void): void;
+    on(event: "error" | "general", handler: (message: unknown) => void): void;
+    on(
+      event: "orders",
+      handler: (message: { s: string; orders: FyersOrderUpdate }) => void,
+    ): void;
+
+    connect(): void;
+    autoreconnect(retries?: number): void;
+    /** Channel names to subscribe; use the instance's own channel constants. */
+    subscribe(channels: readonly string[]): void;
+    unsubscribe(channels: readonly string[]): void;
+    close(): void;
+
+    /** Channel-name constants exposed on the instance. */
+    readonly orderUpdates: string;
+    readonly tradeUpdates: string;
+    readonly positionUpdates: string;
+    isConnected?(): boolean;
+  }
+
+  /**
+   * The order-update socket. Constructed with the SAME `"APPID:AccessToken"`
+   * authorization string as the data socket, but it is a `new`-able class
+   * rather than a getInstance singleton.
+   */
+  export const fyersOrderSocket: new (
+    authorizationKey: string,
+    logPath?: string,
+    enableLogging?: boolean,
+  ) => FyersOrderSocketInstance;
+
   export const fyersDataSocket: {
     /**
      * @param accessToken `"APPID:AccessToken"` — the app id and the access

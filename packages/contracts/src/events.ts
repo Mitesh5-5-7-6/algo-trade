@@ -31,6 +31,7 @@ export const EVENT_NAMES = [
   "RISK_BLOCKED",
   "ORDER_PLACED",
   "ORDER_FILLED",
+  "ORDER_REJECTED",
   "POSITION_UPDATED",
   "PNL_UPDATED",
   "BROKER_CONNECTED",
@@ -95,6 +96,32 @@ export const EVENT_PAYLOAD_SCHEMAS = {
     qty: QuantitySchema,
     type: OrderTypeSchema,
     price: PriceSchema.optional(),
+    mode: TradeModeSchema,
+    ts: TimestampSchema,
+  }),
+
+  /**
+   * The broker refused the order, carrying ITS reason (plan/12 §5).
+   *
+   * Added because a rejection was previously invisible. The Order Manager
+   * received the broker's message, wrote `status: REJECTED` without it, and
+   * published nothing — so the operator saw a rejected order and could not
+   * learn why from the database, the event stream, or the logs. That is
+   * precisely the state you are in when an F&O order is refused for lot size,
+   * margin, or product type: the diagnosis exists for one function call and is
+   * then discarded.
+   */
+  ORDER_REJECTED: z.object({
+    orderId: EntityIdSchema,
+    signalId: EntityIdSchema,
+    strategyId: EntityIdSchema,
+    symbol: SymbolSchema,
+    side: OrderSideSchema,
+    qty: QuantitySchema,
+    /** The broker's own message, passed through unedited. */
+    reason: z.string().min(1),
+    /** The broker's error code, when it supplied one. */
+    code: z.string().optional(),
     mode: TradeModeSchema,
     ts: TimestampSchema,
   }),

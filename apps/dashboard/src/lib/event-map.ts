@@ -13,6 +13,7 @@ import { qk, type QueryKey } from "./query-keys";
 export const FORWARDED_EVENTS = [
   "ORDER_PLACED",
   "ORDER_FILLED",
+  "ORDER_REJECTED",
   "POSITION_UPDATED",
   "PNL_UPDATED",
   "SIGNAL_CREATED",
@@ -29,6 +30,10 @@ export function queryKeysForEvent(event: string): readonly QueryKey[] {
     case "ORDER_PLACED":
     case "ORDER_FILLED":
       return [qk.orders, qk.positions, qk.pnl, qk.activity, qk.strategyStats];
+    // A rejection changes no position and no PnL — only the order row and the
+    // activity feed, which is where its reason becomes visible.
+    case "ORDER_REJECTED":
+      return [qk.orders, qk.activity];
     case "POSITION_UPDATED":
       // Realized PnL lives on the position — the day stats move with it.
       return [qk.positions, qk.pnl, qk.strategyStats];

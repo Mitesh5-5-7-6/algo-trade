@@ -10,9 +10,13 @@ import {
 } from "./index.js";
 
 describe("event catalog (plan/09 §6)", () => {
-  it("contains exactly the 14 catalogued events, no duplicates", () => {
-    expect(EVENT_NAMES).toHaveLength(14);
-    expect(new Set(EVENT_NAMES).size).toBe(14);
+  // 15 since ORDER_REJECTED joined the catalog: a broker refusal used to be
+  // learned and discarded in the same function call, leaving a REJECTED row
+  // that explained nothing. The count is asserted literally so adding an event
+  // is always a deliberate edit here, never a silent one.
+  it("contains exactly the 15 catalogued events, no duplicates", () => {
+    expect(EVENT_NAMES).toHaveLength(15);
+    expect(new Set(EVENT_NAMES).size).toBe(15);
   });
 
   it("has a payload schema for every event name", () => {

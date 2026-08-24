@@ -47,6 +47,18 @@ function fromOrder(order: Order): ActivityEntry {
       message: `ORDER_FILLED ${order.orderId} ${size}${at}`,
     };
   }
+  // A rejection carries the broker's reason into the feed. Without it the row
+  // reads "ORDER_REJECTED ord_123 BUY 65 NSE:NIFTY26AUGFUT" and the operator
+  // is left guessing between lot size, margin, product type and a closed
+  // market — the answer is right there and used to be dropped.
+  if (order.status === "REJECTED" && order.rejectReason !== undefined) {
+    const code = order.rejectCode === undefined ? "" : ` [${order.rejectCode}]`;
+    return {
+      ts: order.createdAt,
+      kind: "order",
+      message: `ORDER_REJECTED ${order.orderId} ${size} — ${order.rejectReason}${code}`,
+    };
+  }
   return {
     ts: order.createdAt,
     kind: "order",

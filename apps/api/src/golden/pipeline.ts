@@ -189,11 +189,14 @@ class GoldenPipeline {
         if (existing) this.ordersById.set(orderId, { ...existing, ...patch });
         return Promise.resolve();
       },
+      readOrder: (orderId) =>
+        Promise.resolve(this.ordersById.get(orderId) ?? null),
       publish,
     };
     this.orderManager = new OrderManager({
       broker,
       ports: orderPorts,
+      mode: "paper", // the golden run is a deterministic paper harness
       nextOrderId: () => this.nextId("ord"),
       now: () => this.now,
       onError,

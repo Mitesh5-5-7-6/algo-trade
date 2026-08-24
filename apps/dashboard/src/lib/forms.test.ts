@@ -14,6 +14,22 @@ describe("parseSymbols", () => {
     expect(parseSymbols("")).toBeNull();
     expect(parseSymbols("  , ,  ")).toBeNull();
   });
+
+  it("strips quotes and brackets pasted in from a JSON array", () => {
+    // This is how three live strategies ended up subscribed to
+    // `"NSE:RELIANCE-EQ"` — quote characters included. The broker accepts
+    // such a subscription and streams nothing: healthy feed, zero ticks, no
+    // signal, no order, and no error anywhere saying why.
+    expect(parseSymbols('"NSE:RELIANCE-EQ", "NSE:HDFCBANK-EQ"')).toEqual([
+      "NSE:RELIANCE-EQ",
+      "NSE:HDFCBANK-EQ",
+    ]);
+    expect(parseSymbols('["NSE:INFY-EQ","NSE:TCS-EQ"]')).toEqual([
+      "NSE:INFY-EQ",
+      "NSE:TCS-EQ",
+    ]);
+    expect(parseSymbols("'nse:sbin-eq'")).toEqual(["NSE:SBIN-EQ"]);
+  });
 });
 
 describe("parseParams", () => {

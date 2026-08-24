@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import type { Order, RiskDecision, Signal } from "@neelkanth/core";
+import { describe, expect, it, vi } from "vitest";
+import type {
+  BrokerOrderStatus,
+  Order,
+  RiskDecision,
+  Signal,
+} from "@neelkanth/core";
 import type { EventName } from "@neelkanth/contracts";
 import { ScriptedFakeBroker } from "@neelkanth/broker";
 import { OrderManager, type ExecutionBroker } from "./order-manager.js";
@@ -10,6 +15,7 @@ function harness(
     broker?: ExecutionBroker;
     tradingEnabled?: boolean;
     persistReturns?: boolean;
+    mode?: "paper" | "live";
   } = {},
 ) {
   const orders = new Map<string, Order>();
@@ -29,6 +35,7 @@ function harness(
       if (existing) orders.set(orderId, { ...existing, ...patch });
       return Promise.resolve();
     },
+    readOrder: (orderId) => Promise.resolve(orders.get(orderId) ?? null),
     publish: (name, payload) => {
       events.push({ name, payload });
       return Promise.resolve();
@@ -41,6 +48,7 @@ function harness(
   const manager = new OrderManager({
     broker,
     ports,
+    mode: opts.mode ?? "paper",
     nextOrderId: () => {
       idSeq += 1;
       return `ord_${String(idSeq)}`;
@@ -210,5 +218,301 @@ describe("OrderManager reconciliation (plan/12 §8)", () => {
       createdAt: 1000,
     };
     expect((await h.manager.reconcile(stuck)).status).toBe("unknown");
+  });
+});
+
+describe("reconcile completes the projection chain (crash recovery)", () => {
+  /** A PLACED order the broker later reports on, as after a crash. */
+  const stuck: Order = {
+    orderId: "ord_stuck",
+    signalId: "sig_stuck",
+    strategyId: "str_1",
+    symbol: "NSE:RELIANCE-EQ",
+    side: "BUY",
+    qty: 10,
+    type: "MARKET",
+    status: "PLACED",
+    mode: "paper",
+    createdAt: 1000,
+  };
+
+  function brokerReporting(
+    status: Partial<BrokerOrderStatus>,
+  ): ExecutionBroker {
+    return {
+      execute: () =>
+        Promise.resolve({
+          status: "REJECTED" as const,
+          clientOrderId: stuck.orderId,
+          reason: "unused by reconcile",
+        }),
+      cancel: () => Promise.resolve(),
+      status: () =>
+        Promise.resolve({
+          clientOrderId: stuck.orderId,
+          found: true,
+          ...status,
+        }),
+    };
+  }
+
+  it("publishes ORDER_FILLED, not just a status update", async () => {
+    // Persisting FILLED without publishing closes the order row but leaves
+    // the Position and PnL engines ignorant: the books silently disagree with
+    // the broker, and we hold a position we do not know about.
+    const { manager, events } = harness({
+      broker: brokerReporting({
+        status: "FILLED",
+        filledPrice: 101.5,
+        filledQty: 10,
+        filledAt: 1_700_000_000_000,
+      }),
+    });
+
+    const result = await manager.reconcile(stuck);
+
+    expect(result.status).toBe("filled");
+    const filled = events.filter((e) => e.name === "ORDER_FILLED");
+    expect(filled).toHaveLength(1);
+    expect(filled[0]?.payload).toMatchObject({
+      orderId: "ord_stuck",
+      filledPrice: 101.5,
+      qty: 10,
+    });
+  });
+
+  it("refuses to invent a fill price when the broker reports none", async () => {
+    // A guessed price corrupts the position's average entry and every P&L
+    // figure derived from it — worse than a gap the operator can see.
+    const { manager, events } = harness({
+      broker: brokerReporting({ status: "FILLED" }),
+    });
+
+    const result = await manager.reconcile(stuck);
+
+    expect(result.status).toBe("unknown");
+    expect(events.filter((e) => e.name === "ORDER_FILLED")).toEqual([]);
+    expect(events.filter((e) => e.name === "SYSTEM_ERROR")).toHaveLength(1);
+  });
+});
+
+describe("order mode is injected, not assumed", () => {
+  it.each(["live", "paper"] as const)("stamps a %s order correctly", async (mode) => {
+    // Hardcoded "paper" meant a live FYERS execution persisted a row saying
+    // "paper" — the audit trail contradicting the money that actually moved.
+    const { manager, orders } = harness({ mode });
+    await manager.place(signal(), approved);
+    expect([...orders.values()][0]?.mode).toBe(mode);
+  });
+});
+
+describe("a rejection explains itself (plan/12 §5)", () => {
+  function rejectingBroker(reason: string, code?: string): ExecutionBroker {
+    return {
+      execute: (o) =>
+        Promise.resolve({
+          status: "REJECTED" as const,
+          clientOrderId: o.clientOrderId,
+          reason,
+          ...(code === undefined ? {} : { code }),
+        }),
+      cancel: () => Promise.resolve(),
+      status: (id) => Promise.resolve({ clientOrderId: id, found: false }),
+    };
+  }
+
+  /** The real thing an F&O rejection looks like. */
+  const LOT = "quantity should be in multiples of lot size 65";
+
+  it("persists the broker's reason on the order row", async () => {
+    // It used to be returned to the caller and dropped, leaving a REJECTED row
+    // with no explanation anywhere — database, events, or logs.
+    const { manager, orders } = harness({ broker: rejectingBroker(LOT, "-99") });
+    await manager.place(signal(), approved);
+
+    const stored = [...orders.values()][0];
+    expect(stored?.status).toBe("REJECTED");
+    expect(stored?.rejectReason).toBe(LOT);
+    expect(stored?.rejectCode).toBe("-99");
+  });
+
+  it("publishes ORDER_REJECTED so the dashboard can show why", async () => {
+    const { manager, events } = harness({ broker: rejectingBroker(LOT) });
+    await manager.place(signal(), approved);
+
+    const rejected = events.filter((e) => e.name === "ORDER_REJECTED");
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.payload).toMatchObject({
+      symbol: "NSE:RELIANCE-EQ",
+      reason: LOT,
+    });
+  });
+
+  it("omits the code when the broker gave none, rather than inventing one", async () => {
+    const { manager, orders } = harness({ broker: rejectingBroker(LOT) });
+    await manager.place(signal(), approved);
+    expect([...orders.values()][0]?.rejectCode).toBeUndefined();
+  });
+
+  it("still reports the reason to the caller", async () => {
+    const { manager } = harness({ broker: rejectingBroker(LOT) });
+    const result = await manager.place(signal(), approved);
+    expect(result).toMatchObject({ status: "rejected", reason: LOT });
+  });
+});
+
+describe("async broker updates finish a live order (plan/19 §5)", () => {
+  /** A live broker: accepts, returns PENDING, fills later on its stream. */
+  function pendingHarness() {
+    const broker = new ScriptedFakeBroker({ pendingByDefault: true });
+    const h = harness({ broker, mode: "live" });
+    broker.onOrderUpdate((u) => {
+      void h.manager.onBrokerUpdate(u);
+    });
+    return { ...h, broker };
+  }
+
+  it("leaves the order PENDING at submission, then FILLS it on the update", async () => {
+    // The gap this closes: execute() returns PENDING and the fill only ever
+    // arrives on the order stream. Nothing consumed that stream, so a live
+    // order stayed PENDING forever — no ORDER_FILLED, no position, no PnL.
+    const h = pendingHarness();
+    const result = await h.manager.place(signal(), approved);
+    expect(result.status).toBe("pending");
+    expect(h.orders.get("ord_1")?.status).toBe("PENDING");
+
+    h.broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        brokerOrderId: "fy-77",
+        filledPrice: 101.5,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.orders.get("ord_1")?.status).toBe("FILLED");
+    });
+
+    const stored = h.orders.get("ord_1");
+    expect(stored?.filledPrice).toBe(101.5);
+    expect(stored?.brokerOrderId).toBe("fy-77");
+    expect(h.events.map((e) => e.name)).toEqual([
+      "ORDER_PLACED",
+      "ORDER_FILLED",
+    ]);
+  });
+
+  it("publishes ORDER_FILLED with the live mode and the order's attribution", async () => {
+    const h = pendingHarness();
+    await h.manager.place(signal(), approved);
+    h.broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 101.5,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.events).toHaveLength(2);
+    });
+
+    expect(h.events[1]?.payload).toMatchObject({
+      orderId: "ord_1",
+      strategyId: "str_1",
+      symbol: "NSE:RELIANCE-EQ",
+      side: "BUY",
+      qty: 10,
+      filledPrice: 101.5,
+      mode: "live",
+    });
+  });
+
+  it("is idempotent — a replayed fill does not project the position twice", async () => {
+    // The socket reconnects and replays, and reconcile() can deliver the same
+    // fill. A second ORDER_FILLED would double the position.
+    const h = pendingHarness();
+    await h.manager.place(signal(), approved);
+    const fill = {
+      status: "FILLED" as const,
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 101.5,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    };
+    await h.manager.onBrokerUpdate(fill);
+    await h.manager.onBrokerUpdate(fill);
+
+    expect(h.events.filter((e) => e.name === "ORDER_FILLED")).toHaveLength(1);
+  });
+
+  it("records a late rejection with its reason", async () => {
+    const h = pendingHarness();
+    await h.manager.place(signal(), approved);
+    await h.manager.onBrokerUpdate({
+      status: "REJECTED",
+      clientOrderId: "ord_1",
+      reason: "insufficient margin",
+      code: "-390",
+    });
+
+    const stored = h.orders.get("ord_1");
+    expect(stored?.status).toBe("REJECTED");
+    expect(stored?.rejectReason).toBe("insufficient margin");
+    expect(stored?.rejectCode).toBe("-390");
+    expect(h.events.filter((e) => e.name === "ORDER_REJECTED")).toHaveLength(1);
+  });
+
+  it("records a cancellation without publishing a fill", async () => {
+    const h = pendingHarness();
+    await h.manager.place(signal(), approved);
+    await h.manager.onBrokerUpdate({
+      status: "CANCELLED",
+      clientOrderId: "ord_1",
+    });
+
+    expect(h.orders.get("ord_1")?.status).toBe("CANCELLED");
+    expect(h.events.filter((e) => e.name === "ORDER_FILLED")).toHaveLength(0);
+  });
+
+  it("surfaces an update for an order we never placed, rather than dropping it", async () => {
+    const h = pendingHarness();
+    await h.manager.onBrokerUpdate({
+      status: "CANCELLED",
+      clientOrderId: "ord_nope",
+    });
+    expect(h.errors).toHaveLength(1);
+    expect(h.errors[0]?.context).toMatchObject({ orderId: "ord_nope" });
+  });
+});
+
+describe("the decision price reaches the broker (plan/19 §5)", () => {
+  it("passes the signal's price as referencePrice for a MARKET order", async () => {
+    // Without it a FYERS entry carrying a stop cannot express the leg as an
+    // offset, and the adapter refuses the order outright.
+    const broker = new ScriptedFakeBroker({ defaultFillPrice: 100 });
+    const h = harness({ broker });
+    await h.manager.place(
+      signal({ stopLoss: 95, target: 110 }),
+      approved,
+    );
+
+    expect(broker.submitted[0]).toMatchObject({
+      type: "MARKET",
+      referencePrice: 100,
+      stopLoss: 95,
+      takeProfit: 110,
+    });
   });
 });
