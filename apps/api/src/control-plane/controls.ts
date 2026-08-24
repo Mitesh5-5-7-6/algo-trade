@@ -47,6 +47,19 @@ export interface BrokerConnection {
   connected: boolean;
   /** When the state last changed; undefined if it never has. */
   since?: number | undefined;
+  /**
+   * Why it is not connected, in words the operator can act on — when we know.
+   *
+   * `disconnected` alone cannot distinguish "no token yet, go authorise" from
+   * "authorised fine, but this deployment has no process that can hold a
+   * socket open". Those need OPPOSITE responses, and the UI showed the same
+   * "Connect FYERS…" button for both — so on a serverless deployment the
+   * operator can authorise successfully, see no change, and loop forever with
+   * nothing telling them the action is futile.
+   *
+   * Undefined when the ordinary reading applies: no token, so go and connect.
+   */
+  detail?: string | undefined;
 }
 
 /**

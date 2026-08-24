@@ -15,7 +15,19 @@ import { api } from "@/lib/api-client";
  * its prices from the real feed. Authorising here does not enable live orders;
  * that is `BROKER_MODE`, set on the server.
  */
-export function BrokerPanel({ connected }: { connected: boolean }) {
+export function BrokerPanel({
+  connected,
+  detail,
+}: {
+  connected: boolean;
+  /**
+   * The server's reason the feed is down, when it has one. Its PRESENCE means
+   * the cause is not a missing token — so authorising again is not the remedy
+   * and this panel must stop offering it as one.
+   */
+  detail?: string | undefined;
+}) {
+  const authorisingWouldNotHelp = !connected && detail !== undefined;
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -56,6 +68,17 @@ export function BrokerPanel({ connected }: { connected: boolean }) {
           </>
         )}
       </p>
+      {/*
+        The server's reason, verbatim. Shown ABOVE the button because it
+        determines whether the button is the right thing to press at all: a
+        FYERS "Connected" badge refers to the OAuth app, not to our socket, so
+        without this the two readings contradict each other with no explanation.
+      */}
+      {detail !== undefined && (
+        <p className="modal-copy" style={{ marginTop: 8 }}>
+          <strong>Why:</strong> {detail}
+        </p>
+      )}
       {error !== null && <p className="form-error">{error}</p>}
       <button
         type="button"
@@ -67,11 +90,14 @@ export function BrokerPanel({ connected }: { connected: boolean }) {
           ? "Redirecting…"
           : connected
             ? "Reconnect FYERS…"
-            : "Connect FYERS…"}
+            : authorisingWouldNotHelp
+              ? "Authorise FYERS anyway…"
+              : "Connect FYERS…"}
       </button>
       <p className="modal-copy" style={{ marginTop: 8, opacity: 0.7 }}>
-        FYERS access tokens expire daily; reconnect each morning until the
-        refresh job is running.
+        {authorisingWouldNotHelp
+          ? "Authorising still stores a token, which a long-lived engine process will use — but it will not bring the feed up here."
+          : "FYERS access tokens expire daily; reconnect each morning until the refresh job is running."}
       </p>
     </div>
   );

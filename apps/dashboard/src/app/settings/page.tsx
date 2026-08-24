@@ -146,7 +146,10 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <BrokerPanel connected={snapshot.status.broker.connected} />
+      <BrokerPanel
+        connected={snapshot.status.broker.connected}
+        detail={snapshot.status.broker.detail}
+      />
 
       <div className="panel" style={{ marginBottom: 16 }}>
         <p className="panel-title">Capital</p>

@@ -152,6 +152,9 @@ export function useDashboardData(enabled = true): LiveDashboard {
       name: "FYERS",
       connected: control.data?.broker?.connected ?? false,
       state: control.data?.broker?.state ?? "disconnected",
+      ...(control.data?.broker?.detail === undefined
+        ? {}
+        : { detail: control.data.broker.detail }),
     },
     market: {
       exchange: mock.status.market.exchange,

@@ -166,9 +166,40 @@ export async function startEngineRuntime(deps: {
   };
   deps.broker.onConnectionChange((next) => {
     if (next === brokerState.state) return;
+    const previous = brokerState.state;
     brokerState.state = next;
     brokerState.since = Date.now();
     log.info({ broker: next }, "broker connection state changed");
+
+    // Announce it on the bus. BROKER_CONNECTED/BROKER_DISCONNECTED were in the
+    // event catalog, subscribed by the realtime bridge, and handled by the
+    // dashboard's event map — but NOTHING ever published them. So the status
+    // strip could only ever show its initial guess: the feed could drop
+    // mid-session and the operator's screen would go on claiming it was live.
+    //
+    // `connecting` is deliberately not announced: it is a transient the
+    // operator cannot act on, and emitting it would make the strip flicker on
+    // every reconnect the SDK performs on its own.
+    if (next === "connected") {
+      void publish("BROKER_CONNECTED", {
+        broker: "fyers",
+        mode: deps.mode,
+        ts: brokerState.since,
+      }).catch((error: unknown) => {
+        onError(error, { at: "publish BROKER_CONNECTED" });
+      });
+    } else if (next === "disconnected" && previous === "connected") {
+      void publish("BROKER_DISCONNECTED", {
+        broker: "fyers",
+        mode: deps.mode,
+        // The adapter reports the transition, not a cause; say that plainly
+        // rather than inventing a reason the schema demands but we lack.
+        reason: "broker reported the connection closed",
+        ts: brokerState.since,
+      }).catch((error: unknown) => {
+        onError(error, { at: "publish BROKER_DISCONNECTED" });
+      });
+    }
   });
 
   const openMinute = parseHHMM(settings.marketHours.open);

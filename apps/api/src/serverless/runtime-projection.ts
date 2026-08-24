@@ -160,8 +160,25 @@ export function createRuntimeProjection(
      * long-lived WebSocket owned by the engine process; this deployment runs
      * *instead of* that process, so no feed exists here. Reporting anything
      * else would recreate exactly the lie this field was added to kill.
+     *
+     * The `detail` matters as much as the state. Without it the dashboard
+     * shows the same "Connect FYERS…" prompt it shows for a missing token, so
+     * an operator on this deployment authorises, sees no change, authorises
+     * again, and never learns that no amount of authorising can help. Saying
+     * "disconnected" honestly and then leaving them to guess why is only half
+     * the honesty.
      */
-    brokerConnection: () => ({ state: "disconnected", connected: false }),
+    brokerConnection: () => ({
+      state: "disconnected",
+      connected: false,
+      detail:
+        "This API is deployed as serverless functions, which cannot hold a " +
+        "WebSocket open. The market-data feed needs a continuously running " +
+        "process, so it cannot start here — authorising FYERS again will not " +
+        "change this. Run the long-lived server (apps/api `main.ts`) to get a " +
+        "feed; broker authorisation done here is still stored and will be " +
+        "picked up by that process.",
+    }),
 
     setTradingEnabled(enabled) {
       notify("setTradingEnabled", { enabled });

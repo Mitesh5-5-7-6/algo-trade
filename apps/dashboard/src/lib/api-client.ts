@@ -111,6 +111,8 @@ export interface ControlStatus {
     state: "connected" | "connecting" | "disconnected";
     connected: boolean;
     since?: number;
+    /** Why it is down, when the server can say — see BrokerConnection.detail. */
+    detail?: string;
   };
 }
 

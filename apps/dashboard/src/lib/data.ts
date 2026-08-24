@@ -22,6 +22,12 @@ export interface SystemStatus {
     name: string;
     connected: boolean;
     state: "connected" | "connecting" | "disconnected";
+    /**
+     * Why the feed is down, when the API can say. Distinguishes "authorise
+     * FYERS" from "this deployment cannot run a feed at all" — two states that
+     * look identical without it and call for opposite responses.
+     */
+    detail?: string;
   };
   market: {
     exchange: string;

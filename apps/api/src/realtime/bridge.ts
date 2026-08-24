@@ -26,6 +26,12 @@ const DEFAULT_THROTTLE_MS = 250;
 const FORWARD_AS_IS = [
   "ORDER_PLACED",
   "ORDER_FILLED",
+  // The dashboard already routes this (lib/event-map.ts) and the Order Manager
+  // already publishes it — but it was missing here, so the one event carrying
+  // the broker's reason for a refusal stopped at the bridge and never reached
+  // the browser. A rejection the operator cannot see is the failure the event
+  // was added to prevent.
+  "ORDER_REJECTED",
   "POSITION_UPDATED",
   "SIGNAL_CREATED",
   "RISK_BLOCKED",
