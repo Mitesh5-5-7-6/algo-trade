@@ -26,6 +26,17 @@ export const PositionSchema = z.object({
   status: PositionStatusSchema,
   realizedPnl: z.number(),
   unrealizedPnl: z.number(),
+  /**
+   * Protective levels carried from the order that opened the position
+   * (plan/12 §4 `stopLoss`/`takeProfit`).
+   *
+   * They live here, persisted, rather than only in the Exit Engine's memory:
+   * a stop that exists solely in a process is not a stop. Restart the engine
+   * and an open position would otherwise be flat-out unprotected until a
+   * strategy happened to reverse.
+   */
+  stopLoss: PriceSchema.optional(),
+  target: PriceSchema.optional(),
   openedAt: TimestampSchema,
   closedAt: TimestampSchema.optional(),
   mode: TradeModeSchema,

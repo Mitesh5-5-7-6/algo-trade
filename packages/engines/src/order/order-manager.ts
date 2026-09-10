@@ -237,6 +237,7 @@ export class OrderManager {
             filledPrice: fill.filledPrice,
             slippage: fill.slippage,
             charges: fill.charges,
+            ...OrderManager.protective(order),
             filledAt: fill.filledAt,
             mode: order.mode,
             ts: fill.filledAt,
@@ -341,6 +342,7 @@ export class OrderManager {
           filledPrice: status.filledPrice,
           slippage: 0,
           charges: 0,
+          ...OrderManager.protective(order),
           filledAt,
           mode: order.mode,
           ts: filledAt,
@@ -356,6 +358,22 @@ export class OrderManager {
         : { status: "halted", reason: "reconciled: cancelled" };
     }
     return { status: "pending", order };
+  }
+
+  /**
+   * The protective levels to forward on ORDER_FILLED. Shared by all three fill
+   * paths (synchronous, broker stream, reconcile) so a stop can never depend on
+   * which route the fill happened to arrive by.
+   */
+  private static protective(
+    order: Order,
+  ): Partial<Pick<Order, "stopLoss" | "takeProfit">> {
+    return {
+      ...(order.stopLoss === undefined ? {} : { stopLoss: order.stopLoss }),
+      ...(order.takeProfit === undefined
+        ? {}
+        : { takeProfit: order.takeProfit }),
+    };
   }
 
   private async recordOutcome(
@@ -386,6 +404,7 @@ export class OrderManager {
           filledPrice: fill.filledPrice,
           slippage: fill.slippage,
           charges: fill.charges,
+          ...OrderManager.protective(order),
           filledAt: fill.filledAt,
           mode: order.mode,
           ts: fill.filledAt,

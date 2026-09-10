@@ -14,7 +14,17 @@ import { createStrategyRegistry } from "./index.js";
 
 const SYM = "NSE:X-EQ";
 
-function context(opts: {
+/** An arbitrary but fixed session anchor, so bar timestamps are readable. */
+const DAY1_OPEN = 1_760_000_000_000;
+const INTERVAL_MINUTES: Record<CandleInterval, number> = {
+  "1m": 1,
+  "5m": 5,
+  "15m": 15,
+  "30m": 30,
+  "60m": 60,
+};
+
+interface BarOpts {
   close: number;
   high?: number;
   low?: number;
@@ -24,8 +34,13 @@ function context(opts: {
   candles?: Candle[];
   position?: Position | null;
   interval?: CandleInterval;
-}): MarketContext {
+  sessionOpenTs?: number;
+}
+
+function context(opts: BarOpts): MarketContext {
   const interval = opts.interval ?? "5m";
+  const sessionOpenTs = opts.sessionOpenTs ?? DAY1_OPEN;
+  const minutesSinceOpen = opts.minutesSinceOpen ?? 30;
   const candle: Candle = {
     symbol: SYM,
     interval,
@@ -34,7 +49,11 @@ function context(opts: {
     low: opts.low ?? opts.close,
     close: opts.close,
     volume: opts.volume ?? 1,
-    ts: 0,
+    // `minutesSinceOpen` is when the bar CLOSED; a bucket is labelled by its
+    // start, so back off one interval.
+    ts:
+      sessionOpenTs +
+      (minutesSinceOpen - INTERVAL_MINUTES[interval]) * 60_000,
   };
   return {
     symbol: SYM,
@@ -42,10 +61,25 @@ function context(opts: {
     candle,
     candles: opts.candles ?? [candle],
     indicators: opts.indicators ?? {},
-    session: { phase: "open", minutesSinceOpen: opts.minutesSinceOpen ?? 30 },
+    session: { phase: "open", minutesSinceOpen, sessionOpenTs },
     position: opts.position ?? null,
     sentiment: 0,
   };
+}
+
+/**
+ * A run of bars with a *rolling* window, the way the Strategy Runner feeds one
+ * (plan/15 §4) — each context sees every bar up to and including its own.
+ * Session-anchored strategies read their range out of this window, so a
+ * one-bar `candles` would not exercise them at all.
+ */
+function series(bars: BarOpts[]): MarketContext[] {
+  const window: Candle[] = [];
+  return bars.map((bar) => {
+    const built = context(bar);
+    window.push(built.candle);
+    return { ...built, candles: [...window] };
+  });
 }
 
 function run<P, S>(
@@ -148,17 +182,21 @@ describe("RSI mean reversion (plan/16 §3)", () => {
 });
 
 describe("ORB (plan/16 §5)", () => {
-  const build = [
-    context({ close: 100, high: 105, low: 95, minutesSinceOpen: 5 }),
-    context({ close: 100, high: 106, low: 94, minutesSinceOpen: 10 }),
-    context({ close: 100, high: 104, low: 96, minutesSinceOpen: 15 }),
+  const build: BarOpts[] = [
+    { close: 100, high: 105, low: 95, minutesSinceOpen: 5 },
+    { close: 100, high: 106, low: 94, minutesSinceOpen: 10 },
+    { close: 100, high: 104, low: 96, minutesSinceOpen: 15 },
   ];
 
   it("builds the opening range then BUYs a close above it, stop at the midpoint", () => {
-    const verdicts = run(orb, { allowShort: false }, [
-      ...build,
-      context({ close: 107, high: 108, low: 106, minutesSinceOpen: 20 }),
-    ]);
+    const verdicts = run(
+      orb,
+      { allowShort: false },
+      series([
+        ...build,
+        { close: 107, high: 108, low: 106, minutesSinceOpen: 20 },
+      ]),
+    );
     expect(verdicts.slice(0, 3).every((v) => v.side === "HOLD")).toBe(true);
     const buy = verdicts[3];
     expect(buy?.side).toBe("BUY");
@@ -166,54 +204,108 @@ describe("ORB (plan/16 §5)", () => {
     expect(buy?.target).toBe(119); // close + 1× range (12)
   });
 
-  it("is one-shot per direction per day (trap: already entered)", () => {
-    const verdicts = run(orb, { allowShort: false }, [
+  /**
+   * The defect this guards: the range used to be accumulated only from bars the
+   * process witnessed live, so an engine started after 09:30 held `null` and
+   * returned "no opening range" for the rest of the day — ORB silently dead
+   * until tomorrow, on every mid-session restart.
+   */
+  it("reconstructs the same range from a cold start after the opening window", () => {
+    const full = series([
       ...build,
-      context({ close: 107, minutesSinceOpen: 20 }), // entry
-      context({ close: 110, minutesSinceOpen: 25 }), // would breakout again
+      { close: 107, high: 108, low: 106, minutesSinceOpen: 20 },
     ]);
+    const warm = run(orb, { allowShort: false }, full);
+    // A restarted engine evaluates only the last bar — but sees the window.
+    const cold = run(orb, { allowShort: false }, full.slice(3));
+    expect(warm[3]).toEqual(cold[0]);
+    expect(cold[0]?.side).toBe("BUY");
+    expect(cold[0]?.stopLoss).toBe(100);
+  });
+
+  it("holds when the opening bars have scrolled out of the window", () => {
+    const [late] = series([{ close: 107, minutesSinceOpen: 200 }]);
+    const verdicts = run(orb, { allowShort: false }, [late as MarketContext]);
+    expect(verdicts[0]?.side).toBe("HOLD");
+    expect(verdicts[0]?.reason).toBe("no opening range for this session");
+  });
+
+  it("is one-shot per direction per day (trap: already entered)", () => {
+    const verdicts = run(
+      orb,
+      { allowShort: false },
+      series([
+        ...build,
+        { close: 107, minutesSinceOpen: 20 }, // entry
+        { close: 110, minutesSinceOpen: 25 }, // would breakout again
+      ]),
+    );
     expect(verdicts[3]?.side).toBe("BUY");
     expect(verdicts[4]?.side).toBe("HOLD");
   });
 
   it("does not fire on a fake breakout that never closes beyond the range (trap)", () => {
-    const verdicts = run(orb, { allowShort: false }, [
-      ...build,
-      context({ close: 100, high: 107, low: 99, minutesSinceOpen: 20 }), // wick over, close inside
-    ]);
+    const verdicts = run(
+      orb,
+      { allowShort: false },
+      series([
+        ...build,
+        { close: 100, high: 107, low: 99, minutesSinceOpen: 20 }, // wick over, close inside
+      ]),
+    );
     expect(verdicts[3]?.side).toBe("HOLD");
   });
 
-  it("re-arms on a new session (minutesSinceOpen drops)", () => {
-    const verdicts = run(orb, { allowShort: false }, [
-      ...build,
-      context({ close: 107, minutesSinceOpen: 20 }), // day-1 entry
-      // day 2:
-      context({ close: 100, high: 103, low: 97, minutesSinceOpen: 5 }),
-      context({ close: 100, high: 102, low: 98, minutesSinceOpen: 15 }),
-      context({ close: 104, minutesSinceOpen: 20 }), // day-2 breakout
-    ]);
+  it("re-arms on a new session (the session anchor moves)", () => {
+    const day2 = DAY1_OPEN + 86_400_000;
+    const verdicts = run(
+      orb,
+      { allowShort: false },
+      series([
+        ...build,
+        { close: 107, minutesSinceOpen: 20 }, // day-1 entry
+        {
+          close: 100,
+          high: 103,
+          low: 97,
+          minutesSinceOpen: 5,
+          sessionOpenTs: day2,
+        },
+        {
+          close: 100,
+          high: 102,
+          low: 98,
+          minutesSinceOpen: 15,
+          sessionOpenTs: day2,
+        },
+        { close: 104, minutesSinceOpen: 20, sessionOpenTs: day2 },
+      ]),
+    );
     expect(verdicts[3]?.side).toBe("BUY"); // day-1 entry
     expect(verdicts[6]?.side).toBe("BUY"); // re-armed on day 2
   });
 
   it("respects the volume gate when configured", () => {
     const params = { allowShort: false, volumeMultiple: 2, avgVolPeriod: 20 };
-    const verdicts = run(orb, params, [
-      ...build,
-      context({
-        close: 107,
-        minutesSinceOpen: 20,
-        volume: 80,
-        indicators: { avgvol20: 50 }, // 80 < 2×50 → blocked
-      }),
-      context({
-        close: 108,
-        minutesSinceOpen: 25,
-        volume: 120,
-        indicators: { avgvol20: 50 }, // 120 ≥ 100 → fires
-      }),
-    ]);
+    const verdicts = run(
+      orb,
+      params,
+      series([
+        ...build,
+        {
+          close: 107,
+          minutesSinceOpen: 20,
+          volume: 80,
+          indicators: { avgvol20: 50 }, // 80 < 2×50 → blocked
+        },
+        {
+          close: 108,
+          minutesSinceOpen: 25,
+          volume: 120,
+          indicators: { avgvol20: 50 }, // 120 ≥ 100 → fires
+        },
+      ]),
+    );
     expect(verdicts[3]?.side).toBe("HOLD");
     expect(verdicts[4]?.side).toBe("BUY");
   });

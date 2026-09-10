@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { CandleIntervalSchema, SymbolSchema } from "./primitives.js";
+import {
+  CandleIntervalSchema,
+  SymbolSchema,
+  TimestampSchema,
+} from "./primitives.js";
 import { CandleSchema, SessionPhaseSchema } from "./market.js";
 import { PositionSchema } from "./position.js";
 
@@ -15,6 +19,18 @@ export const SessionContextSchema = z.object({
   phase: SessionPhaseSchema,
   /** Minutes since the regular session opened; ≤ 0 before the bell. */
   minutesSinceOpen: z.number().int(),
+  /**
+   * Epoch ms of today's regular open — the session's anchor on the candle
+   * clock, not on engine uptime.
+   *
+   * `minutesSinceOpen` answers "what time is it now", which is only the same
+   * question as "which bars belong to the opening range" when the engine
+   * happened to be running at the bell. A strategy restarted at 11:20 saw its
+   * first bar at minutesSinceOpen 125 and could never reconstruct the range it
+   * had missed. Anchoring to a timestamp lets it select those bars out of the
+   * candle window instead of having had to witness them (plan/16 §5).
+   */
+  sessionOpenTs: TimestampSchema,
 });
 export type SessionContext = z.infer<typeof SessionContextSchema>;
 

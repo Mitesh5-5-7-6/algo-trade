@@ -71,7 +71,7 @@ const EMPTY: Snapshot = {
   openPositions: [],
   realizedPnl: 0,
   unrealizedPnl: 0,
-  session: { phase: "closed", minutesSinceOpen: -1 },
+  session: { phase: "closed", minutesSinceOpen: -1, sessionOpenTs: 0 },
 };
 
 export interface RuntimeProjection extends RuntimeControls {
@@ -138,6 +138,8 @@ export function createRuntimeProjection(
           phase: sessionManager.phase(now),
           minutesSinceOpen:
             istMinuteOfDay(now) - parseHHMM(global.marketHours.open),
+          sessionOpenTs:
+            startOfDayIST(now) + parseHHMM(global.marketHours.open) * 60_000,
         },
       };
     },

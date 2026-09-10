@@ -4,3 +4,4 @@ export * from "./strategy/index.js";
 export * from "./risk/index.js";
 export * from "./order/index.js";
 export * from "./position/index.js";
+export * from "./exit/index.js";

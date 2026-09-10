@@ -93,7 +93,7 @@ function fakeRuntime(): RuntimeControls {
     getOpenPositions: (): Position[] => [],
     realizedPnl: () => 0,
     unrealizedPnl: () => 0,
-    session: (): SessionContext => ({ phase: "open", minutesSinceOpen: 0 }),
+    session: (): SessionContext => ({ phase: "open", minutesSinceOpen: 0, sessionOpenTs: 0 }),
     equityCurve: () => [],
     brokerConnection: () => ({ state: "connected" as const, connected: true }),
   };

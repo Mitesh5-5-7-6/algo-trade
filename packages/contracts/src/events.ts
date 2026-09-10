@@ -136,6 +136,14 @@ export const EVENT_PAYLOAD_SCHEMAS = {
     filledPrice: PriceSchema,
     slippage: z.number().nonnegative(),
     charges: z.number().nonnegative(),
+    /**
+     * The protective levels the order carried, forwarded so the position
+     * projection can persist them (plan/13 §3). Without them on the fill, the
+     * only record of a position's stop is the order that opened it — which no
+     * consumer of this event reads.
+     */
+    stopLoss: PriceSchema.optional(),
+    takeProfit: PriceSchema.optional(),
     filledAt: TimestampSchema,
     mode: TradeModeSchema,
     ts: TimestampSchema,

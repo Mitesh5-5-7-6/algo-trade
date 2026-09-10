@@ -392,7 +392,11 @@ class GoldenPipeline {
   }
 
   private session(): SessionContext {
-    return { phase: "open", minutesSinceOpen: this.minutesSinceOpen };
+    return {
+      phase: "open",
+      minutesSinceOpen: this.minutesSinceOpen,
+      sessionOpenTs: this.fixture.sessionOpenTs,
+    };
   }
 
   private nextId(prefix: string): string {

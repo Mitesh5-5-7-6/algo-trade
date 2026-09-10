@@ -10,9 +10,10 @@ import { clamp01, hold } from "./shared.js";
  * trigger, collapse back into the range (plan/16 §5 Weaknesses); the trap test
  * covers a fake that never closes beyond the range.
  *
- * The opening range is built from live bars using `session.minutesSinceOpen`
- * (plan/15 §3); a new session is detected when that value drops, resetting the
- * range and the per-direction one-shot flags.
+ * The opening range is read out of the candle window using
+ * `session.sessionOpenTs` (plan/15 §3) — bars whose bucket starts inside the
+ * first `rangeMinutes` of the session. A change of that anchor marks a new
+ * session, resetting the range and the per-direction one-shot flags.
  */
 export const OrbParamsSchema = z.object({
   /** Opening-range window in minutes (plan/16 §5, default 15). */
@@ -33,6 +34,7 @@ export type OrbParams = z.infer<typeof OrbParamsSchema>;
 
 export interface OrbState {
   params: OrbParams;
+  /** The `sessionOpenTs` this state belongs to; a change means a new session. */
   sessionMarker: number | null;
   orHigh: number | null;
   orLow: number | null;
@@ -59,30 +61,45 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
   }),
   analyze(context, state): StrategyVerdict {
     const p = state.params;
-    const mso = context.session.minutesSinceOpen;
+    const { sessionOpenTs } = context.session;
 
-    // New session (minutesSinceOpen dropped, or first bar) → reset (plan/16 §5).
-    if (state.sessionMarker === null || mso < state.sessionMarker) {
+    // New session → reset the range and the one-shot flags (plan/16 §5). Keyed
+    // on the session anchor rather than on a drop in minutesSinceOpen, so a
+    // restart *within* a session resumes that session instead of declaring a
+    // new one.
+    if (state.sessionMarker !== sessionOpenTs) {
       state.orHigh = null;
       state.orLow = null;
       state.enteredUp = false;
       state.enteredDown = false;
     }
-    state.sessionMarker = mso;
+    state.sessionMarker = sessionOpenTs;
 
     const candle = context.candle;
+    const rangeEndTs = sessionOpenTs + p.rangeMinutes * 60_000;
 
-    // Still inside the opening-range window: accumulate the range, no signal.
-    if (mso <= p.rangeMinutes) {
-      state.orHigh =
-        state.orHigh === null
-          ? candle.high
-          : Math.max(state.orHigh, candle.high);
-      state.orLow =
-        state.orLow === null ? candle.low : Math.min(state.orLow, candle.low);
-      return hold("building opening range");
+    // Bar buckets are labelled by their START, so a bar is inside the opening
+    // range iff its ts precedes the window's end.
+    if (candle.ts < rangeEndTs) return hold("building opening range");
+
+    // Derive the range from the bars of the window rather than accumulating it
+    // as they arrive. Accumulation silently required the engine to have been
+    // running at the bell: started at 11:20, it had witnessed no opening-range
+    // bar, held null, and returned "no opening range" for the rest of the day.
+    // Reading it out of the candle window instead makes the range a property
+    // of the session, identical however long the process has been up.
+    if (state.orHigh === null || state.orLow === null) {
+      for (const bar of context.candles) {
+        if (bar.ts < sessionOpenTs || bar.ts >= rangeEndTs) continue;
+        state.orHigh =
+          state.orHigh === null ? bar.high : Math.max(state.orHigh, bar.high);
+        state.orLow =
+          state.orLow === null ? bar.low : Math.min(state.orLow, bar.low);
+      }
     }
     if (state.orHigh === null || state.orLow === null) {
+      // Cold start so late that the opening bars have scrolled out of the
+      // window — genuinely unknowable here, and not guessed at.
       return hold("no opening range for this session");
     }
 

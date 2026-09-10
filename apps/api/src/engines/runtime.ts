@@ -1,6 +1,7 @@
 import type {
   BrokerConnectionState,
   Candle,
+  CandleInterval,
   TradeMode,
   RiskLimits,
   RiskRules,
@@ -34,6 +35,7 @@ import { fyersNormalizer } from "./fyers-normalizer.js";
 import {
   computePortfolio,
   EquityCurveTracker,
+  ExitEngine,
   IndicatorEngine,
   istDateKey,
   MarketDataEngine,
@@ -43,6 +45,7 @@ import {
   registerIndicatorSpec,
   RiskEngine,
   SessionManager,
+  startOfDayIST,
   StrategyRunner,
   unrealizedPnl,
   type IndicatorPorts,
@@ -57,7 +60,16 @@ import { createStrategyRegistry } from "@neelkanth/strategies";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
-const CANDLE_WINDOW = 60;
+/**
+ * Bars kept per (symbol, interval). Sized to span a full NSE session at 5m
+ * (09:15–15:30 is 75 bars): a strategy that anchors on the session — ORB reads
+ * its opening range out of this window — must still be able to see the open
+ * from a cold start late in the day.
+ */
+const CANDLE_WINDOW = 90;
+
+/** The intervals the aggregator builds, and therefore the ones we can seed. */
+const MARKET_INTERVALS = ["1m", "5m"] as const satisfies readonly CandleInterval[];
 
 function parseHHMM(value: string): number {
   const [h, m] = value.split(":");
@@ -66,6 +78,10 @@ function parseHHMM(value: string): number {
 function istMinuteOfDay(now: number): number {
   const ist = new Date(now + IST_OFFSET_MS);
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
+}
+/** Epoch ms of the given IST minute-of-day on `now`'s trading date. */
+function istMinuteTs(now: number, minuteOfDay: number): number {
+  return startOfDayIST(now) + minuteOfDay * 60_000;
 }
 
 /**
@@ -154,7 +170,11 @@ export async function startEngineRuntime(deps: {
     tradingEnabled: settings.tradingEnabled,
     limits: settings.globalRiskLimits satisfies RiskLimits,
     allocatedCapital: settings.capitalAllocation,
-    session: { phase: "closed", minutesSinceOpen: -1 } as SessionContext,
+    session: {
+      phase: "closed",
+      minutesSinceOpen: -1,
+      sessionOpenTs: 0,
+    } as SessionContext,
   };
 
   // Market-data feed state, tracked so the control plane can report it
@@ -227,7 +247,7 @@ export async function startEngineRuntime(deps: {
   const marketDataEngine = new MarketDataEngine({
     ports: marketDataPorts,
     normalizer: fyersNormalizer,
-    intervals: ["1m", "5m"], // Default intervals
+    intervals: MARKET_INTERVALS,
     session: sessionManager,
     exchange: "NSE",
     onError,
@@ -418,6 +438,19 @@ export async function startEngineRuntime(deps: {
     },
     handoff,
     nextSignalId: () => `sig_${crypto.randomUUID()}`,
+    candleWindow: CANDLE_WINDOW,
+    onError,
+  });
+
+  // --- Exit Engine: stops, targets, and the intraday square-off ---
+  const exitEngine = new ExitEngine({
+    ports: {
+      readOpenPositions: () => positionEngine.getOpenPositions(),
+      readSession: () => Promise.resolve(state.session),
+      persistSignal: (signal) => signals.insert(signal),
+    },
+    handoff, // the same risk→order road a strategy signal takes (plan/12 §1)
+    nextSignalId: () => `sig_${crypto.randomUUID()}`,
     onError,
   });
 
@@ -437,6 +470,9 @@ export async function startEngineRuntime(deps: {
     lastPrices.set(candle.symbol, candle.close);
     appendWindow(candle);
     runner.onCandleClosed(candle); // cache the bar for the indicator update
+    // Protective exits are judged before new decisions: a bar that both hits a
+    // stop and sets up an entry must close the position first (plan/14 §5).
+    await exitEngine.onCandleClosed(candle);
     await indicatorEngine.onCandleClosed(candle); // → INDICATORS_UPDATED
   });
   await bus.subscribe("INDICATORS_UPDATED", (event) =>
@@ -461,6 +497,19 @@ export async function startEngineRuntime(deps: {
       ...(config.riskRules === undefined ? {} : { riskRules: config.riskRules }),
     });
     await runner.enable(config);
+  }
+
+  // Seed the candle window from the bars already on disk (plan/18 §4 does the
+  // same for indicators). The window was in-memory only and started empty, so
+  // after a restart `context.candles` was blank: session-anchored logic could
+  // not see the session it was in, and swing-based stops silently degraded to
+  // percentage fallbacks. The bars were in Mongo the whole time — nothing read
+  // them back.
+  for (const symbol of deriveWorkingSet(enabledConfigs.values())) {
+    for (const interval of MARKET_INTERVALS) {
+      const seed = await candles.loadRecent(symbol, interval, CANDLE_WINDOW);
+      if (seed.length > 0) candleWindows.set(`${symbol}|${interval}`, seed);
+    }
   }
   // Without this the feed connects and subscribes to nothing: the socket is
   // up, the chip reads healthy, and not one tick ever arrives.
@@ -548,6 +597,7 @@ export async function startEngineRuntime(deps: {
       state.session = {
         phase: evaluation.phase,
         minutesSinceOpen: istMinuteOfDay(now) - openMinute,
+        sessionOpenTs: istMinuteTs(now, openMinute),
       };
       if (evaluation.phaseChanged) {
         // Through the Market Data Engine's port, NOT a raw write. There were
@@ -567,6 +617,16 @@ export async function startEngineRuntime(deps: {
           session: istDateKey(now),
           ts: now,
         });
+      }
+      // Intraday square-off (plan/13 §6): flatten before the close, while the
+      // session is still open enough for risk to approve the exits. Runs on the
+      // session tick rather than on MARKET_CLOSE — by the close it is too late,
+      // the Risk Engine's session check would block every exit order.
+      if (evaluation.phase === "open") {
+        await exitEngine.onSessionTick(
+          now,
+          istMinuteTs(now, parseHHMM(settings.marketHours.squareOff)),
+        );
       }
       if (evaluation.marketClosed) {
         await bus.publish("MARKET_CLOSE", {

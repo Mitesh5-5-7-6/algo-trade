@@ -81,7 +81,11 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
   const handoffs: Signal[] = [];
   const errors: { error: unknown; context: Record<string, unknown> }[] = [];
   const provisioned: { symbol: string; specs: unknown }[] = [];
-  let session: SessionContext = { phase: "open", minutesSinceOpen: 30 };
+  let session: SessionContext = {
+    phase: "open",
+    minutesSinceOpen: 30,
+    sessionOpenTs: 0,
+  };
   let position: Position | null = null;
 
   const ports: StrategyPorts = {
@@ -241,7 +245,7 @@ describe("StrategyRunner gating (plan/15 §4, plan/18 §4)", () => {
   it("does not decide when the market is not open", async () => {
     const h = harness();
     await h.runner.enable(config("ALWAYS_BUY"));
-    h.setSession({ phase: "closed", minutesSinceOpen: -10 });
+    h.setSession({ phase: "closed", minutesSinceOpen: -10, sessionOpenTs: 0 });
     await fireBar(h, 150);
     expect(h.signals).toHaveLength(0);
   });

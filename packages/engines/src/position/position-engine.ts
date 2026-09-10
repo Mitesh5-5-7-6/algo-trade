@@ -177,6 +177,12 @@ export class PositionEngine {
         status: state.status,
         realizedPnl: state.realizedPnl,
         unrealizedPnl: 0,
+        // Carried from the opening fill so the stop outlives the process that
+        // placed it (plan/13 §3).
+        ...(payload.stopLoss === undefined ? {} : { stopLoss: payload.stopLoss }),
+        ...(payload.takeProfit === undefined
+          ? {}
+          : { target: payload.takeProfit }),
         openedAt: now,
         ...(state.status === "CLOSED" ? { closedAt: now } : {}),
         mode: payload.mode,
