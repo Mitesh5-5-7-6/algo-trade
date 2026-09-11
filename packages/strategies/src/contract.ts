@@ -1,6 +1,7 @@
 import type { ZodType, ZodTypeDef } from "zod";
 import type {
   CandleInterval,
+  DerivativeTarget,
   MarketContext,
   StrategyVerdict,
 } from "@neelkanth/core";
@@ -40,6 +41,16 @@ export interface StrategyDefinition<Params, State> {
   requiredIndicators(params: Params): readonly IndicatorSpec[];
   /** History needed before the first valid analysis (plan/15 §2). */
   warmupBars(params: Params): number;
+  /**
+   * The contract to trade, when it is not the symbol being analysed.
+   *
+   * Absent (or null) means the ordinary case: analyse X, trade X. Returning a
+   * target means "I decide on this series, but place the order on a derivative
+   * of this underlying" — the runner resolves the actual contract against the
+   * symbol master at signal time, because the correct strike depends on spot
+   * and the correct expiry depends on the date (plan/15 §4).
+   */
+  derivative?(params: Params): DerivativeTarget | null;
   /** Build per-symbol instance state. */
   init(params: Params, symbol: string): State;
   /** The decision function (plan/15 §2). May mutate `state`; performs no I/O. */

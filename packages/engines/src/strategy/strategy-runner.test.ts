@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type {
+  DerivativeTarget,
+  Instrument,
   MarketContext,
   Position,
   SessionContext,
@@ -75,6 +77,22 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
       throw new Error("strategy blew up");
     }),
   );
+  // Analyses one series, trades a contract derived from another — the split
+  // the derivative path exists to handle.
+  registry.register({
+    ...def("OPTION_BUYER", () => ({
+      side: "BUY",
+      confidence: 1,
+      stopLossPct: 0.3,
+      targetPct: 0.6,
+      reason: "index breakout",
+    })),
+    derivative: () => ({
+      underlying: "NIFTY",
+      kind: "OPTION" as const,
+      strikeOffset: 0,
+    }),
+  });
 
   const signals: Signal[] = [];
   const events: { name: EventName; payload: unknown }[] = [];
@@ -87,12 +105,23 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
     sessionOpenTs: 0,
   };
   let position: Position | null = null;
+  /** Contract the fake master resolves to; null means "cannot be resolved". */
+  let contract: Instrument | null = null;
+  /** Price the fake feed reports for the resolved contract. */
+  let contractPrice: number | null = null;
+  const resolved: { target: DerivativeTarget; side: string; spot: number }[] =
+    [];
 
   const ports: StrategyPorts = {
     readSession: () => Promise.resolve(session),
     readCandleWindow: () => Promise.resolve([]),
     readPosition: () => Promise.resolve(position),
     readSentiment: () => Promise.resolve(0),
+    resolveContract: (target, side, spot) => {
+      resolved.push({ target, side, spot });
+      return contract;
+    },
+    readPrice: () => contractPrice,
     persistSignal(signal) {
       signals.push(signal);
       return Promise.resolve();
@@ -133,8 +162,13 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
     handoffs,
     errors,
     provisioned,
+    resolved,
     setSession: (s: SessionContext) => (session = s),
     setPosition: (p: Position | null) => (position = p),
+    setContract: (c: Instrument | null, price: number | null) => {
+      contract = c;
+      contractPrice = price;
+    },
   };
 }
 
@@ -273,5 +307,109 @@ describe("StrategyRunner isolation (plan/15 §7)", () => {
     await fireBar(h, 150, {}, 3000);
     expect(h.errors).toHaveLength(2);
     expect(h.signals).toHaveLength(0);
+  });
+});
+
+describe("StrategyRunner derivative resolution (plan/15 §4, plan/17 §7)", () => {
+  const NIFTY_CE: Instrument = {
+    symbol: "NSE:NIFTY26SEP25000CE",
+    kind: "OPTION",
+    lotSize: 65,
+    tickSize: 0.05,
+    underlying: "NIFTY",
+    expiry: 4_000_000_000_000,
+    strike: 25_000,
+    optionType: "CE",
+  };
+
+  function derivativeHarness() {
+    const h = harness();
+    return h;
+  }
+
+  it("trades the resolved CONTRACT, priced at the contract — not the index", async () => {
+    const h = derivativeHarness();
+    h.setContract(NIFTY_CE, 150);
+    await h.runner.enable(config("OPTION_BUYER"));
+    await fireBar(h, 25_012); // index level
+
+    const signal = h.signals[0];
+    expect(signal?.symbol).toBe("NSE:NIFTY26SEP25000CE");
+    // The audit trail keeps what was analysed.
+    expect(signal?.underlyingSymbol).toBe("NSE:X-EQ");
+    // Sizing divides a risk budget by this. The index level would misprice
+    // the position by two orders of magnitude.
+    expect(signal?.contextSnapshot.price).toBe(150);
+    expect(h.handoffs).toHaveLength(1);
+  });
+
+  it("resolves percentage stops against the premium, not the index", async () => {
+    const h = derivativeHarness();
+    h.setContract(NIFTY_CE, 150);
+    await h.runner.enable(config("OPTION_BUYER"));
+    await fireBar(h, 25_012);
+
+    expect(h.signals[0]?.stopLoss).toBeCloseTo(105, 6); // 150 × (1 − 0.3)
+    expect(h.signals[0]?.target).toBeCloseTo(240, 6); // 150 × (1 + 0.6)
+  });
+
+  it("passes the index spot and the side to the resolver", async () => {
+    const h = derivativeHarness();
+    h.setContract(NIFTY_CE, 150);
+    await h.runner.enable(config("OPTION_BUYER"));
+    await fireBar(h, 25_012);
+
+    expect(h.resolved[0]?.spot).toBe(25_012);
+    expect(h.resolved[0]?.side).toBe("BUY");
+    expect(h.resolved[0]?.target.underlying).toBe("NIFTY");
+  });
+
+  /**
+   * An index has no tradable contract, so falling back to the analysed symbol
+   * would place an order the broker is certain to reject.
+   */
+  it("does not forward when the contract cannot be resolved", async () => {
+    const h = derivativeHarness();
+    h.setContract(null, null);
+    await h.runner.enable(config("OPTION_BUYER"));
+    await fireBar(h, 25_012);
+
+    expect(h.handoffs).toHaveLength(0);
+    // Recorded, so the evaluation is not lost — silence would read as
+    // "the strategy never ran".
+    expect(h.signals).toHaveLength(1);
+    expect(h.signals[0]?.side).toBe("HOLD");
+    expect(h.signals[0]?.reason).toContain("contract unresolved");
+    expect(h.errors).toHaveLength(1);
+  });
+
+  it("does not forward a resolved contract that has no price yet", async () => {
+    const h = derivativeHarness();
+    h.setContract(NIFTY_CE, null); // resolved, never ticked
+    await h.runner.enable(config("OPTION_BUYER"));
+    await fireBar(h, 25_012);
+
+    expect(h.handoffs).toHaveLength(0);
+    expect(h.signals[0]?.side).toBe("HOLD");
+  });
+
+  it("reports its derivative targets so the runtime can subscribe them", async () => {
+    const h = derivativeHarness();
+    await h.runner.enable(config("OPTION_BUYER"));
+    expect(h.runner.derivativeTargets()).toEqual([
+      {
+        symbol: "NSE:X-EQ",
+        target: { underlying: "NIFTY", kind: "OPTION", strikeOffset: 0 },
+      },
+    ]);
+  });
+
+  it("leaves an ordinary strategy trading what it analysed", async () => {
+    const h = derivativeHarness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    await fireBar(h, 150);
+    expect(h.signals[0]?.symbol).toBe("NSE:X-EQ");
+    expect(h.signals[0]?.underlyingSymbol).toBeUndefined();
+    expect(h.resolved).toHaveLength(0);
   });
 });

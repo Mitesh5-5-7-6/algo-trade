@@ -1,5 +1,6 @@
 import type {
   CandleInterval,
+  DerivativeTarget,
   MarketContext,
   StrategyVerdict,
 } from "@neelkanth/core";
@@ -17,6 +18,8 @@ export interface RunnableStrategy {
   readonly interval: CandleInterval;
   requiredIndicators(): readonly IndicatorSpec[];
   warmupBars(): number;
+  /** The derivative contract shape to trade, or null for "trade what I analyse". */
+  derivative(): DerivativeTarget | null;
   analyze(context: MarketContext): StrategyVerdict;
 }
 
@@ -33,6 +36,7 @@ function instantiate<P, S>(
     interval: def.interval(params),
     requiredIndicators: () => def.requiredIndicators(params),
     warmupBars: () => def.warmupBars(params),
+    derivative: () => def.derivative?.(params) ?? null,
     analyze: (context) => def.analyze(context, state),
   };
 }

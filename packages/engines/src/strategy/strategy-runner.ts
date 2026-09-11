@@ -1,5 +1,6 @@
 import type {
   CandleInterval,
+  DerivativeTarget,
   MarketContext,
   Signal,
   StrategyConfig,
@@ -108,6 +109,24 @@ export class StrategyRunner {
     }
   }
 
+  /**
+   * The derivative targets currently live, one per (strategy, symbol).
+   *
+   * The composition root needs these to keep the relevant contracts
+   * SUBSCRIBED: a contract resolved at signal time is useless if it has never
+   * ticked, because there is no price to size or fill against. Exposing the
+   * targets lets the runtime track the at-the-money contracts continuously,
+   * so by the time a signal fires the price is already there.
+   */
+  derivativeTargets(): { symbol: string; target: DerivativeTarget }[] {
+    const out: { symbol: string; target: DerivativeTarget }[] = [];
+    for (const instance of this.instances.values()) {
+      const target = instance.strategy.derivative();
+      if (target !== null) out.push({ symbol: instance.symbol, target });
+    }
+    return out;
+  }
+
   /** Disable a strategy: drop all its per-symbol instances. */
   disable(strategyId: string): void {
     for (const key of [...this.instances.keys()]) {
@@ -207,7 +226,29 @@ export class StrategyRunner {
     }
     instance.errorCount = 0;
 
-    const signal = this.toSignal(instance, verdict, context, ts);
+    const trade = this.resolveTrade(instance, verdict, context, ts);
+    if (trade === null) {
+      // Recorded as a HOLD so the evaluation is not lost — the strategy DID
+      // decide, and a silent drop would read as "the strategy never ran".
+      const reason = `contract unresolved or unpriced: ${verdict.reason}`;
+      await this.deps.ports.persistSignal(
+        this.toSignal(
+          instance,
+          { ...verdict, side: "HOLD", reason },
+          context,
+          ts,
+          { symbol: instance.symbol, price: context.candle.close },
+        ),
+      );
+      this.deps.onError(new Error("derivative contract unavailable"), {
+        where: "resolveTrade",
+        strategyId: instance.strategyId,
+        symbol: instance.symbol,
+      });
+      return;
+    }
+
+    const signal = this.toSignal(instance, verdict, context, ts, trade);
     await this.deps.ports.persistSignal(signal);
     await this.deps.ports.publish(
       "SIGNAL_CREATED",
@@ -232,26 +273,84 @@ export class StrategyRunner {
     await this.deps.handoff(signal); // synchronous risk→order (plan/14 §2)
   }
 
+  /**
+   * Which symbol and at what price this verdict actually trades.
+   *
+   * For an ordinary strategy: the analysed symbol at its own close. For a
+   * derivative strategy the two come apart — the decision was made on the
+   * index, the order goes on a contract, and it is the CONTRACT's price that
+   * everything downstream must use. Sizing divides a risk budget by price, so
+   * handing risk the index level (25,000) for a trade whose unit costs the
+   * premium (150) would misprice the position by two orders of magnitude.
+   *
+   * Returns null when the contract cannot be resolved or priced — the caller
+   * records the decision and declines to forward it. Never falls back to the
+   * underlying: an index has no tradable contract, so "trade the thing I
+   * analysed" is not a safe default here, it is a guaranteed rejection.
+   */
+  private resolveTrade(
+    instance: Instance,
+    verdict: StrategyVerdict,
+    context: MarketContext,
+    ts: number,
+  ): { symbol: string; price: number; underlying?: string } | null {
+    const target = instance.strategy.derivative();
+    const spot = context.candle.close;
+    if (target === null || verdict.side === "HOLD") {
+      return { symbol: instance.symbol, price: spot };
+    }
+    const contract = this.deps.ports.resolveContract(
+      target,
+      verdict.side,
+      spot,
+      ts,
+    );
+    if (contract === null) return null;
+    const price = this.deps.ports.readPrice(contract.symbol);
+    // No price means the contract is resolved but not yet streaming. Refusing
+    // is the same rule the Paper Broker applies (plan/11 §9): never invent a
+    // fill price, and never size against one either.
+    if (price === null || price <= 0) return null;
+    return { symbol: contract.symbol, price, underlying: instance.symbol };
+  }
+
   private toSignal(
     instance: Instance,
     verdict: StrategyVerdict,
     context: MarketContext,
     ts: number,
+    trade: { symbol: string; price: number; underlying?: string },
   ): Signal {
+    // Percentage stops resolve against the price actually being traded
+    // (plan/15 §2): the strategy names a fraction because it could not know
+    // the premium; this is the first point at which it is known.
+    const stopLoss =
+      verdict.stopLoss ??
+      (verdict.stopLossPct === undefined
+        ? undefined
+        : trade.price * (1 - verdict.stopLossPct));
+    const target =
+      verdict.target ??
+      (verdict.targetPct === undefined
+        ? undefined
+        : trade.price * (1 + verdict.targetPct));
     return {
       signalId: this.deps.nextSignalId(),
       strategyId: instance.strategyId,
-      symbol: instance.symbol,
+      symbol: trade.symbol,
+      ...(trade.underlying === undefined
+        ? {}
+        : { underlyingSymbol: trade.underlying }),
       side: verdict.side,
       confidence: verdict.confidence,
       ...(verdict.qtyProposal === undefined
         ? {}
         : { qtyProposal: verdict.qtyProposal }),
-      ...(verdict.stopLoss === undefined ? {} : { stopLoss: verdict.stopLoss }),
-      ...(verdict.target === undefined ? {} : { target: verdict.target }),
+      ...(stopLoss === undefined ? {} : { stopLoss }),
+      ...(target === undefined ? {} : { target }),
       reason: verdict.reason,
       contextSnapshot: {
-        price: context.candle.close,
+        price: trade.price,
         indicators: context.indicators,
         session: context.session.phase,
         sentiment: context.sentiment,

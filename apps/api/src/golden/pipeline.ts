@@ -276,6 +276,10 @@ class GoldenPipeline {
         ),
       readPosition: (strategyId, symbol) =>
         Promise.resolve(this.positionEngine.getPosition(strategyId, symbol)),
+      // The fixture trades cash equity, so no strategy declares a derivative
+      // target and neither of these is ever reached.
+      resolveContract: () => null,
+      readPrice: () => null,
       readSentiment: () => Promise.resolve(0),
       persistSignal: (signal) => {
         this.signals.push({

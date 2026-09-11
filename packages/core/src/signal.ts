@@ -34,6 +34,19 @@ export const StrategyVerdictSchema = z.object({
   qtyProposal: QuantitySchema.optional(),
   stopLoss: PriceSchema.optional(),
   target: PriceSchema.optional(),
+  /**
+   * Stop and target as fractions of the ENTRY price, for when the strategy
+   * cannot name an absolute one.
+   *
+   * An index-options strategy reads the index and buys a contract: a stop of
+   * "index 24,800" says nothing about what a 150-rupee premium is worth,
+   * and delta makes the mapping non-linear anyway. Option stops are therefore
+   * conventionally a percentage of premium paid — and the premium is not known
+   * until the contract is resolved. The runner converts these to absolute
+   * prices once it has one (plan/15 §4).
+   */
+  stopLossPct: z.number().gt(0).lt(1).optional(),
+  targetPct: z.number().gt(0).optional(),
   /** Mandatory human-readable justification (plan/15 §2). */
   reason: z.string().min(1),
 });
@@ -47,6 +60,15 @@ export const SignalSchema = z.object({
   signalId: EntityIdSchema,
   strategyId: EntityIdSchema,
   symbol: SymbolSchema,
+  /**
+   * What the strategy ANALYSED, when that differs from what it trades.
+   *
+   * `symbol` is always the traded contract — risk, orders and positions all
+   * key on it and must never see anything else. For a derivative strategy the
+   * decision was made on the underlying, and losing that would make the signal
+   * unauditable: you could not tell which index move produced the trade.
+   */
+  underlyingSymbol: SymbolSchema.optional(),
   side: SignalSideSchema,
   confidence: ConfidenceSchema,
   qtyProposal: QuantitySchema.optional(),

@@ -1,6 +1,8 @@
 import type {
   Candle,
   CandleInterval,
+  DerivativeTarget,
+  Instrument,
   Position,
   SessionContext,
   Signal,
@@ -29,6 +31,24 @@ export interface StrategyPorts {
   readSentiment(symbol: string): Promise<number>;
   /** Persist the decision to `signals` — sole owner (plan/02 §8, plan/07). */
   persistSignal(signal: Signal): Promise<void>;
+  /**
+   * Resolve a declared derivative target into the contract to trade
+   * (plan/15 §4, plan/17 §7).
+   *
+   * Lives here rather than in `analyze()` because the answer depends on live
+   * spot and on the clock — the right strike moves with the index and the
+   * right expiry changes weekly — and `analyze()` is pure by contract.
+   * Returns null when the symbol master cannot name a contract, which the
+   * runner must treat as "do not trade", never as "trade the underlying".
+   */
+  resolveContract(
+    target: DerivativeTarget,
+    side: "BUY" | "SELL",
+    spot: number,
+    now: number,
+  ): Instrument | null;
+  /** Last traded price for a symbol, for pricing a resolved contract. */
+  readPrice(symbol: string): number | null;
   publish: PublishFn;
 }
 

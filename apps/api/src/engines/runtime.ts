@@ -57,6 +57,7 @@ import {
   type RiskPorts,
   type StrategyPorts,
 } from "@neelkanth/engines";
+import { optionTypeForSide } from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import { loadInstrumentMaster } from "./load-instruments.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
@@ -269,12 +270,26 @@ export async function startEngineRuntime(deps: {
    * Called after every change to the enabled set, and the engine re-applies it
    * on reconnect since subscriptions do not survive one.
    */
+  /**
+   * At-the-money contracts kept subscribed for the derivative strategies
+   * (plan/17 §7).
+   *
+   * A contract resolved at signal time has no price if it has never ticked,
+   * and the runner refuses to size or trade an unpriced contract. Tracking the
+   * current ATM call and put continuously means the price is already there
+   * when the signal arrives. The set is recomputed as spot drifts, so it
+   * follows the money rather than pinning to whatever was ATM at boot.
+   */
+  const trackedContracts = new Set<string>();
+
   const syncWorkingSet = async (): Promise<void> => {
     const traded = deriveWorkingSet(enabledConfigs.values());
     // Indices ride along for DATA only (plan/17 §7). They are never traded —
     // an index has no tradable contract — but the market-bias gate cannot read
     // direction from instruments it does not receive.
-    const symbols = [...new Set([...traded, ...settings.indexSymbols])];
+    const symbols = [
+      ...new Set([...traded, ...settings.indexSymbols, ...trackedContracts]),
+    ];
     await marketDataEngine.subscribe(symbols);
     log.info(
       { symbols, traded: traded.length, indices: settings.indexSymbols.length },
@@ -451,6 +466,17 @@ export async function startEngineRuntime(deps: {
     readPosition: (strategyId, symbol) =>
       Promise.resolve(positionEngine.getPosition(strategyId, symbol)),
     readSentiment: () => Promise.resolve(0),
+    resolveContract: (target, side, spot, now) =>
+      target.kind === "FUTURE"
+        ? instruments.nearestFuture(target.underlying, now)
+        : instruments.nearestOption(
+            target.underlying,
+            spot,
+            optionTypeForSide(side),
+            now,
+            target.strikeOffset,
+          ),
+    readPrice: (symbol) => lastPrices.get(symbol) ?? null,
     persistSignal: (signal) => signals.insert(signal),
     publish,
   };
@@ -487,6 +513,47 @@ export async function startEngineRuntime(deps: {
     onError,
   });
 
+  /**
+   * Keep the current ATM call and put subscribed for any derivative strategy
+   * watching `symbol`.
+   *
+   * Both sides, always: which one a signal needs is not known until it fires,
+   * and subscribing then would be a bar too late. Only re-syncs the feed when
+   * the set actually changes, so a session's worth of candle closes does not
+   * mean a session's worth of resubscriptions.
+   */
+  const trackAtmContracts = async (
+    symbol: string,
+    spot: number,
+  ): Promise<void> => {
+    const targets = runner
+      .derivativeTargets()
+      .filter((entry) => entry.symbol === symbol);
+    if (targets.length === 0) return;
+    const now = Date.now();
+    let changed = false;
+    for (const { target } of targets) {
+      const contracts =
+        target.kind === "FUTURE"
+          ? [instruments.nearestFuture(target.underlying, now)]
+          : (["CE", "PE"] as const).map((type) =>
+              instruments.nearestOption(
+                target.underlying,
+                spot,
+                type,
+                now,
+                target.strikeOffset,
+              ),
+            );
+      for (const contract of contracts) {
+        if (contract === null || trackedContracts.has(contract.symbol)) continue;
+        trackedContracts.add(contract.symbol);
+        changed = true;
+      }
+    }
+    if (changed) await syncWorkingSet();
+  };
+
   // --- Bus wiring ---
   const appendWindow = (candle: Candle): void => {
     const key = `${candle.symbol}|${candle.interval}`;
@@ -509,6 +576,7 @@ export async function startEngineRuntime(deps: {
     // Refresh the market view BEFORE strategies decide, so the gate they are
     // checked against reflects the bar they are deciding on.
     await marketBias.refresh();
+    await trackAtmContracts(candle.symbol, candle.close);
     await indicatorEngine.onCandleClosed(candle); // → INDICATORS_UPDATED
   });
   await bus.subscribe("INDICATORS_UPDATED", (event) =>

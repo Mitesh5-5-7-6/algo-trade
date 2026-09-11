@@ -10,6 +10,7 @@ import type { StrategyDefinition } from "./contract.js";
 import { emaCrossover } from "./ema-crossover.js";
 import { rsiReversion } from "./rsi-reversion.js";
 import { orb } from "./orb.js";
+import { indexOptionMomentum } from "./index-option-momentum.js";
 import { createStrategyRegistry } from "./index.js";
 
 const SYM = "NSE:X-EQ";
@@ -326,5 +327,169 @@ describe("the built-in registry (plan/15 §4, plan/28 §3)", () => {
     expect(registry.has("EMA_CROSSOVER")).toBe(true);
     expect(registry.has("RSI")).toBe(true);
     expect(registry.has("ORB")).toBe(true);
+  });
+});
+
+describe("Index Option Momentum (index in, contract out)", () => {
+  const P = { underlying: "NIFTY", emaPeriod: 5, breakoutBars: 3 };
+
+  /** A bar series where `closes` drives high/low too, so breakouts are exact. */
+  function bars(closes: readonly number[], mso: number): BarOpts[] {
+    return closes.map((close, i) => ({
+      close,
+      high: close,
+      low: close,
+      // Every bar inside the entry window; only the last one can trigger.
+      minutesSinceOpen: mso - (closes.length - 1 - i) * 5,
+      indicators: { ema5: 100, vwap: 100 },
+    }));
+  }
+
+  it("declares the option contract it wants, resolved later by the runner", () => {
+    const params = indexOptionMomentum.paramsSchema.parse(P);
+    expect(indexOptionMomentum.derivative?.(params)).toEqual({
+      underlying: "NIFTY",
+      kind: "OPTION",
+      strikeOffset: 0,
+    });
+  });
+
+  it("declares the trend indicators it needs", () => {
+    const params = indexOptionMomentum.paramsSchema.parse(P);
+    expect(indexOptionMomentum.requiredIndicators(params)).toEqual([
+      { kind: "ema", period: 5 },
+      { kind: "vwap" },
+    ]);
+  });
+
+  it("BUYs a call on a breakout above VWAP and EMA", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      P,
+      series(bars([101, 102, 103, 110], 60)),
+    );
+    const buy = verdicts[3];
+    expect(buy?.side).toBe("BUY");
+    // Percentage stops — the premium is unknown until the contract resolves.
+    expect(buy?.stopLossPct).toBe(0.3);
+    expect(buy?.targetPct).toBe(0.6);
+    expect(buy?.stopLoss).toBeUndefined();
+  });
+
+  it("BUYs a put on a breakdown below VWAP and EMA", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      P,
+      series(bars([99, 98, 97, 90], 60)),
+    );
+    expect(verdicts[3]?.side).toBe("SELL"); // SELL = buy a PUT, never a short
+  });
+
+  /** Direction without movement is a losing trade for an option buyer. */
+  it("holds when price is above trend but makes no new high", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      P,
+      series(bars([110, 109, 108, 107], 60)),
+    );
+    expect(verdicts[3]?.side).toBe("HOLD");
+  });
+
+  it("holds a breakout that disagrees with VWAP and EMA", () => {
+    const rising = bars([101, 102, 103, 110], 60).map((b) => ({
+      ...b,
+      indicators: { ema5: 200, vwap: 200 }, // price below both
+    }));
+    expect(run(indexOptionMomentum, P, series(rising))[3]?.side).toBe("HOLD");
+  });
+
+  it("is one entry per direction per day", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      P,
+      series(bars([101, 102, 103, 110, 120], 65)),
+    );
+    expect(verdicts[3]?.side).toBe("BUY");
+    expect(verdicts[4]?.side).toBe("HOLD"); // would break out again
+  });
+
+  it("refuses to enter inside the opening window", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      { ...P, skipOpenMinutes: 20 },
+      series(bars([101, 102, 103, 110], 15)),
+    );
+    expect(verdicts[3]?.reason).toBe("inside the opening window");
+  });
+
+  /** Decay accelerates into the close, and square-off is coming anyway. */
+  it("refuses to enter after the last entry time", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      { ...P, lastEntryMinutes: 300 },
+      series(bars([101, 102, 103, 110], 320)),
+    );
+    expect(verdicts[3]?.reason).toBe("past the last entry time");
+  });
+
+  it("re-arms on a new session", () => {
+    const day2 = DAY1_OPEN + 86_400_000;
+    const verdicts = run(
+      indexOptionMomentum,
+      P,
+      series([
+        ...bars([101, 102, 103, 110], 60),
+        ...bars([101, 102, 103, 110], 60).map((b) => ({
+          ...b,
+          sessionOpenTs: day2,
+        })),
+      ]),
+    );
+    expect(verdicts[3]?.side).toBe("BUY");
+    expect(verdicts[7]?.side).toBe("BUY");
+  });
+});
+
+describe("Index Option Momentum — spot index has no volume", () => {
+  const bars = (closes: readonly number[]): BarOpts[] =>
+    closes.map((close, i) => ({
+      close,
+      high: close,
+      low: close,
+      minutesSinceOpen: 60 - (closes.length - 1 - i) * 5,
+      indicators: { ema5: 100 }, // no vwap: an index feed prints no volume
+    }));
+
+  /**
+   * VWAP is only ready once real volume prints. Requiring it on a spot index
+   * means the runner's readiness gate never opens and the strategy never runs
+   * — indistinguishable from "no setup today".
+   */
+  it("does not require vwap when useVwap is false", () => {
+    const params = indexOptionMomentum.paramsSchema.parse({
+      emaPeriod: 5,
+      useVwap: false,
+    });
+    expect(indexOptionMomentum.requiredIndicators(params)).toEqual([
+      { kind: "ema", period: 5 },
+    ]);
+  });
+
+  it("still fires on the EMA alone when vwap is off", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      { emaPeriod: 5, breakoutBars: 3, useVwap: false },
+      series(bars([101, 102, 103, 110])),
+    );
+    expect(verdicts[3]?.side).toBe("BUY");
+  });
+
+  it("holds instead of firing blind when vwap is required but absent", () => {
+    const verdicts = run(
+      indexOptionMomentum,
+      { emaPeriod: 5, breakoutBars: 3, useVwap: true },
+      series(bars([101, 102, 103, 110])),
+    );
+    expect(verdicts[3]?.reason).toBe("trend indicators not ready");
   });
 });
