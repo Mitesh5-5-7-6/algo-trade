@@ -112,7 +112,12 @@ export class MarketDataEngine {
       if (last !== undefined && tick.ts <= last) return;
       this.lastTs.set(tick.symbol, tick.ts);
 
-      await this.ports.writeHotPrice(tick.symbol, tick);
+      // No Redis write here. `hot:price` is a cross-process convenience copy,
+      // not the price the engine trades on — strategies, risk, PnL and the
+      // paper broker all read the in-process price map. Writing it per tick
+      // cost one Redis command per tick, ~96% of all command usage, for a key
+      // production reads a handful of times a day. The runtime refreshes it on
+      // candle close instead (plan/08 §5).
       await this.ports.publish("MARKET_TICK", tick);
 
       for (const candle of this.aggregator.addTick(tick)) {

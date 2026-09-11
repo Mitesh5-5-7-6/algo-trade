@@ -22,7 +22,26 @@ const SessionRecordSchema = z.object({
   createdAt: z.number(),
   /** Hard ceiling on lifetime; idle TTL refreshes never push past this. */
   absoluteExpiry: z.number(),
+  /**
+   * When the sliding TTL was last pushed out. Optional so sessions written
+   * before this field existed still parse.
+   */
+  refreshedAt: z.number().optional(),
 });
+
+/**
+ * How stale the sliding TTL is allowed to get before a read refreshes it.
+ *
+ * Every authenticated request and every socket handshake used to cost a Redis
+ * GET *and* a SET — and the dashboard invalidates its queries on each forwarded
+ * event, so the write amplified precisely when the system was busiest. The
+ * refresh only has to happen often enough that an active session never idles
+ * out; once a minute is two orders of magnitude inside a 30-minute window.
+ *
+ * The cost is that the idle deadline can trail real activity by up to this
+ * long, which is immaterial against a 30-minute idle TTL.
+ */
+const REFRESH_INTERVAL_MS = 60_000;
 
 export interface ResolvedSession {
   sessionId: string;
@@ -71,12 +90,21 @@ export class SessionStore {
     if (raw === null) return null;
 
     const record = SessionRecordSchema.parse(JSON.parse(raw));
-    if (Date.now() > record.absoluteExpiry) {
+    const now = Date.now();
+    if (now > record.absoluteExpiry) {
       await this.destroy(sessionId);
       return null;
     }
 
-    await this.kv.set(authSessionKey(sessionId), raw, this.idleTtlSeconds);
+    // Sliding window, but not on every single read — see REFRESH_INTERVAL_MS.
+    const lastRefresh = record.refreshedAt ?? record.createdAt;
+    if (now - lastRefresh >= REFRESH_INTERVAL_MS) {
+      await this.kv.set(
+        authSessionKey(sessionId),
+        JSON.stringify({ ...record, refreshedAt: now }),
+        this.idleTtlSeconds,
+      );
+    }
     return { sessionId, userId: record.userId };
   }
 

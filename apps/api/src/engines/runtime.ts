@@ -13,7 +13,6 @@ import type { EventName, EventPayload } from "@neelkanth/contracts";
 import { componentLogger, type Logger } from "@neelkanth/logger";
 import {
   createEventBus,
-  hotIndicatorsKey,
   hotPriceKey,
   hotSessionKey,
   type EventBus,
@@ -60,6 +59,7 @@ import {
 import { optionTypeForSide } from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import { loadInstrumentMaster } from "./load-instruments.js";
+import type { LiveMarketState } from "./live-market-state.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -70,6 +70,13 @@ const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
  * from a cold start late in the day.
  */
 const CANDLE_WINDOW = 90;
+
+/**
+ * TTL on the `hot:*` inspection keys. Comfortably longer than their refresh
+ * interval (one minute for prices), short enough that a stopped engine stops
+ * looking live.
+ */
+const HOT_KEY_TTL_SECONDS = 300;
 
 /** The intervals the aggregator builds, and therefore the ones we can seed. */
 const MARKET_INTERVALS = ["1m", "5m"] as const satisfies readonly CandleInterval[];
@@ -131,6 +138,11 @@ export async function startEngineRuntime(deps: {
   broker: Broker;
   /** Stamped on every order and fill event — the audit trail (plan/12 §4). */
   mode: TradeMode;
+  /**
+   * The shared in-memory price/session state (see `live-market-state.ts`).
+   * The runtime writes it; the Paper Broker reads it.
+   */
+  liveState: LiveMarketState;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -159,7 +171,9 @@ export async function startEngineRuntime(deps: {
   }
 
   // --- In-memory runtime state (single process; the fast read path) ---
-  const lastPrices = new Map<string, number>();
+  // Shared with the Paper Broker so execution prices and decision prices are
+  // the same number, from the same place.
+  const lastPrices = deps.liveState.prices;
   const candleWindows = new Map<string, Candle[]>();
   // Symbols ride along with the risk rules because the market-data working
   // set is derived from them: subscribing is not a side effect of enabling a
@@ -234,14 +248,19 @@ export async function startEngineRuntime(deps: {
     exchange: "NSE",
   });
 
-  // --- Hot-state writes (Redis; the cross-process / dashboard copy) ---
+  /**
+   * Hot-state writes (Redis; the cross-process / inspection copy).
+   *
+   * Always with a TTL. These keys used to be written with a bare SET, so a
+   * stopped engine left its last price and session phase in Redis forever —
+   * indistinguishable, to any reader, from live state. An expiring key says
+   * "nobody is publishing this any more", which is the truthful answer.
+   */
   const writeHot = (key: string, value: unknown): Promise<unknown> =>
-    redis.client.set(key, JSON.stringify(value));
+    redis.client.set(key, JSON.stringify(value), "EX", HOT_KEY_TTL_SECONDS);
 
   // --- Market Data Engine (Inbound) ---
   const marketDataPorts: MarketDataPorts = {
-    writeHotPrice: (symbol, tick) =>
-      writeHot(hotPriceKey(symbol), tick).then(() => undefined),
     writeHotSession: (phase) =>
       writeHot(hotSessionKey(), { phase }).then(() => undefined),
     saveCandle: (candle) => candles.upsert(candle),
@@ -443,10 +462,11 @@ export async function startEngineRuntime(deps: {
 
   // --- Indicator Engine ---
   const indicatorPorts: IndicatorPorts = {
-    writeHotIndicators: (symbol, interval, snapshot) =>
-      writeHot(hotIndicatorsKey(symbol), { interval, ...snapshot }).then(
-        () => undefined,
-      ),
+    // `hot:indicators:*` is no longer written. It was a SET per closed bar per
+    // symbol with no TTL and NO production reader anywhere — pure write
+    // amplification against a key nothing consumed. Strategies read indicators
+    // from the INDICATORS_UPDATED payload, in process.
+    writeHotIndicators: () => Promise.resolve(),
     loadWarmupCandles: (symbol, interval, limit) =>
       candles.loadRecent(symbol, interval, limit),
     publish,
@@ -569,6 +589,21 @@ export async function startEngineRuntime(deps: {
     const candle = event.payload;
     lastPrices.set(candle.symbol, candle.close);
     appendWindow(candle);
+    // The cross-process copy of the price, refreshed here rather than per tick
+    // (plan/08 §5). One write per symbol per bar instead of one per tick —
+    // roughly a hundredth of the commands, for a key production reads a
+    // handful of times a day. Failure is non-fatal: nothing in the trading
+    // path depends on it.
+    if (candle.interval === "1m") {
+      void writeHot(hotPriceKey(candle.symbol), {
+        symbol: candle.symbol,
+        ltp: candle.close,
+        volume: candle.volume,
+        ts: candle.ts,
+      }).catch((error: unknown) => {
+        onError(error, { where: "writeHotPrice", symbol: candle.symbol });
+      });
+    }
     runner.onCandleClosed(candle); // cache the bar for the indicator update
     // Protective exits are judged before new decisions: a bar that both hits a
     // stop and sets up an entry must close the position first (plan/14 §5).
@@ -722,6 +757,9 @@ export async function startEngineRuntime(deps: {
         // One writer, one shape (plan/02 §8: sole writer).
         await marketDataPorts.writeHotSession(evaluation.phase);
       }
+      // The Paper Broker's session gate reads this, not Redis — one source for
+      // "is the market open", which is what the two-writers bug above was.
+      deps.liveState.sessionOpen = evaluation.phase === "open";
       if (evaluation.marketOpened) {
         indicatorEngine.onMarketOpen();
         positionEngine.resetDaily();

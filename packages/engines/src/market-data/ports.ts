@@ -1,4 +1,4 @@
-import type { Candle, SessionPhase, Tick } from "@neelkanth/core";
+import type { Candle, SessionPhase } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
 
 /** Typed publish, structurally matching the redis EventBus (plan/09). */
@@ -18,8 +18,6 @@ export type PublishFn = <N extends EventName>(
  * plan/17 §3): `hot:price:*`, `hot:session`, the `candles` collection.
  */
 export interface MarketDataPorts {
-  /** Write the live price snapshot `hot:price:{symbol}` (plan/08 §5). */
-  writeHotPrice(symbol: string, tick: Tick): Promise<void>;
   /** Write `hot:session` (plan/08 §5, plan/17 §6). */
   writeHotSession(phase: SessionPhase): Promise<void>;
   /** Persist a closed bar to `candles` (plan/07); unique on symbol/interval/ts. */

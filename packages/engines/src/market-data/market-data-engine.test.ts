@@ -13,7 +13,9 @@ const ist = (h: number, mi: number): number =>
 
 interface Captured {
   ports: MarketDataPorts;
-  hotPrices: Map<string, Tick>;
+  /** The latest MARKET_TICK payload per symbol — the observable that replaced
+   *  the per-tick Redis write. */
+  lastTick: (symbol: string) => Tick | undefined;
   session: { phase?: SessionPhase };
   candles: Candle[];
   events: { name: EventName; payload: unknown }[];
@@ -21,15 +23,10 @@ interface Captured {
 }
 
 function harness(): Captured {
-  const hotPrices = new Map<string, Tick>();
   const session: { phase?: SessionPhase } = {};
   const candles: Candle[] = [];
   const events: { name: EventName; payload: unknown }[] = [];
   const ports: MarketDataPorts = {
-    writeHotPrice(symbol, tick) {
-      hotPrices.set(symbol, tick);
-      return Promise.resolve();
-    },
     writeHotSession(phase) {
       session.phase = phase;
       return Promise.resolve();
@@ -43,7 +40,13 @@ function harness(): Captured {
       return Promise.resolve();
     },
   };
-  return { ports, hotPrices, session, candles, events, errors: [] };
+  const lastTick = (symbol: string): Tick | undefined =>
+    events
+      .filter((e) => e.name === "MARKET_TICK")
+      .map((e) => e.payload as Tick)
+      .filter((t) => t.symbol === symbol)
+      .at(-1);
+  return { ports, lastTick, session, candles, events, errors: [] };
 }
 
 function engineWith(h: Captured, session?: SessionManager) {
@@ -72,7 +75,7 @@ describe("MarketDataEngine tick path (plan/17 §4)", () => {
     await engine.ingestRaw(raw(2_000, 110, 5));
     await engine.ingestRaw(raw(61_000, 95, 5)); // crosses the 1m boundary
 
-    expect(h.hotPrices.get("NSE:RELIANCE-EQ")?.ltp).toBe(95);
+    expect(h.lastTick("NSE:RELIANCE-EQ")?.ltp).toBe(95);
     const ticks = h.events.filter((e) => e.name === "MARKET_TICK");
     const closed = h.events.filter((e) => e.name === "CANDLE_CLOSED");
     expect(ticks).toHaveLength(3);
@@ -89,7 +92,7 @@ describe("MarketDataEngine tick path (plan/17 §4)", () => {
     await engine.ingestRaw(raw(3_000, 999)); // older — dropped
     await engine.ingestRaw(raw(5_000, 999)); // equal — dropped
     expect(h.events.filter((e) => e.name === "MARKET_TICK")).toHaveLength(1);
-    expect(h.hotPrices.get("NSE:RELIANCE-EQ")?.ltp).toBe(100);
+    expect(h.lastTick("NSE:RELIANCE-EQ")?.ltp).toBe(100);
   });
 
   it("routes an unparseable message to onError and publishes nothing", async () => {
@@ -142,7 +145,7 @@ describe("MarketDataEngine broker attach (plan/17 §7-8)", () => {
     await Promise.resolve(); // let the async ingest settle
     await Promise.resolve();
 
-    expect(h.hotPrices.get("NSE:RELIANCE-EQ")?.ltp).toBe(250);
+    expect(h.lastTick("NSE:RELIANCE-EQ")?.ltp).toBe(250);
   });
 
   it("re-subscribes the working set on reconnect (subscriptions don't survive)", async () => {
@@ -159,5 +162,32 @@ describe("MarketDataEngine broker attach (plan/17 §7-8)", () => {
 
     expect(broker.subscriptions.has("NSE:INFY-EQ")).toBe(true);
     expect(broker.subscriptions.has("NSE:TCS-EQ")).toBe(true);
+  });
+});
+
+describe("MarketDataEngine — Redis is off the tick path", () => {
+  /**
+   * The regression this guards: every tick used to issue a Redis SET for
+   * `hot:price:{symbol}` on top of the publish. Across ~15 ticks/sec that was
+   * ~96% of all Redis commands, for a key the trading path never reads — the
+   * engine, risk and the paper broker all read the in-process price.
+   *
+   * Asserted as "the port does not exist on the hot path" rather than as a
+   * command count, so it stays meaningful if the plumbing moves.
+   */
+  it("exposes no per-tick hot-state write port at all", () => {
+    const h = harness();
+    expect("writeHotPrice" in h.ports).toBe(false);
+  });
+
+  it("still publishes every accepted tick and persists closed bars", async () => {
+    const h = harness();
+    const engine = engineWith(h);
+    await engine.ingestRaw(raw(1_000, 100, 5));
+    await engine.ingestRaw(raw(61_000, 110, 5));
+
+    expect(h.events.filter((e) => e.name === "MARKET_TICK")).toHaveLength(2);
+    expect(h.candles).toHaveLength(1);
+    expect(h.lastTick("NSE:RELIANCE-EQ")?.ltp).toBe(110);
   });
 });

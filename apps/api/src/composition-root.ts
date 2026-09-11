@@ -4,8 +4,6 @@ import {
   createRedisConnections,
   redactRedisUrl,
   verifyRedisConnection,
-  hotPriceKey,
-  hotSessionKey,
   webhookChannel,
   webhookInboxKey,
   WEBHOOK_INBOX_MAX,
@@ -23,6 +21,12 @@ import cors from "@fastify/cors";
 import { buildServer, type ApiServer } from "./server.js";
 import type { DependencyCheck } from "./health.js";
 import { startEngineRuntime, type EngineRuntime } from "./engines/runtime.js";
+import { createLiveMarketState } from "./engines/live-market-state.js";
+import {
+  meterRedis,
+  RedisMeter,
+  startRedisMeterReport,
+} from "./engines/redis-meter.js";
 import { registerControlPlane } from "./control-plane/index.js";
 import {
   createStepUpVerifier,
@@ -103,6 +107,19 @@ export async function bootstrap(
   await verifyRedisConnection(redis, config.REDIS_URL);
   log.info({ redis: redactRedisUrl(config.REDIS_URL) }, "redis reachable");
 
+  // Optional command-rate diagnostic (dev): REDIS_METER_MS=15000 to enable.
+  // Counts in memory only — a meter that stored its numbers in Redis would be
+  // part of what it is measuring.
+  const meterMs = Number(process.env["REDIS_METER_MS"] ?? 0);
+  let stopMeter: (() => void) | undefined;
+  if (meterMs > 0) {
+    const meter = new RedisMeter();
+    redis.client = meterRedis(redis.client, meter);
+    redis.publisher = meterRedis(redis.publisher, meter);
+    stopMeter = startRedisMeterReport(meter, componentLogger(logger, "redis.meter"), meterMs);
+    log.info({ intervalMs: meterMs }, "redis command meter enabled");
+  }
+
   // --- Database design as code (plan/07): indexes idempotently ensured ---
   log.info("ensuring indexes");
   await ensureIndexes(mongo.db);
@@ -136,6 +153,8 @@ export async function bootstrap(
 
   // --- Broker (plan/19 §2) ---
   const brokerLog = componentLogger(logger, "api.broker");
+  // Shared by the Paper Broker (reader) and the engine runtime (writer).
+  const liveState = createLiveMarketState();
   let broker: Broker;
   let fyersBroker: FyersBroker | null = null;
   if (config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
@@ -179,17 +198,14 @@ export async function bootstrap(
     broker = fyersBroker;
   } else {
     // Paper mode (plan/11): execution is simulated, data is real FYERS (if credentials exist)
+    // Reads the same in-memory state the engine decides on, not a Redis copy
+    // of it. Two sources for one price is a correctness problem before it is a
+    // cost one: the broker could fill at a value risk never sized against, and
+    // `hot:session` had a documented history of disagreeing with itself.
     const paper = new PaperBroker({
-      readPrice: async (symbol) => {
-        const val = await redis.client.get(hotPriceKey(symbol));
-        return val ? (JSON.parse(val) as { ltp: number }).ltp : null;
-      },
-      readSessionOpen: async () => {
-        const val = await redis.client.get(hotSessionKey());
-        return val
-          ? (JSON.parse(val) as { phase: string }).phase === "open"
-          : false;
-      },
+      readPrice: (symbol) =>
+        Promise.resolve(liveState.prices.get(symbol) ?? null),
+      readSessionOpen: () => Promise.resolve(liveState.sessionOpen),
     });
 
     if (fyersBroker) {
@@ -222,6 +238,7 @@ export async function bootstrap(
     logger,
     broker,
     mode: config.BROKER_MODE,
+    liveState,
   });
 
   // Establish the broker data feed (plan/19 §4).
@@ -403,6 +420,7 @@ export async function bootstrap(
       const shutdownLog = componentLogger(logger, "api.shutdown");
       clearInterval(sessionTimer);
       clearInterval(equityTimer);
+      stopMeter?.();
       shutdownLog.info("closing realtime bridge + http server");
       // The bridge owns the shared HTTP server's close (io.close closes it too),
       // so this stands in for server.close() — calling both would double-close.

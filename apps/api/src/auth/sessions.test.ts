@@ -84,3 +84,76 @@ describe("SessionStore (plan/21 §3)", () => {
     });
   });
 });
+
+describe("SessionStore — sliding TTL is refreshed, but not on every read", () => {
+  /** A SessionKV that counts writes, so the Redis cost is observable. */
+  function countingKV(): { kv: SessionKV; writes: () => number } {
+    const inner = fakeKV();
+    let writes = 0;
+    return {
+      kv: {
+        ...inner,
+        set(key, value, ttl) {
+          writes += 1;
+          return inner.set(key, value, ttl);
+        },
+      },
+      writes: () => writes,
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Every authenticated request and socket handshake resolves a session. A
+   * write per read made Redis cost scale with traffic for no security benefit.
+   */
+  it("does not write on repeated reads inside the refresh interval", async () => {
+    const { kv, writes } = countingKV();
+    const store = new SessionStore(kv, IDLE, ABSOLUTE);
+    const id = await store.create("u1");
+    const afterCreate = writes();
+
+    await store.resolve(id);
+    await store.resolve(id);
+    await store.resolve(id);
+
+    expect(writes()).toBe(afterCreate);
+  });
+
+  it("refreshes once the interval has elapsed", async () => {
+    const { kv, writes } = countingKV();
+    const store = new SessionStore(kv, IDLE, ABSOLUTE);
+    const id = await store.create("u1");
+    const afterCreate = writes();
+
+    vi.advanceTimersByTime(61_000);
+    await store.resolve(id);
+    expect(writes()).toBe(afterCreate + 1);
+
+    // ...and then goes quiet again until the next interval.
+    await store.resolve(id);
+    expect(writes()).toBe(afterCreate + 1);
+  });
+
+  it("still resolves the session on the reads it does not refresh", async () => {
+    const { kv } = countingKV();
+    const store = new SessionStore(kv, IDLE, ABSOLUTE);
+    const id = await store.create("u1");
+    expect(await store.resolve(id)).toEqual({ sessionId: id, userId: "u1" });
+    expect(await store.resolve(id)).toEqual({ sessionId: id, userId: "u1" });
+  });
+
+  it("still enforces the absolute ceiling regardless of refreshes", async () => {
+    const { kv } = countingKV();
+    const store = new SessionStore(kv, IDLE, ABSOLUTE);
+    const id = await store.create("u1");
+    vi.advanceTimersByTime((ABSOLUTE + 1) * 1000);
+    expect(await store.resolve(id)).toBeNull();
+  });
+});
