@@ -692,11 +692,13 @@
   "riskDecisions": [
     {
       "signalId": "sig_16",
-      "decision": "approved"
+      "decision": "approved",
+      "cappedQty": 10
     },
     {
       "signalId": "sig_39",
-      "decision": "approved"
+      "decision": "approved",
+      "cappedQty": 10
     },
     {
       "signalId": "sig_58",

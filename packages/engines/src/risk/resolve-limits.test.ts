@@ -8,6 +8,7 @@ const global: RiskLimits = {
   maxCapitalPerTrade: 50000,
   maxOpenPositions: 5,
   maxExposure: 0.8,
+  riskPerTrade: 0.01,
 };
 
 describe("resolveLimits (plan/14 §4 — override may only be stricter)", () => {

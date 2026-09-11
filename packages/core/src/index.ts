@@ -10,3 +10,4 @@ export * from "./risk.js";
 export * from "./user.js";
 export * from "./broker-token.js";
 export * from "./instrument.js";
+export * from "./market-view.js";

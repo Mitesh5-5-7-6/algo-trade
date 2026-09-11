@@ -38,6 +38,7 @@ import {
   ExitEngine,
   IndicatorEngine,
   istDateKey,
+  MarketBiasEngine,
   MarketDataEngine,
   OrderManager,
   PnlEngine,
@@ -57,6 +58,7 @@ import {
   type StrategyPorts,
 } from "@neelkanth/engines";
 import { createStrategyRegistry } from "@neelkanth/strategies";
+import { loadInstrumentMaster } from "./load-instruments.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -268,9 +270,16 @@ export async function startEngineRuntime(deps: {
    * on reconnect since subscriptions do not survive one.
    */
   const syncWorkingSet = async (): Promise<void> => {
-    const symbols = deriveWorkingSet(enabledConfigs.values());
+    const traded = deriveWorkingSet(enabledConfigs.values());
+    // Indices ride along for DATA only (plan/17 §7). They are never traded —
+    // an index has no tradable contract — but the market-bias gate cannot read
+    // direction from instruments it does not receive.
+    const symbols = [...new Set([...traded, ...settings.indexSymbols])];
     await marketDataEngine.subscribe(symbols);
-    log.info({ symbols, count: symbols.length }, "market data working set");
+    log.info(
+      { symbols, traded: traded.length, indices: settings.indexSymbols.length },
+      "market data working set",
+    );
   };
 
   // --- Projection chain: Position + PnL ---
@@ -343,6 +352,28 @@ export async function startEngineRuntime(deps: {
     void orderManager.onBrokerUpdate(update);
   });
 
+  // --- Symbol master: lot sizes for position sizing (plan/17 §7) ---
+  const instruments = await loadInstrumentMaster(log);
+
+  /**
+   * The market view every entry is checked against (plan/14 §4).
+   *
+   * Indices supply direction, the traded universe supplies participation —
+   * see `MarketView` for why neither alone is enough to block on.
+   */
+  const marketBias = new MarketBiasEngine({
+    ports: {
+      readCandleWindow: (symbol, interval, count) =>
+        Promise.resolve(
+          (candleWindows.get(`${symbol}|${interval}`) ?? []).slice(-count),
+        ),
+    },
+    indexSymbols: () => settings.indexSymbols,
+    breadthSymbols: () => deriveWorkingSet(enabledConfigs.values()),
+    bars: CANDLE_WINDOW,
+    onError,
+  });
+
   // --- Risk Engine ---
   const riskPorts: RiskPorts = {
     readSession: () => Promise.resolve<SessionPhase>(state.session.phase),
@@ -388,6 +419,8 @@ export async function startEngineRuntime(deps: {
     readGlobalLimits: () => Promise.resolve(state.limits),
     readStrategyOverride: (strategyId) =>
       Promise.resolve(enabledConfigs.get(strategyId)?.riskRules ?? null),
+    readMarketView: () => marketBias.current(),
+    readInstrument: (symbol) => instruments.get(symbol),
     persistRiskLog: (logEntry) => riskLogs.insert(logEntry),
     publish,
   };
@@ -473,6 +506,9 @@ export async function startEngineRuntime(deps: {
     // Protective exits are judged before new decisions: a bar that both hits a
     // stop and sets up an entry must close the position first (plan/14 §5).
     await exitEngine.onCandleClosed(candle);
+    // Refresh the market view BEFORE strategies decide, so the gate they are
+    // checked against reflects the bar they are deciding on.
+    await marketBias.refresh();
     await indicatorEngine.onCandleClosed(candle); // → INDICATORS_UPDATED
   });
   await bus.subscribe("INDICATORS_UPDATED", (event) =>
@@ -505,12 +541,21 @@ export async function startEngineRuntime(deps: {
   // not see the session it was in, and swing-based stops silently degraded to
   // percentage fallbacks. The bars were in Mongo the whole time — nothing read
   // them back.
-  for (const symbol of deriveWorkingSet(enabledConfigs.values())) {
+  for (const symbol of [
+    ...new Set([
+      ...deriveWorkingSet(enabledConfigs.values()),
+      ...settings.indexSymbols,
+    ]),
+  ]) {
     for (const interval of MARKET_INTERVALS) {
       const seed = await candles.loadRecent(symbol, interval, CANDLE_WINDOW);
       if (seed.length > 0) candleWindows.set(`${symbol}|${interval}`, seed);
     }
   }
+  // With windows seeded, the gate has an opinion from the first bar rather
+  // than sitting NEUTRAL until enough live bars accumulate.
+  await marketBias.refresh();
+  log.info({ marketView: marketBias.current().detail }, "market view seeded");
   // Without this the feed connects and subscribes to nothing: the socket is
   // up, the chip reads healthy, and not one tick ever arrives.
   await syncWorkingSet();

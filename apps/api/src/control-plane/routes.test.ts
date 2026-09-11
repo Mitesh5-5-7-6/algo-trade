@@ -312,6 +312,7 @@ describe("settings & control routes", () => {
       maxCapitalPerTrade: 200_000,
       maxOpenPositions: 4,
       maxExposure: 0.5,
+      riskPerTrade: 0.01,
     };
     const patched = await app.inject({
       method: "PATCH",

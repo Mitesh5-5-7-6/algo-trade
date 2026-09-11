@@ -17,7 +17,16 @@ export const RsiReversionParamsSchema = z.object({
   interval: CandleIntervalSchema.default("5m"),
   /** Mean-reversion targets are deliberately modest (plan/16 §3). */
   targetR: z.number().positive().default(1.5),
-  quantity: z.number().int().positive().default(1),
+  /**
+   * OPTIONAL ceiling on the entry size, in units.
+   *
+   * It used to default to 1, which the Risk Engine then read as "trade one
+   * unit" — so every position was one share regardless of capital. An unset
+   * quantity is the absence of an opinion, not an intent, so it is now left
+   * off the signal entirely and the engine sizes from the risk budget
+   * (plan/14 §4.4). Set it only to cap a strategy below what risk allows.
+   */
+  quantity: z.number().int().positive().optional(),
   allowShort: z.boolean().default(false),
   swingLookback: z.number().int().positive().default(10),
 });
@@ -61,7 +70,7 @@ export const rsiReversion: StrategyDefinition<
       return {
         side: "BUY",
         confidence: clamp01(0.4 + depth),
-        qtyProposal: p.quantity,
+        ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
         stopLoss,
         target: close + p.targetR * risk,
         reason: `RSI re-crossed up through ${p.oversold}`,
@@ -87,7 +96,7 @@ export const rsiReversion: StrategyDefinition<
         return {
           side: "SELL",
           confidence: clamp01(0.4 + depth),
-          qtyProposal: p.quantity,
+          ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
           stopLoss,
           target: close - p.targetR * risk,
           reason: `RSI re-crossed down through ${p.overbought}`,

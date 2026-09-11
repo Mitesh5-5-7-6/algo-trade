@@ -26,5 +26,6 @@ export function resolveLimits(
       override.maxOpenPositions,
     ),
     maxExposure: tighten(global.maxExposure, override.maxExposure),
+    riskPerTrade: tighten(global.riskPerTrade, override.riskPerTrade),
   };
 }

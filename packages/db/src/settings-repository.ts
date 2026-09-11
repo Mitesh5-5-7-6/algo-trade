@@ -24,6 +24,21 @@ export const GlobalSettingsSchema = z.object({
     squareOff: z.string().regex(/^\d{2}:\d{2}$/),
   }),
   tradingEnabled: z.boolean(),
+  /**
+   * Symbols subscribed for **data only** — never traded (plan/17 §7).
+   *
+   * The market-data working set was derived purely from enabled strategies'
+   * symbols, which made "receive this instrument's ticks" inseparable from
+   * "trade this instrument". An index cannot be traded at all, so under that
+   * rule there was no way to watch NIFTY without configuring a strategy to
+   * buy it — and a strategy pointed at an index produces orders the broker
+   * refuses. This list is the separation.
+   *
+   * Defaulted, so settings rows written before it existed still parse.
+   */
+  indexSymbols: z
+    .array(z.string().min(1))
+    .default(["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"]),
   updatedAt: z.number().int().positive(),
 });
 export type GlobalSettings = z.infer<typeof GlobalSettingsSchema>;
@@ -38,9 +53,11 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
     maxCapitalPerTrade: 100_000,
     maxOpenPositions: 6,
     maxExposure: 0.6,
+    riskPerTrade: 0.01,
   },
   marketHours: { open: "09:15", close: "15:30", squareOff: "15:12" },
   tradingEnabled: false,
+  indexSymbols: ["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"],
   updatedAt: 0,
 };
 

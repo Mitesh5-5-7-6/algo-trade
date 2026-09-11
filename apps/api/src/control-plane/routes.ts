@@ -129,7 +129,10 @@ function loosensLimits(current: RiskLimits, next: RiskLimits): boolean {
     next.maxPositionSize > current.maxPositionSize ||
     next.maxCapitalPerTrade > current.maxCapitalPerTrade ||
     next.maxOpenPositions > current.maxOpenPositions ||
-    next.maxExposure > current.maxExposure
+    next.maxExposure > current.maxExposure ||
+    // Raising risk-per-trade enlarges every future position. It loosens the
+    // envelope as surely as raising a cap does, so it takes the same step-up.
+    next.riskPerTrade > current.riskPerTrade
   );
 }
 
@@ -310,12 +313,19 @@ export function registerControlPlane(
   app.patch("/settings", async (request) => {
     const body = parse(UpdateSettingsBody, request.body);
     const current = await settings.getGlobal();
+    // Re-parse so schema defaults (riskPerTrade) are applied before the
+    // limits are compared or stored — an omitted field must resolve to its
+    // default, not to undefined.
+    const nextLimits =
+      body.globalRiskLimits === undefined
+        ? undefined
+        : RiskLimitsSchema.parse(body.globalRiskLimits);
     const changesCapital =
       body.capitalAllocation !== undefined &&
       body.capitalAllocation !== current.capitalAllocation;
     const loosens =
-      body.globalRiskLimits !== undefined &&
-      loosensLimits(current.globalRiskLimits, body.globalRiskLimits);
+      nextLimits !== undefined &&
+      loosensLimits(current.globalRiskLimits, nextLimits);
     if (changesCapital || loosens) {
       await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
     }
@@ -329,9 +339,7 @@ export function registerControlPlane(
     if (body.capitalAllocation !== undefined) {
       patch.capitalAllocation = body.capitalAllocation;
     }
-    if (body.globalRiskLimits !== undefined) {
-      patch.globalRiskLimits = body.globalRiskLimits;
-    }
+    if (nextLimits !== undefined) patch.globalRiskLimits = nextLimits;
     if (body.marketHours !== undefined) patch.marketHours = body.marketHours;
     const updated = await settings.updateGlobal(patch);
     runtime.applyGlobalSettings({

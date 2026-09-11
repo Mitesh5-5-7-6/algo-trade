@@ -1,13 +1,14 @@
-import type {
-  Candle,
-  CandleInterval,
-  Order,
-  Position,
-  RiskLimits,
-  SessionContext,
-  SessionPhase,
-  Signal,
-  StrategyConfig,
+import {
+  UNKNOWN_MARKET_VIEW,
+  type Candle,
+  type CandleInterval,
+  type Order,
+  type Position,
+  type RiskLimits,
+  type SessionContext,
+  type SessionPhase,
+  type Signal,
+  type StrategyConfig,
 } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
 import { PaperBroker } from "@neelkanth/broker";
@@ -205,6 +206,11 @@ class GoldenPipeline {
     // --- Risk Engine ---
     const riskPorts: RiskPorts = {
       readSession: () => Promise.resolve<SessionPhase>("open"),
+      // NEUTRAL: the golden run exercises the pipeline's mechanics, not the
+      // market gate, and a neutral view blocks nothing (see MarketView).
+      readMarketView: () => UNKNOWN_MARKET_VIEW,
+      // Equity fixture — lot size 1 by definition, no symbol master needed.
+      readInstrument: () => null,
       readDailyRealizedLoss: () =>
         Promise.resolve(Math.max(0, -this.positionEngine.realizedPnl())),
       readOpenPositionCount: () =>

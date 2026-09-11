@@ -21,7 +21,16 @@ export const OrbParamsSchema = z.object({
   interval: CandleIntervalSchema.default("5m"),
   /** Measured-move target as a multiple of the range (plan/16 §5). */
   targetMultiple: z.number().positive().default(1),
-  quantity: z.number().int().positive().default(1),
+  /**
+   * OPTIONAL ceiling on the entry size, in units.
+   *
+   * It used to default to 1, which the Risk Engine then read as "trade one
+   * unit" — so every position was one share regardless of capital. An unset
+   * quantity is the absence of an opinion, not an intent, so it is now left
+   * off the signal entirely and the engine sizes from the risk budget
+   * (plan/14 §4.4). Set it only to cap a strategy below what risk allows.
+   */
+  quantity: z.number().int().positive().optional(),
   allowShort: z.boolean().default(true),
   /** Optional volume confirmation: require V ≥ k · avgVol (plan/16 §5). */
   volumeMultiple: z.number().positive().optional(),
@@ -125,7 +134,7 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
       return {
         side: "BUY",
         confidence: clamp01(0.5 + margin),
-        qtyProposal: p.quantity,
+        ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
         stopLoss: midpoint,
         target: candle.close + p.targetMultiple * range,
         reason: "close above the opening-range high",
@@ -138,7 +147,7 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
       return {
         side: "SELL",
         confidence: clamp01(0.5 + margin),
-        qtyProposal: p.quantity,
+        ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
         stopLoss: midpoint,
         target: candle.close - p.targetMultiple * range,
         reason: "close below the opening-range low",

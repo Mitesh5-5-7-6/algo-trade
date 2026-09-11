@@ -72,6 +72,7 @@ const LIMITS: RiskLimits = {
   maxCapitalPerTrade: 500_000,
   maxOpenPositions: 10,
   maxExposure: 0.9,
+  riskPerTrade: 0.01,
 };
 
 export function goldenFixture(): GoldenFixture {

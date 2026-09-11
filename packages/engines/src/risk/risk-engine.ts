@@ -1,10 +1,12 @@
-import type {
-  Position,
-  RiskCheckName,
-  RiskCheckResult,
-  RiskDecision,
-  RiskLimits,
-  Signal,
+import {
+  contradictsMarket,
+  floorToLots,
+  type Position,
+  type RiskCheckName,
+  type RiskCheckResult,
+  type RiskDecision,
+  type RiskLimits,
+  type Signal,
 } from "@neelkanth/core";
 import { resolveLimits } from "./resolve-limits.js";
 import type { RiskPorts } from "./ports.js";
@@ -28,10 +30,16 @@ export interface RiskEngineDeps {
  * placement, so this must never be separated from placement by a queue.
  *
  * Checks run cheapest-and-most-absolute first (plan/14 §4). The entry/exit
- * asymmetry (plan/14 §5) exempts risk-reducing signals from the daily-loss and
- * size/exposure checks — when limits are breached the machine may still get
- * *out* of positions, never *into* new ones. Fail-closed throughout: if risk
- * state can't be read, block (plan/14 §9).
+ * asymmetry (plan/14 §5) exempts risk-reducing signals from the market-bias,
+ * daily-loss and size/exposure checks — when limits are breached, or the
+ * market has turned, the machine may still get *out* of positions, never
+ * *into* new ones. Fail-closed throughout: if risk state can't be read, block
+ * (plan/14 §9).
+ *
+ * This engine also **sizes** the order (§4.4). It is the only component that
+ * can: the strategy knows its setup and its stop, but not the capital, the
+ * open exposure, or the contract's lot size. A strategy's `qtyProposal` is
+ * therefore read as a ceiling on intent, not as the quantity to trade.
  */
 export class RiskEngine {
   private readonly ports: RiskPorts;
@@ -85,7 +93,38 @@ export class RiskEngine {
         });
       }
 
-      // --- Check 3: daily loss (risk-increasing only, plan/14 §4.3, §5) ---
+      // --- Check 3: market bias (risk-increasing only, plan/14 §4, §5) ---
+      // Reviewed BEFORE size is computed, so capital is never committed to a
+      // direction the market as a whole contradicts. Exits are exempt by the
+      // same asymmetry as every other non-absolute check: getting out is
+      // always allowed, whatever the market is doing.
+      stage = "marketBias";
+      // HOLD never reaches the engine (the runner stops it), and it names no
+      // direction, so it cannot contradict one.
+      if (riskIncreasing && signal.side !== "HOLD") {
+        const view = this.ports.readMarketView();
+        const against = contradictsMarket(signal.side, view);
+        checks.push({
+          check: "marketBias",
+          passed: !against,
+          detail: `${view.bias} — ${view.detail}`,
+        });
+        if (against) {
+          return await this.finish(signal, checks, {
+            decision: "blocked",
+            failedCheck: "marketBias",
+            reason: `${signal.side} against a ${view.bias} market — ${view.detail}`,
+          });
+        }
+      } else {
+        checks.push({
+          check: "marketBias",
+          passed: true,
+          detail: "risk-reducing — exempt (plan/14 §5)",
+        });
+      }
+
+      // --- Check 4: daily loss (risk-increasing only, plan/14 §4.3, §5) ---
       stage = "dailyLoss";
       if (riskIncreasing) {
         const loss = await this.ports.readDailyRealizedLoss();
@@ -110,7 +149,7 @@ export class RiskEngine {
         });
       }
 
-      // --- Check 4: size / exposure (risk-increasing only, plan/14 §4.4, §5) ---
+      // --- Check 5: size / exposure (risk-increasing only, plan/14 §4.4, §5) ---
       stage = "positionSize";
       if (!riskIncreasing) {
         checks.push({
@@ -159,7 +198,19 @@ export class RiskEngine {
     }
   }
 
-  /** Cap (never invent) the proposed quantity against size/exposure limits. */
+  /**
+   * Size the order (plan/14 §4.4): risk budget ÷ stop distance, rounded down
+   * to whole lots, then capped by every exposure limit.
+   *
+   * `riskPerTrade × allocatedCapital` is what the trade is allowed to lose;
+   * `|price − stopLoss|` is what one unit loses if the stop is hit; the
+   * quotient is the quantity that makes those equal. This is why a stop is
+   * mandatory here — without one there is no denominator, and "risk" would be
+   * a number nobody could name.
+   *
+   * A `qtyProposal` still caps the result: a strategy that says "at most one
+   * lot" is respected. It just no longer *sets* the size.
+   */
   private async evaluateSize(
     signal: Signal,
     position: Position | null,
@@ -170,75 +221,104 @@ export class RiskEngine {
     cappedQty?: number;
     result: RiskCheckResult;
   }> {
-    const proposed = signal.qtyProposal;
-    if (proposed === undefined) {
-      return {
-        blocked: true,
-        reason: "no proposed quantity to size",
-        result: {
-          check: "positionSize",
-          passed: false,
-          detail: "no qtyProposal",
-        },
-      };
-    }
+    const block = (
+      reason: string,
+      detail: string,
+    ): { blocked: true; reason: string; result: RiskCheckResult } => ({
+      blocked: true,
+      reason,
+      result: { check: "positionSize", passed: false, detail },
+    });
 
     // Opening a new position must respect the max-open-positions cap.
     if (position === null) {
       const openCount = await this.ports.readOpenPositionCount();
       if (openCount >= limits.maxOpenPositions) {
-        return {
-          blocked: true,
-          reason: `open positions ${String(openCount)} ≥ max ${String(limits.maxOpenPositions)}`,
-          result: {
-            check: "positionSize",
-            passed: false,
-            detail: "max open positions reached",
-          },
-        };
+        return block(
+          `open positions ${String(openCount)} ≥ max ${String(limits.maxOpenPositions)}`,
+          "max open positions reached",
+        );
       }
     }
 
     const price = signal.contextSnapshot.price;
+    const stopLoss = signal.stopLoss;
+    if (stopLoss === undefined) {
+      return block(
+        "entry has no stop — cannot size by risk",
+        "no stopLoss on signal",
+      );
+    }
+    const riskPerUnit = Math.abs(price - stopLoss);
+    if (riskPerUnit <= 0) {
+      return block(
+        `stop ${String(stopLoss)} equals entry ${String(price)} — undefined risk`,
+        "zero stop distance",
+      );
+    }
+
+    // Lot size decides what a "unit" even is. Unknown symbol: equity is 1 by
+    // definition, but a derivative's multiplier is not guessable and a wrong
+    // one mis-sizes every order — so refuse rather than assume (plan/17 §7).
+    const instrument = this.ports.readInstrument(signal.symbol);
+    if (instrument === null && !signal.symbol.endsWith("-EQ")) {
+      return block(
+        `${signal.symbol} is not in the symbol master — lot size unknown`,
+        "instrument unknown, non-equity",
+      );
+    }
+    const lotSize = instrument?.lotSize ?? 1;
+
     const portfolio = await this.ports.readPortfolio();
+    const riskBudget = limits.riskPerTrade * portfolio.allocatedCapital;
+    const byRisk = Math.floor(riskBudget / riskPerUnit);
+
     const capByCapital = Math.floor(limits.maxCapitalPerTrade / price);
     const capByAvailable = Math.floor(portfolio.availableCapital / price);
     const exposureBudget =
       limits.maxExposure * portfolio.allocatedCapital - portfolio.investedValue;
     const capByExposure = Math.floor(exposureBudget / price);
 
-    const qty = Math.min(
-      proposed,
+    const ceiling = signal.qtyProposal;
+    const unrounded = Math.min(
+      byRisk,
       limits.maxPositionSize,
       capByCapital,
       capByAvailable,
       capByExposure,
+      ...(ceiling === undefined ? [] : [ceiling]),
     );
+    // Down to whole lots, never up: rounding up would exceed whichever limit
+    // was binding, which is the one direction sizing must never err in.
+    const qty = floorToLots(unrounded, lotSize);
 
     if (qty <= 0) {
-      return {
-        blocked: true,
-        reason: "no capacity within size/exposure limits",
-        result: {
-          check: "positionSize",
-          passed: false,
-          detail: `capacity exhausted (proposed ${String(proposed)})`,
-        },
-      };
+      const shortfall =
+        unrounded > 0
+          ? `one lot of ${String(lotSize)} does not fit in ${String(unrounded)}`
+          : "capacity exhausted";
+      return block(
+        `no capacity within risk/exposure limits — ${shortfall}`,
+        `risk≤${String(byRisk)} cap≤${String(capByCapital)} avail≤${String(capByAvailable)} ` +
+          `expo≤${String(capByExposure)} lot=${String(lotSize)}`,
+      );
     }
 
-    const cappedQty = qty < proposed ? qty : undefined;
+    // ALWAYS returned, even when it equals the proposal. The Order Manager
+    // falls back to `signal.qtyProposal` when this is absent, so omitting it
+    // would silently trade the strategy's placeholder instead of the size the
+    // risk budget just computed.
     return {
       blocked: false,
       reason: "",
-      ...(cappedQty === undefined ? {} : { cappedQty }),
+      cappedQty: qty,
       result: {
         check: "positionSize",
         passed: true,
         detail:
-          cappedQty === undefined
-            ? `within limits (${String(qty)})`
-            : `capped ${String(proposed)} → ${String(qty)}`,
+          `qty ${String(qty)} (${String(qty / lotSize)} lot(s) of ${String(lotSize)}) — ` +
+          `risk ₹${riskBudget.toFixed(0)} ÷ ₹${riskPerUnit.toFixed(2)}/unit = ${String(byRisk)}` +
+          (qty < byRisk ? `, capped to ${String(qty)}` : ""),
       },
     };
   }

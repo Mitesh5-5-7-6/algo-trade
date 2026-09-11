@@ -12,6 +12,8 @@ export const RiskRulesSchema = z.object({
   maxOpenPositions: z.number().int().positive().optional(),
   maxExposure: z.number().min(0).max(1).optional(),
   maxDailyLoss: z.number().positive().optional(),
+  /** Risk a smaller slice of capital on this strategy than the global default. */
+  riskPerTrade: z.number().min(0).max(1).optional(),
 });
 export type RiskRules = z.infer<typeof RiskRulesSchema>;
 

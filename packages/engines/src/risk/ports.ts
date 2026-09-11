@@ -1,4 +1,6 @@
 import type {
+  Instrument,
+  MarketView,
   Position,
   RiskLimits,
   RiskLog,
@@ -38,6 +40,18 @@ export interface RiskPorts {
     side: "BUY" | "SELL",
   ): Promise<boolean>;
   readPortfolio(): Promise<PortfolioSnapshot>;
+  /**
+   * The cached market view (plan/14 §4). Synchronous-by-cache: the gate reads
+   * a value the Market Bias Engine already computed on candle close, never
+   * computing one on the critical path.
+   */
+  readMarketView(): MarketView;
+  /**
+   * The contract this symbol names, for its lot size. Null when the symbol
+   * master has no such row — which the sizing step must treat as a reason to
+   * refuse a derivative, not as "lot size 1".
+   */
+  readInstrument(symbol: string): Instrument | null;
   /** The operator's global limits (plan/14 §4). */
   readGlobalLimits(): Promise<RiskLimits>;
   /** This strategy's override, if any — merged stricter-only (plan/14 §4). */
