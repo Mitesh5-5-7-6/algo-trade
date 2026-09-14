@@ -25,6 +25,21 @@ export const GlobalSettingsSchema = z.object({
   }),
   tradingEnabled: z.boolean(),
   /**
+   * Exchange holidays as IST "YYYY-MM-DD" dates.
+   *
+   * The Session Manager has always supported a calendar; nothing ever gave it
+   * one, so `holidays: []` was hardcoded and the engine believed every weekday
+   * was a trading day. On a holiday that is not a harmless cosmetic error: the
+   * dashboard reads NSE OPEN and FEED LIVE, the broker socket connects and is
+   * dropped every ~120s because no tick ever arrives to reset its idle timer,
+   * and the whole system looks broken when it is merely closed.
+   *
+   * Defaulted, so settings rows written before it existed still parse.
+   */
+  marketHolidays: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+    .default([]),
+  /**
    * Symbols subscribed for **data only** — never traded (plan/17 §7).
    *
    * The market-data working set was derived purely from enabled strategies'
@@ -57,6 +72,7 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   },
   marketHours: { open: "09:15", close: "15:30", squareOff: "15:12" },
   tradingEnabled: false,
+  marketHolidays: [],
   indexSymbols: ["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"],
   updatedAt: 0,
 };

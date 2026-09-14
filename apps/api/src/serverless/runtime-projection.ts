@@ -119,7 +119,7 @@ export function createRuntimeProjection(
         preOpen: "09:00",
         open: global.marketHours.open,
         close: global.marketHours.close,
-        holidays: [],
+        holidays: global.marketHolidays,
         exchange: "NSE",
       });
 

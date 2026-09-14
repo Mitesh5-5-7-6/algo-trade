@@ -251,7 +251,7 @@ export async function startEngineRuntime(deps: {
     preOpen: "09:00",
     open: settings.marketHours.open,
     close: settings.marketHours.close,
-    holidays: [],
+    holidays: settings.marketHolidays,
     exchange: "NSE",
   });
 
