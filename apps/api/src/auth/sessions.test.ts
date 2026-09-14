@@ -157,3 +157,59 @@ describe("SessionStore — sliding TTL is refreshed, but not on every read", () 
     expect(await store.resolve(id)).toBeNull();
   });
 });
+
+describe("SessionStore — a burst of concurrent reads is one write", () => {
+  function countingKV(): { kv: SessionKV; writes: () => number } {
+    const inner = fakeKV();
+    let writes = 0;
+    return {
+      kv: {
+        ...inner,
+        set(key, value, ttl) {
+          writes += 1;
+          return inner.set(key, value, ttl);
+        },
+      },
+      writes: () => writes,
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Observed in a Redis MONITOR capture: the dashboard invalidates several
+   * queries at once, four requests read the same stale `refreshedAt` within
+   * 18ms, and all four wrote. The stored marker cannot close that window on
+   * its own — it is a read-modify-write race.
+   */
+  it("collapses parallel resolves into a single refresh", async () => {
+    const { kv, writes } = countingKV();
+    const store = new SessionStore(kv, IDLE, ABSOLUTE);
+    const id = await store.create("u1");
+    const afterCreate = writes();
+
+    vi.advanceTimersByTime(61_000);
+    await Promise.all([
+      store.resolve(id),
+      store.resolve(id),
+      store.resolve(id),
+      store.resolve(id),
+    ]);
+
+    expect(writes()).toBe(afterCreate + 1);
+  });
+
+  it("still resolves every one of those parallel reads", async () => {
+    const { kv } = countingKV();
+    const store = new SessionStore(kv, IDLE, ABSOLUTE);
+    const id = await store.create("u1");
+    vi.advanceTimersByTime(61_000);
+    const results = await Promise.all([store.resolve(id), store.resolve(id)]);
+    for (const r of results) expect(r).toEqual({ sessionId: id, userId: "u1" });
+  });
+});

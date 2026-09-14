@@ -55,6 +55,12 @@ export interface ResolvedSession {
  * 256-bit random token — it carries no claims, it is only a lookup key.
  */
 export class SessionStore {
+  /**
+   * Last in-process refresh per session id, to collapse a burst of concurrent
+   * requests into one write. Pruned on destroy; bounded by live sessions.
+   */
+  private readonly refreshedAt = new Map<string, number>();
+
   constructor(
     private readonly kv: SessionKV,
     /** Idle TTL, refreshed on each activity (sliding window). */
@@ -97,8 +103,19 @@ export class SessionStore {
     }
 
     // Sliding window, but not on every single read — see REFRESH_INTERVAL_MS.
-    const lastRefresh = record.refreshedAt ?? record.createdAt;
+    //
+    // Two guards, because the stored value alone is a read-modify-write race:
+    // the dashboard invalidates several queries at once, so four requests can
+    // read the same stale `refreshedAt` within milliseconds and all four
+    // decide to write. Observed in a Redis MONITOR capture as four SETs 18ms
+    // apart. The in-memory guard closes that window inside a process; the
+    // stored value is what survives a restart and works across processes.
+    const lastRefresh = Math.max(
+      record.refreshedAt ?? record.createdAt,
+      this.refreshedAt.get(sessionId) ?? 0,
+    );
     if (now - lastRefresh >= REFRESH_INTERVAL_MS) {
+      this.refreshedAt.set(sessionId, now);
       await this.kv.set(
         authSessionKey(sessionId),
         JSON.stringify({ ...record, refreshedAt: now }),
@@ -116,6 +133,7 @@ export class SessionStore {
       await this.kv.srem(authUserSessionsKey(record.userId), sessionId);
     }
     await this.kv.del(authSessionKey(sessionId));
+    this.refreshedAt.delete(sessionId);
   }
 
   /** Revoke every session a user holds — the password-change hammer (§4, §7). */

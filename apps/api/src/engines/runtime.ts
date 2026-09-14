@@ -692,21 +692,35 @@ export async function startEngineRuntime(deps: {
   // not see the session it was in, and swing-based stops silently degraded to
   // percentage fallbacks. The bars were in Mongo the whole time — nothing read
   // them back.
-  for (const symbol of [
-    ...new Set([
-      ...deriveWorkingSet(enabledConfigs.values()),
-      ...settings.indexSymbols,
-    ]),
-  ]) {
-    for (const interval of MARKET_INTERVALS) {
-      const seed = await candles.loadRecent(symbol, interval, CANDLE_WINDOW);
-      if (seed.length > 0) candleWindows.set(`${symbol}|${interval}`, seed);
+  // Everything from here to the feed subscription is an OPTIMISATION: warm
+  // windows and a seeded market view make the first bars better, but the
+  // engine is still correct without them. The subscription is not optional —
+  // without it the socket connects, subscribes to nothing, and is dropped by
+  // the broker's idle timeout every two minutes. So none of this is allowed
+  // to stand between a boot hiccup and a working feed.
+  try {
+    for (const symbol of [
+      ...new Set([
+        ...deriveWorkingSet(enabledConfigs.values()),
+        ...settings.indexSymbols,
+      ]),
+    ]) {
+      for (const interval of MARKET_INTERVALS) {
+        const seed = await candles.loadRecent(symbol, interval, CANDLE_WINDOW);
+        if (seed.length > 0) candleWindows.set(`${symbol}|${interval}`, seed);
+      }
     }
+    // With windows seeded, the gate has an opinion from the first bar rather
+    // than sitting NEUTRAL until enough live bars accumulate.
+    await marketBias.refresh();
+    log.info({ marketView: marketBias.current().detail }, "market view seeded");
+  } catch (error) {
+    onError(error, {
+      where: "seedWindows",
+      note: "starting with cold windows; the feed still subscribes",
+    });
   }
-  // With windows seeded, the gate has an opinion from the first bar rather
-  // than sitting NEUTRAL until enough live bars accumulate.
-  await marketBias.refresh();
-  log.info({ marketView: marketBias.current().detail }, "market view seeded");
+
   // Without this the feed connects and subscribes to nothing: the socket is
   // up, the chip reads healthy, and not one tick ever arrives.
   await syncWorkingSet();
