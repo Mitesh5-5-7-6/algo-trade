@@ -78,6 +78,13 @@ const CANDLE_WINDOW = 90;
  */
 const HOT_KEY_TTL_SECONDS = 300;
 
+/**
+ * How long a connected feed may stay silent during market hours before the
+ * engine says so. Longer than any plausible gap between ticks on a thin
+ * instrument, far shorter than the broker's ~120s idle disconnect.
+ */
+const FEED_SILENCE_MS = 60_000;
+
 /** The intervals the aggregator builds, and therefore the ones we can seed. */
 const MARKET_INTERVALS = ["1m", "5m"] as const satisfies readonly CandleInterval[];
 
@@ -310,6 +317,17 @@ export async function startEngineRuntime(deps: {
       ...new Set([...traded, ...settings.indexSymbols, ...trackedContracts]),
     ];
     await marketDataEngine.subscribe(symbols);
+    if (symbols.length === 0) {
+      // A feed subscribed to nothing looks identical to a healthy one: the
+      // socket connects, the status chip reads LIVE, and no tick ever arrives
+      // until the broker drops the idle connection. Say so out loud.
+      log.warn(
+        { enabledStrategies: enabledConfigs.size },
+        "market data working set is EMPTY — the feed will receive no ticks; " +
+          "no strategy enabled successfully and no index symbols are configured",
+      );
+      return;
+    }
     log.info(
       { symbols, traded: traded.length, indices: settings.indexSymbols.length },
       "market data working set",
@@ -534,6 +552,16 @@ export async function startEngineRuntime(deps: {
   });
 
   /**
+   * When the last tick arrived, and whether we have already complained.
+   *
+   * A connected feed that delivers nothing is the hardest failure to see: the
+   * socket is up, the status chip reads LIVE, and the only symptom is that
+   * nothing ever happens. Checked on the session tick so it names itself.
+   */
+  let lastTickAt = 0;
+  let silenceReported = false;
+
+  /**
    * Keep the current ATM call and put subscribed for any derivative strategy
    * watching `symbol`.
    *
@@ -584,6 +612,7 @@ export async function startEngineRuntime(deps: {
   };
   await bus.subscribe("MARKET_TICK", (event) => {
     lastPrices.set(event.payload.symbol, event.payload.ltp);
+    lastTickAt = Date.now();
   });
   await bus.subscribe("CANDLE_CLOSED", async (event) => {
     const candle = event.payload;
@@ -635,7 +664,26 @@ export async function startEngineRuntime(deps: {
       symbols: config.symbols,
       ...(config.riskRules === undefined ? {} : { riskRules: config.riskRules }),
     });
-    await runner.enable(config);
+    try {
+      await runner.enable(config);
+    } catch (error) {
+      // One unusable strategy must not take the whole engine down with it.
+      //
+      // This loop was unguarded, so an unknown `type`, params that fail their
+      // schema, or a throwing indicator provision aborted the rest of the boot
+      // sequence — including `syncWorkingSet()`. The feed then had an empty
+      // working set, and BOTH subscribe paths skip silently on an empty list,
+      // so the socket connected, subscribed to nothing, and was dropped by the
+      // broker's idle timeout roughly every two minutes. No ticks, no candles,
+      // no evaluations, and nothing anywhere saying why.
+      enabledConfigs.delete(config.strategyId);
+      onError(error, {
+        where: "enableStrategy",
+        strategyId: config.strategyId,
+        type: config.type,
+        note: "strategy skipped; the rest of the engine continues",
+      });
+    }
   }
 
   // Seed the candle window from the bars already on disk (plan/18 §4 does the
@@ -760,6 +808,31 @@ export async function startEngineRuntime(deps: {
       // The Paper Broker's session gate reads this, not Redis — one source for
       // "is the market open", which is what the two-writers bug above was.
       deps.liveState.sessionOpen = evaluation.phase === "open";
+
+      // A connected feed delivering nothing is indistinguishable from a quiet
+      // market on the dashboard, and it is what a dropped subscription looks
+      // like. Named once when it starts and once when it recovers.
+      if (evaluation.phase === "open" && brokerState.state === "connected") {
+        const silentFor = now - lastTickAt;
+        if (lastTickAt === 0 || silentFor > FEED_SILENCE_MS) {
+          if (!silenceReported) {
+            silenceReported = true;
+            log.warn(
+              {
+                lastTickAt: lastTickAt === 0 ? null : lastTickAt,
+                silentSeconds:
+                  lastTickAt === 0 ? null : Math.round(silentFor / 1000),
+                subscribed: deriveWorkingSet(enabledConfigs.values()).length,
+              },
+              "FEED SILENT — broker connected and market open, but no ticks " +
+                "are arriving; check the working set and the broker subscription",
+            );
+          }
+        } else if (silenceReported) {
+          silenceReported = false;
+          log.info({}, "feed recovered — ticks are arriving again");
+        }
+      }
       if (evaluation.marketOpened) {
         indicatorEngine.onMarketOpen();
         positionEngine.resetDaily();
