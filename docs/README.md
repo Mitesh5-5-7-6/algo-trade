@@ -12,6 +12,14 @@ Autonomous algorithmic trading platform for NSE/BSE via FYERS. Paper first, live
 
 Start with the architecture decision. Read the current state before writing code against anything the other two documents describe.
 
+### Implementation designs
+
+One per phase, written before the code. A design states the decisions an implementation must follow, and names the questions it must not answer by guessing.
+
+| Design                                                                 | Phase                      | Status                  |
+| ---------------------------------------------------------------------- | -------------------------- | ----------------------- |
+| [design/PHASE_1_HISTORICAL_DATA.md](design/PHASE_1_HISTORICAL_DATA.md) | 1 — Historical market data | Design, not implemented |
+
 ---
 
 ## How these documents are written
