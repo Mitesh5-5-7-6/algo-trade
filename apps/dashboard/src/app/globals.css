@@ -4,6 +4,8 @@
  * Dark control-room theme; sans-serif UI text; MONOSPACE for every numeral.
  */
 :root {
+  --page-gutter: clamp(12px, 2vw, 24px);
+  --section-gap: clamp(12px, 1.5vw, 16px);
   /* Surfaces */
   --bg-page: #15161d;
   --bg-panel: #1b1d27;
@@ -44,6 +46,10 @@ body {
   font-size: 14px;
 }
 
+body {
+  min-width: 320px;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -51,6 +57,18 @@ a {
 
 button {
   font-family: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 2px;
 }
 
 /* Every numeric value in the design renders monospace. */
@@ -143,6 +161,17 @@ table.data {
   width: 100%;
   border-collapse: collapse;
 }
+/* Full-width tables keep their columns readable inside a bounded scroll area. */
+.panel:has(> table.data) {
+  overflow-x: auto;
+}
+table.data {
+  min-width: 620px;
+}
+table.data th,
+table.data td {
+  min-width: 0;
+}
 table.data th {
   font-size: 11px;
   font-weight: 600;
@@ -173,7 +202,7 @@ table.data th.num {
   display: flex;
   align-items: stretch;
   gap: 24px;
-  padding: 14px 20px 10px;
+  padding: 14px var(--page-gutter) 10px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-panel);
 }
@@ -261,7 +290,8 @@ table.data th.num {
 .statusstrip {
   display: flex;
   gap: 12px;
-  padding: 8px 20px;
+  padding: 8px var(--page-gutter);
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
   background: var(--bg-page);
 }
@@ -298,11 +328,15 @@ table.data th.num {
 
 .frame {
   display: grid;
-  grid-template-columns: 168px 1fr 250px;
+  grid-template-columns: 168px minmax(0, 1fr) 250px;
+  grid-template-areas: "nav content rail";
   gap: 0;
   min-height: calc(100vh - 118px);
+  max-width: 1920px;
+  margin-inline: auto;
 }
 .nav {
+  grid-area: nav;
   border-right: 1px solid var(--border);
   padding: 16px 8px;
   display: flex;
@@ -326,10 +360,13 @@ table.data th.num {
   border-left: 2px solid var(--indigo);
 }
 .content {
+  grid-area: content;
   padding: 20px;
   min-width: 0;
+  width: 100%;
 }
 .rail {
+  grid-area: rail;
   border-left: 1px solid var(--border);
   padding: 16px;
   display: flex;
@@ -409,8 +446,8 @@ table.data th.num {
 }
 .cards {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--section-gap);
   margin-bottom: 16px;
 }
 .activity {
@@ -437,6 +474,7 @@ table.data th.num {
   gap: 6px;
   margin-bottom: 18px;
   max-width: 520px;
+  width: 100%;
 }
 .field label {
   font-size: 11px;
@@ -458,6 +496,8 @@ table.data th.num {
   font-family: var(--font-mono);
   font-size: 15px;
   padding: 10px 12px;
+  width: 100%;
+  max-width: 100%;
 }
 /* Numerals read right-aligned (the design's capital field); words don't. */
 .field input[type="number"] {
@@ -694,6 +734,7 @@ table.data th.num {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 12px;
+  flex-wrap: wrap;
 }
 .field-inline {
   display: flex;
@@ -715,4 +756,165 @@ table.data th.num {
 .saved-note {
   font-size: 12px;
   color: var(--green);
+}
+
+/* Responsive shell: the information hierarchy stays the same while columns
+ * become rows at the point where control labels and tables stop fitting. */
+@media (max-width: 1100px) {
+  .frame {
+    grid-template-columns: 136px minmax(0, 1fr);
+    grid-template-areas:
+      "nav content"
+      "nav rail";
+  }
+
+  .rail {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .meter {
+    max-width: 360px;
+  }
+
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px 16px;
+    padding-top: 12px;
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .brand-name {
+    font-size: clamp(17px, 5vw, 20px);
+  }
+
+  .kpi-value {
+    font-size: clamp(21px, 7vw, 26px);
+  }
+
+  .meter {
+    grid-column: 1 / -1;
+    max-width: none;
+    width: 100%;
+  }
+
+  .statusstrip {
+    gap: 8px;
+    padding-block: 8px;
+  }
+
+  .status-chip {
+    flex: 1 1 150px;
+    min-width: 0;
+  }
+
+  .frame {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "nav"
+      "content"
+      "rail";
+    min-height: auto;
+  }
+
+  .nav {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 8px var(--page-gutter);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .nav a {
+    padding: 10px 12px;
+    min-height: 40px;
+  }
+
+  .content {
+    padding: 16px var(--page-gutter) 20px;
+  }
+
+  .rail {
+    padding: 14px var(--page-gutter) 20px;
+  }
+
+  .cards,
+  .grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-head .btn-primary {
+    align-self: flex-start;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .panel-heading {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .trade-count {
+    margin: -6px 0 10px;
+  }
+
+  .activity-row {
+    align-items: flex-start;
+  }
+
+  .activity-row span:last-child {
+    overflow-wrap: anywhere;
+  }
+
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-card,
+  .modal-card.drawer {
+    max-width: none;
+    max-height: 92svh;
+    border-radius: 12px 12px 0 0;
+    padding: 18px var(--page-gutter) calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .modal-actions {
+    justify-content: stretch;
+  }
+
+  .modal-actions > button {
+    flex: 1 1 140px;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
