@@ -82,6 +82,61 @@ button {
   text-transform: uppercase;
   margin: 0 0 12px;
 }
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.panel-subtitle {
+  margin: -6px 0 14px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.trade-count {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  padding-top: 2px;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.trade-ledger {
+  min-width: 980px;
+}
+.trade-ledger td {
+  vertical-align: middle;
+}
+.trade-details {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 220px;
+}
+.trade-leg {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+.trade-leg.buy {
+  color: var(--green);
+}
+.trade-leg.sell {
+  color: var(--red);
+}
+.trade-arrow {
+  color: var(--text-muted);
+}
+.trade-mode {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.empty-table {
+  padding: 28px 12px !important;
+  color: var(--text-muted) !important;
+  text-align: center;
+}
 
 /* Shared data table */
 table.data {
