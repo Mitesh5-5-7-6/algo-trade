@@ -155,6 +155,23 @@ Verify repo → Fix aggregator flush → Phase 1 ingestion
 
 That last step is part of Phase 1's acceptance, not an afterthought — see [../design/PHASE_1_HISTORICAL_DATA.md §9](../design/PHASE_1_HISTORICAL_DATA.md).
 
+#### Scope fence — what the flush repair must not become
+
+The flush repair is a narrow correctness fix: the aggregator is flushed at session close, the final bar of each session is persisted, and open bars do not carry across days. Nothing else.
+
+It must **not** absorb any of the following, each of which belongs to its own phase:
+
+| Not in Phase 0                                        | Belongs to          |
+| ----------------------------------------------------- | ------------------- |
+| Historical ingestion                                  | Phase 1             |
+| Candle schema redesign, including `source` provenance | Phase 1 (design D2) |
+| Replay work                                           | Phase 4             |
+| Trade entity implementation                           | Phase 2             |
+| Strategy changes                                      | Not scheduled       |
+| Redis refactor                                        | Not scheduled       |
+
+A fix that touches the session-flush path and stops there is reviewable in an afternoon and provably correct. The same fix carrying a schema change and a new ingestion path is neither, and it reintroduces exactly the entanglement this phase ordering exists to prevent. If the repair appears to require one of the rows above, that is a finding to record — not a licence to widen the branch.
+
 ### Phase 1 — Historical market data
 
 **Prerequisite:** Phase 0 complete, including the aggregator flush fix.

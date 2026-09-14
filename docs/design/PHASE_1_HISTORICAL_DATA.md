@@ -160,6 +160,12 @@ export const CandleSchema = z.object({
 
 ### D3 — Source precedence governs the upsert
 
+**The invariant this decision protects:**
+
+> One `(symbol, interval, ts)` represents one canonical candle, regardless of whether it originated from live ticks or historical data.
+
+Provenance records **where the bar came from**. It never creates a second bar. Every decision below follows from holding that line, and the coexistence check in §9 point 5 exists to prove it holds in practice.
+
 The storage key is unique on `(symbol, interval, ts)` ([packages/db/src/collections.ts](../../packages/db/src/collections.ts)), and today's `upsert` is an unconditional `$set`. Once two producers exist, a backfill and the live aggregator will write the same bar, and whichever ran last would win by accident.
 
 **Decision:** rank the sources and let a write proceed only when it does not demote the stored bar.
@@ -179,7 +185,7 @@ await collection.updateOne(
 );
 ```
 
-**Rejected alternative:** adding `source` to the unique key. It would store two rows for one bar, and every reader — indicator warm-up, candle-window seeding, future replay — would have to decide which is real on every query. One bar per `(symbol, interval, ts)` stays the invariant.
+**Rejected alternative:** adding `source` to the unique key. It breaks the invariant directly — two rows for one bar — and every reader (indicator warm-up, candle-window seeding, future replay) would have to decide which is real on every query, forever, with no guarantee they decide alike.
 
 `sourceRank` is stored denormalised so the conditional is a pure index-supported predicate rather than an application-side read-then-write race.
 
