@@ -1,7 +1,6 @@
 import type { CandleInterval } from "@neelkanth/core";
 import type { Broker } from "@neelkanth/broker";
 import { CandleAggregator } from "./candle-aggregator.js";
-import { istDateKey, SessionManager } from "./session-manager.js";
 import type { TickNormalizer } from "./normalize.js";
 import type { MarketDataPorts } from "./ports.js";
 
@@ -15,9 +14,6 @@ export interface MarketDataEngineDeps {
   ports: MarketDataPorts;
   normalizer: TickNormalizer;
   intervals: readonly CandleInterval[];
-  /** Injected session manager (defaults to NSE hours). */
-  session?: SessionManager;
-  exchange?: string;
   /**
    * Required error sink — the engine refuses to fail silently (plan/02 §10).
    * The composition root passes a logging fn; tests pass a capturing one.
@@ -27,21 +23,28 @@ export interface MarketDataEngineDeps {
 
 /**
  * The Market Data Engine (plan/17): the system's entry point for market
- * reality. It normalizes raw broker messages into internal ticks, maintains
- * the hot price snapshot, aggregates candles, tracks the session, and
- * publishes all of it. Everything downstream sees the market only through this
- * engine's output (plan/17 §1).
+ * reality. It normalizes raw broker messages into internal ticks, aggregates
+ * candles, and publishes both. Everything downstream sees the market only
+ * through this engine's output (plan/17 §1).
  *
- * Sole writer (plan/02 §8, plan/17 §3) of `hot:price:*`, `hot:session`, and
- * the `candles` collection — all via injected ports so the engine itself holds
- * no infrastructure.
+ * Sole writer (plan/02 §8, plan/17 §3) of the `candles` collection, via
+ * injected ports so the engine itself holds no infrastructure.
+ *
+ * It does NOT drive the session. The engine used to own a `pollSession` that
+ * evaluated a SessionManager, wrote `hot:session` and emitted MARKET_OPEN /
+ * MARKET_CLOSE — but nothing in production ever called it, because the runtime
+ * drives the session itself on its own timer. Worse, the runtime injected its
+ * OWN SessionManager instance here, and `evaluate()` consumes the open/close
+ * edge: had anything called `pollSession`, it would have eaten the transition
+ * the runtime's MARKET_OPEN/MARKET_CLOSE publishing depends on, and those
+ * events would have silently stopped. Two session drivers sharing one stateful
+ * manager is a trap, so there is now one driver — the runtime — and this engine
+ * exposes `flushOpenBars` for it to call at the close.
  */
 export class MarketDataEngine {
   private readonly ports: MarketDataPorts;
   private readonly normalizer: TickNormalizer;
   private readonly aggregator: CandleAggregator;
-  private readonly session: SessionManager;
-  private readonly exchange: string;
   private readonly onError: MarketDataEngineDeps["onError"];
   /** Per-symbol last applied timestamp — the monotonic guard (plan/17 §8). */
   private readonly lastTs = new Map<string, number>();
@@ -52,8 +55,6 @@ export class MarketDataEngine {
     this.ports = deps.ports;
     this.normalizer = deps.normalizer;
     this.aggregator = new CandleAggregator(deps.intervals);
-    this.session = deps.session ?? new SessionManager();
-    this.exchange = deps.exchange ?? "NSE";
     this.onError = deps.onError;
   }
 
@@ -130,37 +131,31 @@ export class MarketDataEngine {
   }
 
   /**
-   * Evaluate the session at `now` and drive its side effects (plan/17 §6):
-   * write `hot:session` on a phase change, emit MARKET_OPEN, and on
-   * MARKET_CLOSE flush any open bars before emitting close. Driven by a timer
-   * at the composition root; the injected clock keeps it deterministic.
+   * Close every bar still open and persist it (plan/17 §5 EOD). Called by the
+   * runtime's session driver on the open→closed transition, BEFORE it publishes
+   * MARKET_CLOSE, so the day's last bar exists before anything reacts to the
+   * close.
+   *
+   * Without this, a session's final bar sat in memory until the NEXT session's
+   * first tick pushed the bucket forward — so it was either lost outright when
+   * the process restarted overnight, or emitted the next morning as a
+   * CANDLE_CLOSED carrying yesterday's timestamp, into a live open market,
+   * where the exit engine judged stops against it and strategies decided on it.
+   * A seventeen-hour-old bar arriving at 09:15 is not a stale cache entry; it
+   * is a trading input.
+   *
+   * Idempotent: the aggregator clears its state, so a second call flushes
+   * nothing. Never rejects — failures route to `onError`, because a failed
+   * flush must not take down the session transition that called it.
    */
-  async pollSession(now: number): Promise<void> {
+  async flushOpenBars(): Promise<void> {
     try {
-      const evaluation = this.session.evaluate(now);
-      if (evaluation.phaseChanged) {
-        await this.ports.writeHotSession(evaluation.phase);
-      }
-      if (evaluation.marketOpened) {
-        await this.ports.publish("MARKET_OPEN", {
-          exchange: this.exchange,
-          session: istDateKey(now),
-          ts: now,
-        });
-      }
-      if (evaluation.marketClosed) {
-        for (const candle of this.aggregator.flush()) {
-          await this.ports.saveCandle(candle);
-          await this.ports.publish("CANDLE_CLOSED", candle);
-        }
-        await this.ports.publish("MARKET_CLOSE", {
-          exchange: this.exchange,
-          session: istDateKey(now),
-          ts: now,
-        });
+      for (const candle of this.aggregator.flush()) {
+        await this.ports.saveCandle(candle);
+        await this.ports.publish("CANDLE_CLOSED", candle);
       }
     } catch (error) {
-      this.onError(error, { where: "pollSession" });
+      this.onError(error, { where: "flushOpenBars" });
     }
   }
 }
