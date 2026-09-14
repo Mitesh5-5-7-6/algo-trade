@@ -33,6 +33,7 @@ function bar(
   return {
     symbol: SYM,
     interval: "5m",
+    source: "LIVE_TICK",
     open: close,
     high,
     low,

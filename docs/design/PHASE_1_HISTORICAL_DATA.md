@@ -1,13 +1,13 @@
 # Phase 1 Design — Historical Market Data
 
-**Status:** Design, not implemented
+**Status:** D2–D5 implemented (storage and calendar foundation); D1, validation and the backfill job blocked — see §10.0
 **Phase:** 1 of [RND_RESEARCH_SPECIFICATION.md §4](../architecture/RND_RESEARCH_SPECIFICATION.md)
 **Governed by:** [ARCHITECTURE_DECISION.md](../architecture/ARCHITECTURE_DECISION.md)
 **Closes:** [CURRENT_STATE.md](../architecture/CURRENT_STATE.md) §3.1, §3.2, §3.3
 
 **Implementation target:** introduce historical 5-minute market-data ingestion and establish the canonical research candle dataset, with provenance, so that a named trading day can be reconstructed from storage.
 
-No code is written by this document. It states the decisions an implementation must follow, and names the questions it must not answer by guessing.
+This document states the decisions an implementation must follow, and names the questions it must not answer by guessing. It is not itself the implementation — §1 tracks which decisions have landed in code and which are still blocked, and on what.
 
 ---
 
@@ -15,14 +15,17 @@ No code is written by this document. It states the decisions an implementation m
 
 ### In
 
-| Item                                                             | Gap closed |
-| ---------------------------------------------------------------- | ---------- |
-| A history port on the broker layer, with a FYERS implementation  | §3.1       |
-| `source` provenance on the candle record, with a precedence rule | §3.3       |
-| A date-range candle query                                        | §3.2       |
-| A trading-calendar helper for enumerating real trading days      | —          |
-| A backfill job and an operator-triggered entry point             | §3.1       |
-| Validation, rejection accounting, and idempotent re-runs         | —          |
+| Item                                                             | Gap closed | Decision | Status                                 |
+| ---------------------------------------------------------------- | ---------- | -------- | -------------------------------------- |
+| `source` provenance on the candle record, with a precedence rule | §3.3       | D2, D3   | Implemented                            |
+| A date-range candle query                                        | §3.2       | D4       | Implemented                            |
+| A trading-calendar helper for enumerating real trading days      | —          | D5       | Implemented                            |
+| A history port on the broker layer, with a FYERS implementation  | §3.1       | D1       | Blocked on Q1, Q3, Q5                  |
+| Validation, rejection accounting, and idempotent re-runs         | —          | §5       | Blocked on Q5                          |
+| A backfill job and an operator-triggered entry point             | §3.1       | D6       | Blocked on Q1–Q3, Q5–Q7                |
+| Volume-quality fields (`volumeAvailable`, …)                     | —          | D2       | Deferred on Q4 — not a Phase 1 blocker |
+
+**Why the split.** D2–D5 are storage, schema and calendar: they depend on nothing the vendor has to tell us, so they are built and tested now. D1, the job and the validation rules all encode answers we do not have — the real page window, the rate-limit delay, and what a holiday range actually returns. Writing them against guesses would bake a plausible-looking number into the ingestion path and make the guess invisible. Q-numbers refer to §10; the blocking map is §10.0.
 
 ### Out
 
@@ -105,7 +108,7 @@ Response:
 
 ### 3.1 What must be verified against the live API before coding
 
-These are not guessable and must not be assumed:
+These are not guessable and must not be assumed. They are Q1–Q5 in §10; §10.0 says which of them actually block what, and §10.1 states the probe that answers them.
 
 1. **Maximum range per request.** Community sources report ~100 days per call; the exact cap per resolution is unconfirmed. The implementation pages regardless (§7.2) — confirm the real window and set the page size from it.
 2. **How far back 5-minute history is retained.**
@@ -371,11 +374,60 @@ Point 5 is the one that only works in the right order. Run against an unflushed 
 
 ---
 
-## 10. Open questions
+## 10. Blockers and next actions
 
 Seven questions remain open. **Do not invent answers.** Each must be settled before implementation, not discovered during it. A plausible-looking guess here produces a dataset that is quietly wrong, and every phase downstream inherits it.
 
-### 10.1 Vendor verification — answer against the live API
+### 10.0 What blocks what
+
+Not all seven gate the same work, and treating them as one list would stall core ingestion on a question that only affects a deferred field.
+
+```
+Q1 · Q2 · Q3 · Q5   +   Q6 · Q7
+            ↓
+    Core Phase 1 ingestion
+    (HistoryProvider, validation, backfill job)
+
+
+        Q4
+         ↓
+   Volume-quality fields
+   (deferred enhancement — D2)
+```
+
+**Q4 does not block Phase 1.** It decides only whether `volumeAvailable` / `volumeSource` / `volumeQuality` are worth building, which D2 already defers. Core ingestion proceeds without it; the answer arrives free with the probe below.
+
+**Next actions, in order:**
+
+| Blocker | Next action                                | Owner                 |
+| ------- | ------------------------------------------ | --------------------- |
+| Q1–Q5   | Run a real FYERS History API probe (§10.1) | Requires a live token |
+| Q6      | Decide the initial symbol universe         | Project decision      |
+| Q7      | Decide the historical range, subject to Q2 | Project decision      |
+
+### 10.1 Vendor verification — one probe against the live API
+
+**Next action: one probe run against the FYERS History API with a real token**, answering Q1–Q5 in a single pass.
+
+The probe is written and ready at [apps/api/scripts/probe-fyers-history.mts](../../apps/api/scripts/probe-fyers-history.mts). Run it from `apps/api`:
+
+```bash
+node --env-file=../../.env.local scripts/probe-fyers-history.mts
+```
+
+It reads the stored broker token the same way the app does (or takes `FYERS_ACCESS_TOKEN` from the environment), then:
+
+| Q   | How it is measured                                                                                                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1  | Requests 30/60/100/150/200/400-day spans and compares the span **returned** against the span **requested**. The API may truncate silently, so a shorter answer with `s: "ok"` is the cap, not a success. |
+| Q2  | Probes a single trading day at 1, 2, 3, 5 and 8 years back until one comes back empty.                                                                                                                   |
+| Q3  | Reports any rate-limit response headers. The 20-call burst is **opt-in** via `--rate-limits`.                                                                                                            |
+| Q4  | Compares the volume column on the index against an equity symbol on the same day — the contrast is what makes the answer readable.                                                                       |
+| Q5  | Requests a recent Saturday (guaranteed non-trading, no calendar guesswork) and, if one is configured, the latest `marketHolidays` entry.                                                                 |
+
+It is read-only, writes nothing to Mongo, places no order, and spaces its ~25 calls. The burst is off by default because hammering a live broker account is how an account gets throttled or flagged.
+
+It prints a JSON block to paste into §3. **Then delete the script** — the measuring apparatus is not meant to ship, and none of it should be copied into the ingestion path.
 
 Five questions the vendor client cannot answer. Each needs one real call with a real token.
 
@@ -391,9 +443,27 @@ Record the answers in §3 when established, and mark §3.1 resolved.
 
 Question 3 carries a decision with it: §7.2 accepts a shared rate-limit budget only if the live order path is provably unaffected. If the measured limits cannot guarantee that, the backfill moves to its own process before it runs against a full symbol list.
 
-### 10.2 Project sequencing — decide before Phase 1 implementation
+### 10.2 Project decisions — settle before Phase 1 implementation
 
-Two decisions that are nobody's default:
+Two decisions that are nobody's default.
+
+**Recommended:**
+
+| #   | Question       | Recommendation |
+| --- | -------------- | -------------- |
+| 6   | Which symbols? | **Index-only** |
+| 7   | How far back?  | **1 year**     |
+
+That is the smallest dataset that proves the whole chain end to end:
+
+```
+FYERS History → 5m Candles → Storage → Replay
+→ Strategy → Trade → Research
+```
+
+Expand the symbol universe and the historical depth **after** the pipeline is proven, not before. A wider first run buys more data and no more confidence, while multiplying the ways a first ingestion can be wrong — and every extra symbol is another set of rate-limit pages to get through before the first thing can be checked at all.
+
+The two questions in detail:
 
 | #   | Question           | Notes                                                                                                                                                                                                                                                                                                                                      |
 | --- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

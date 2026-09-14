@@ -14,6 +14,7 @@ function candle(
   return {
     symbol: SYM,
     interval: opts.interval ?? INT,
+    source: "LIVE_TICK",
     open: close,
     high: close,
     low: close,

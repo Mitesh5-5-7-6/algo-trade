@@ -273,7 +273,12 @@ export async function startEngineRuntime(deps: {
   const marketDataPorts: MarketDataPorts = {
     writeHotSession: (phase) =>
       writeHot(hotSessionKey(), { phase }).then(() => undefined),
-    saveCandle: (candle) => candles.upsert(candle),
+    // The repository reports whether the write was applied; a live bar is
+    // refused when a higher-ranked one (a broker backfill of the same minute)
+    // is already stored. That is the precedence rule working as intended, not
+    // an error, and the tick path has nothing to do differently — so the
+    // boolean is deliberately dropped here rather than widening the port.
+    saveCandle: (candle) => candles.upsert(candle).then(() => undefined),
     publish,
   };
   // No session manager: this runtime is the single session driver (syncSession

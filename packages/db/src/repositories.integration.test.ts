@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   Candle,
+  CandleSource,
   Order,
   PnlSnapshot,
   Position,
@@ -199,6 +200,7 @@ describe("CandlesRepository (plan/18 §4)", () => {
     const candle = (ts: number, close: number): Candle => ({
       symbol: "NSE:C-EQ",
       interval: "5m",
+      source: "LIVE_TICK",
       open: close,
       high: close,
       low: close,
@@ -211,6 +213,139 @@ describe("CandlesRepository (plan/18 §4)", () => {
     await repo.upsert(candle(2000, 12));
     const recent = await repo.loadRecent("NSE:C-EQ", "5m", 10);
     expect(recent.map((c) => c.close)).toEqual([11, 12]); // oldest→newest
+  });
+});
+
+describe("CandlesRepository provenance precedence (design D3)", () => {
+  const SYM = "NSE:PREC-EQ";
+  const bar = (
+    ts: number,
+    close: number,
+    source: CandleSource = "LIVE_TICK",
+  ): Candle => ({
+    symbol: SYM,
+    interval: "5m",
+    source,
+    open: close,
+    high: close,
+    low: close,
+    close,
+    volume: 100,
+    ts,
+  });
+
+  /**
+   * The invariant: one (symbol, interval, ts) is ONE canonical candle, whatever
+   * produced it. Provenance says where a bar came from; it never creates a
+   * second bar. Without precedence, whether the broker's record or our
+   * tick aggregation survives would depend on which job happened to run last.
+   */
+  it("lets the broker's record overwrite a live-aggregated bar", async () => {
+    const repo = new CandlesRepository(connection.db);
+    expect(await repo.upsert(bar(1000, 10, "LIVE_TICK"))).toBe(true);
+    expect(await repo.upsert(bar(1000, 99, "BROKER_HISTORICAL"))).toBe(true);
+
+    const stored = await repo.findRange(SYM, "5m", 0, 2000);
+    expect(stored).toHaveLength(1); // one bar, not two
+    expect(stored[0]?.close).toBe(99);
+    expect(stored[0]?.source).toBe("BROKER_HISTORICAL");
+  });
+
+  it("refuses to let a live bar demote the broker's record", async () => {
+    const repo = new CandlesRepository(connection.db);
+    expect(await repo.upsert(bar(3000, 99, "BROKER_HISTORICAL"))).toBe(true);
+    expect(await repo.upsert(bar(3000, 10, "LIVE_TICK"))).toBe(false);
+
+    const stored = await repo.findRange(SYM, "5m", 3000, 4000);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.close).toBe(99); // the better record survived
+    expect(stored[0]?.source).toBe("BROKER_HISTORICAL");
+  });
+
+  it("allows an equal-ranked rewrite, so a re-run is a no-op not a refusal", async () => {
+    const repo = new CandlesRepository(connection.db);
+    await repo.upsert(bar(5000, 50, "BROKER_HISTORICAL"));
+    // Re-running a completed backfill must report as applied, not refused.
+    expect(await repo.upsert(bar(5000, 50, "BROKER_HISTORICAL"))).toBe(true);
+    expect(await repo.upsert(bar(5000, 51, "BROKER_HISTORICAL"))).toBe(true);
+    const stored = await repo.findRange(SYM, "5m", 5000, 6000);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.close).toBe(51);
+  });
+
+  /**
+   * Bars written before provenance existed carry no `sourceRank`, and in Mongo
+   * a missing field does not match `$lte`. Treated naively they would fail the
+   * predicate, fall through to an insert, and collide with the unique index.
+   */
+  it("treats a legacy bar with no provenance as LIVE_TICK, not as absent", async () => {
+    const repo = new CandlesRepository(connection.db);
+    await connection.db.collection(COLLECTIONS.candles).insertOne({
+      symbol: SYM,
+      interval: "5m",
+      open: 7,
+      high: 7,
+      low: 7,
+      close: 7,
+      volume: 1,
+      ts: 7000,
+    });
+
+    // Readable, and defaulted rather than throwing.
+    const before = await repo.findRange(SYM, "5m", 7000, 8000);
+    expect(before[0]?.source).toBe("LIVE_TICK");
+
+    // Upgradable in place — one document, not a duplicate-key explosion.
+    expect(await repo.upsert(bar(7000, 77, "BROKER_HISTORICAL"))).toBe(true);
+    const after = await repo.findRange(SYM, "5m", 7000, 8000);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.close).toBe(77);
+  });
+});
+
+describe("CandlesRepository.findRange (design D4)", () => {
+  const SYM = "NSE:RANGE-EQ";
+  const bar = (ts: number): Candle => ({
+    symbol: SYM,
+    interval: "5m",
+    source: "BROKER_HISTORICAL",
+    open: 1,
+    high: 1,
+    low: 1,
+    close: 1,
+    volume: 1,
+    ts,
+  });
+
+  /**
+   * Half-open [from, to) on purpose: consecutive day requests tile exactly,
+   * with no bar counted twice at a boundary and none skipped.
+   */
+  it("includes the lower bound and excludes the upper, oldest first", async () => {
+    const repo = new CandlesRepository(connection.db);
+    for (const ts of [1000, 2000, 3000, 4000]) await repo.upsert(bar(ts));
+
+    const range = await repo.findRange(SYM, "5m", 2000, 4000);
+    expect(range.map((c) => c.ts)).toEqual([2000, 3000]);
+  });
+
+  it("tiles without overlap or gap across adjacent ranges", async () => {
+    const repo = new CandlesRepository(connection.db);
+    for (const ts of [1000, 2000, 3000, 4000]) await repo.upsert(bar(ts));
+
+    const first = await repo.findRange(SYM, "5m", 1000, 3000);
+    const second = await repo.findRange(SYM, "5m", 3000, 5000);
+    expect([...first, ...second].map((c) => c.ts)).toEqual([
+      1000, 2000, 3000, 4000,
+    ]);
+  });
+
+  it("returns nothing for an empty or inverted range", async () => {
+    const repo = new CandlesRepository(connection.db);
+    await repo.upsert(bar(1000));
+    expect(await repo.findRange(SYM, "5m", 9000, 9999)).toEqual([]);
+    expect(await repo.findRange(SYM, "5m", 5000, 5000)).toEqual([]);
+    expect(await repo.findRange(SYM, "5m", 5000, 1000)).toEqual([]);
   });
 });
 

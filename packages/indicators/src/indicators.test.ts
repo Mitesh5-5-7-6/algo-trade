@@ -16,6 +16,7 @@ function bar(fields: Partial<Candle> & { close: number }): Candle {
   return {
     symbol: "T",
     interval: "1m",
+    source: "LIVE_TICK",
     open: fields.open ?? fields.close,
     high: fields.high ?? fields.close,
     low: fields.low ?? fields.close,
