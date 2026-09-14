@@ -502,14 +502,24 @@ AI may create a candidate. AI may never bypass validation or approval.
 
 ### 13.1 The FYERS boundary
 
-```
-Live Trading Core ──▶ FyersBroker ──▶ FYERS
+The boundary is **order placement**, not all contact with FYERS.
 
-R&D    ──✗──▶ FYERS
-Paper  ──✗──▶ FYERS
+```
+Order placement
+    Live Trading Core ──▶ FyersBroker ──▶ FYERS
+    Paper             ──✗──▶ FYERS
+    R&D               ──✗──▶ FYERS
+
+Market data (read-only)
+    Trading deployment ──▶ FYERS          permitted
+    R&D                ──✗──▶ FYERS       reads candles from Mongo instead
 ```
 
-This is a hard security boundary, not a convention. FYERS belongs only behind the Live broker adapter.
+Only the Live deployment holds FYERS **order** credentials, and only `FyersBroker` may place an order. That is the hard security boundary, and it is not a convention.
+
+Read-only market data is a different thing and is deliberately allowed inside the trading deployment. [apps/api/src/composition-root.ts](../../apps/api/src/composition-root.ts) builds exactly this in paper mode — live FYERS market data spliced onto paper execution — which is correct and intended. It is also how historical ingestion reaches FYERS.
+
+R&D remains fully walled off from FYERS in both directions. It consumes normalised candles from storage (§10.3), never the broker.
 
 ### 13.2 Live safety gates
 
