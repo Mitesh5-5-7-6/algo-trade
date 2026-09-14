@@ -1,12 +1,12 @@
 # Current State — Neelkanth Trader
 
-**Status:** Audit baseline
+**Status:** Audit baseline — Phase 0 re-verification applied
 **Audited against:** branch `docs/architecture-baseline`, working tree, 2026-09-14
 **Governed by:** [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md)
 
 This document records what the repository actually contains, as opposed to what the architecture describes. It exists because the two architecture documents are forward-looking by design, and a plan that quietly assumes unbuilt infrastructure is worse than no plan.
 
-**Out of scope for the documentation task that produced this file:** fixing, implementing or closing any gap listed here. Every entry records evidence, dependency and intended phase. None of it is a task for today.
+Every gap below is recorded, not fixed, **except** the one Phase 0 owns: the session flush (§5.1), which is repaired and marked so. Everything else remains an entry, not a task.
 
 ### Component status vocabulary
 
@@ -17,7 +17,7 @@ This document records what the repository actually contains, as opposed to what 
 | `BROKEN`           | Present and wired, but does not do what it appears to do                    |
 | `MISSING`          | Not present in any form                                                     |
 
-`BROKEN` is a distinct category on purpose. Five components below are constructed, referenced and covered by tests, and still do not work in production.
+`BROKEN` is a distinct category on purpose. The components in §5 were each constructed, referenced and covered by tests, and still did not work in production. One of them — the session flush — is now repaired; four remain.
 
 ### Audit rule
 
@@ -35,7 +35,8 @@ Every claim here is verified against the **working branch** at the time of writi
 | Completed Trade entity                  | `MISSING`          | 2     |
 | Entry ↔ exit linkage                    | `MISSING`          | 2     |
 | Exit lifecycle completeness             | `PARTIALLY EXISTS` | 3     |
-| Session flush / `pollSession`           | `BROKEN`           | 0 ‡   |
+| Session flush / `pollSession`           | `EXISTS` ✅        | 0     |
+| Flush depends on a correct holiday list | `MISSING` guard    | —     |
 | Daily-loss restart persistence          | `BROKEN`           | 0–3   |
 | Deterministic replay coverage           | `PARTIALLY EXISTS` | 4     |
 | Pattern vocabulary                      | `MISSING`          | 5     |
@@ -49,7 +50,7 @@ Every claim here is verified against the **working branch** at the time of writi
 
 Phase numbers refer to [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFICATION.md). Entries with no phase are trading-platform defects rather than research dependencies; they are recorded here because they distort the very evidence the research system is meant to consume.
 
-**‡ The session flush is a hard prerequisite for Phase 1**, not merely early work. Backfilling historical candles over a still-broken aggregator creates two data-quality problems in one collection, each masking the other. See §5.1 and [../design/PHASE_1_HISTORICAL_DATA.md §1](../design/PHASE_1_HISTORICAL_DATA.md).
+**✅ The session flush is repaired** — Phase 0, see §5.1. It was a hard prerequisite for Phase 1: backfilling historical candles over a still-broken aggregator creates two data-quality problems in one collection, each masking the other ([../design/PHASE_1_HISTORICAL_DATA.md §1](../design/PHASE_1_HISTORICAL_DATA.md)). That prerequisite is now met. §5.6 records the one residual case the repair deliberately does not cover.
 
 ---
 
@@ -58,7 +59,7 @@ Phase numbers refer to [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFIC
 | Subsystem                          | Status             | Note                                                                 |
 | ---------------------------------- | ------------------ | -------------------------------------------------------------------- |
 | Market data ingestion (live ticks) | `EXISTS`           | Monotonic guard, per-symbol; ticks deliberately not written to Redis |
-| Candle aggregation                 | `PARTIALLY EXISTS` | 2 of 5 supported intervals built at runtime; never flushed           |
+| Candle aggregation                 | `PARTIALLY EXISTS` | 2 of 5 supported intervals built at runtime; flushed at close (§5.1) |
 | Candle storage                     | `PARTIALLY EXISTS` | Idempotent upsert; no range query, no provenance                     |
 | Historical data                    | `MISSING`          | —                                                                    |
 | Indicator engine                   | `EXISTS`           | Deterministic, warm-up from stored candles                           |
@@ -163,16 +164,19 @@ These five gaps are strictly sequential. Nothing in the R&D specification can be
 
 ## 5. Broken
 
-Each of these is constructed, referenced, and does not do what its presence implies.
+Each of these was constructed, referenced, and did not do what its presence implies. §5.1 is repaired; §5.2–5.5 stand. §5.6 is a new finding from the Phase 0 repair.
 
-### 5.1 Session flush never runs
+### 5.1 Session flush never ran — FIXED in Phase 0
 
-- **Evidence:** `MarketDataEngine.pollSession()` ([packages/engines/src/market-data/market-data-engine.ts:138](../../packages/engines/src/market-data/market-data-engine.ts#L138)) is called only from within its own module and its unit test. Production never calls it — the runtime evaluates session state through a second `SessionManager` on a 15-second timer and publishes the open/close events itself.
-- **Consequence:** The candle aggregator is **never flushed**. Each session's final partial bar is never persisted, and open bars carry across days in memory.
-- **Why it matters for research:** The dataset the R&D system will consume is silently missing its last bar of every session, and may contain bars that span a day boundary.
-- **Dependencies:** None. It blocks Phase 1.
-- **Planned phase:** 0 — **a hard prerequisite for the first historical backfill.** Backfill would fill the missing bar with broker data, converting a visible defect into an invisible one and making live-vs-historical discrepancies unattributable. Ship the fix as its own change, first.
-- **Out of scope for the documentation task.**
+- **Original evidence:** `MarketDataEngine.pollSession()` was called only from within its own module and its unit test. Production never called it — the runtime evaluates session state through its own `SessionManager` on a 15-second timer and publishes the open/close events itself.
+- **Correction to the original entry.** The first pass recorded this as "each session's final partial bar is never persisted". That was imprecise in a way that understated one risk and overstated another. What actually happened:
+  - The bar stayed open in the aggregator. The **next session's first tick** pushed the bucket forward, which finalised and persisted it — carrying _yesterday's_ timestamp.
+  - So it was lost outright only when the process restarted overnight. Otherwise it was persisted roughly seventeen hours late.
+  - And on that late path it was also **published as `CANDLE_CLOSED` into a live, open market**. The runtime's handler feeds every closed bar to `exitEngine.onCandleClosed` — which judges stops and targets against it — as well as to `lastPrices`, the indicator engine and the strategy runner. A day-old bar arriving at 09:15 is not a stale cache entry; it is a trading input.
+- **Why it mattered for research:** the dataset would have been missing its last bar of every session in which the process restarted, and would otherwise carry bars whose persistence order does not match their session.
+- **Root cause:** two session drivers. The engine held a `SessionManager` — the runtime injected _its own instance_ — and `SessionManager.evaluate()` consumes the open/close edge. Had anything ever called `pollSession`, it would have eaten the transition the runtime's `MARKET_OPEN`/`MARKET_CLOSE` publishing depends on, and those events would have stopped silently.
+- **Fix:** `MarketDataEngine.flushOpenBars()` persists and publishes every open bar and holds no session state. The runtime calls it inside the `marketClosed` branch of `syncSession`, before publishing `MARKET_CLOSE` and before the PnL snapshot. The dead `pollSession`, and the now-unused `session` and `exchange` dependencies, are removed — one session driver, no shared stateful manager. See [market-data-engine.ts](../../packages/engines/src/market-data/market-data-engine.ts) and [runtime.ts](../../apps/api/src/engines/runtime.ts).
+- **Status:** `EXISTS`. Six tests cover flush, multi-symbol/multi-interval flush, idempotency, the empty case, error routing, and the absence of a second session driver.
 
 ### 5.2 Daily-loss counter resets on restart
 
@@ -197,6 +201,17 @@ Each of these is constructed, referenced, and does not do what its presence impl
 - **Evidence:** `SignalSchema` declares `outcome` and `rejectReason`, and [packages/db/src/signals-repository.ts](../../packages/db/src/signals-repository.ts) exposes `insert` plus four read methods — there is no update path. Risk decisions land in a separate `risk_logs` collection, joinable only by `signalId`.
 - **Consequence:** The signal record never learns what happened to it.
 - **Why it matters:** `Signal → Outcome` is a link in the research chain in [RND_RESEARCH_SPECIFICATION.md §6.2](RND_RESEARCH_SPECIFICATION.md).
+
+### 5.6 New finding — the flush depends on a correct session calendar
+
+Found while repairing §5.1, and deliberately **not** fixed with it.
+
+- **Evidence:** `ingestRaw` ([market-data-engine.ts](../../packages/engines/src/market-data/market-data-engine.ts)) has no session gate — it aggregates whatever the feed delivers, whenever it arrives. The flush is driven by `evaluation.marketClosed`, which fires only on a genuine open→closed transition.
+- **Consequence:** on a day the settings' `marketHolidays` wrongly marks as a holiday, `SessionManager` reports `closed` all day, so there is no open→closed edge and no flush — while ticks still aggregate normally. The §5.1 carry-over returns for exactly that day.
+- **Why it is narrow:** it requires the holiday list to disagree with the exchange. A genuinely closed exchange sends no ticks, so nothing accumulates.
+- **Why it is real:** the holiday list is hand-maintained in the global settings document, and a wrong entry is silent in both directions.
+- **Status:** `MISSING` guard, recorded not fixed. Widening the Phase 0 repair to cover it would mean adding a session gate to the tick path — a behaviour change to live ingestion, which is outside the scope fence in [RND_RESEARCH_SPECIFICATION.md Phase 0](RND_RESEARCH_SPECIFICATION.md).
+- **Planned phase:** unscheduled. Candidates when it is taken up: gate `ingestRaw` on session phase, or make the flush time-driven rather than edge-driven.
 
 ---
 

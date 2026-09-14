@@ -276,12 +276,12 @@ export async function startEngineRuntime(deps: {
     saveCandle: (candle) => candles.upsert(candle),
     publish,
   };
+  // No session manager: this runtime is the single session driver (syncSession
+  // below). The engine used to take one and never be asked to use it.
   const marketDataEngine = new MarketDataEngine({
     ports: marketDataPorts,
     normalizer: fyersNormalizer,
     intervals: MARKET_INTERVALS,
-    session: sessionManager,
-    exchange: "NSE",
     onError,
   });
   marketDataEngine.attach(deps.broker);
@@ -878,6 +878,13 @@ export async function startEngineRuntime(deps: {
         );
       }
       if (evaluation.marketClosed) {
+        // Close the day's last bar BEFORE anyone hears the market shut. The
+        // aggregator holds each interval's final bucket open until a later tick
+        // pushes it forward — and after the close no such tick arrives. Flushed
+        // here, the bar is persisted while its session is still the current one;
+        // left unflushed, it either died with the process overnight or surfaced
+        // at the next open as a day-old CANDLE_CLOSED fed to live exits.
+        await marketDataEngine.flushOpenBars();
         await bus.publish("MARKET_CLOSE", {
           exchange: "NSE",
           session: istDateKey(now),

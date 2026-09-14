@@ -4,7 +4,6 @@ import type { EventName, EventPayload } from "@neelkanth/contracts";
 import { ScriptedFakeBroker } from "@neelkanth/broker";
 import { MarketDataEngine } from "./market-data-engine.js";
 import { fixtureNormalizer } from "./normalize.js";
-import { SessionManager } from "./session-manager.js";
 import type { MarketDataPorts } from "./ports.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -49,12 +48,11 @@ function harness(): Captured {
   return { ports, lastTick, session, candles, events, errors: [] };
 }
 
-function engineWith(h: Captured, session?: SessionManager) {
+function engineWith(h: Captured) {
   return new MarketDataEngine({
     ports: h.ports,
     normalizer: fixtureNormalizer,
     intervals: ["1m"],
-    ...(session ? { session } : {}),
     onError: (error, context) => h.errors.push({ error, context }),
   });
 }
@@ -104,33 +102,101 @@ describe("MarketDataEngine tick path (plan/17 §4)", () => {
   });
 });
 
-describe("MarketDataEngine session (plan/17 §6)", () => {
-  it("writes hot:session on change and emits MARKET_OPEN then MARKET_CLOSE", async () => {
+describe("MarketDataEngine end-of-session flush (plan/17 §5 EOD)", () => {
+  /**
+   * The regression this guards: the aggregator holds each interval's final
+   * bucket open until a later tick pushes it forward, and after the close no
+   * such tick arrives. The flush was only ever reachable through a
+   * `pollSession` nothing in production called, so the day's last bar either
+   * died with the process overnight or surfaced at the NEXT session's first
+   * tick as a CANDLE_CLOSED carrying yesterday's timestamp — into a live open
+   * market, where the exit engine judges stops against it.
+   */
+  it("persists and publishes the bar left open at the close", async () => {
     const h = harness();
-    const engine = engineWith(h, new SessionManager());
+    const engine = engineWith(h);
 
-    await engine.pollSession(ist(8, 30)); // closed (first eval, no transition)
-    expect(h.session.phase).toBe("closed");
-    await engine.pollSession(ist(9, 20)); // → open
-    await engine.pollSession(ist(15, 45)); // → closed
+    await engine.ingestRaw(raw(ist(15, 28), 100, 5)); // the day's last bar
+    expect(h.candles).toHaveLength(0); // still open — no boundary crossed
 
-    const names = h.events.map((e) => e.name);
-    expect(names).toContain("MARKET_OPEN");
-    expect(names).toContain("MARKET_CLOSE");
-    expect(h.session.phase).toBe("closed");
+    await engine.flushOpenBars();
+
+    expect(h.candles).toHaveLength(1);
+    expect(h.candles[0]?.close).toBe(100);
+    expect(h.events.filter((e) => e.name === "CANDLE_CLOSED")).toHaveLength(1);
   });
 
-  it("flushes open bars on MARKET_CLOSE (plan/17 §5 EOD)", async () => {
+  it("flushes every symbol and interval that has an open bar", async () => {
     const h = harness();
-    const engine = engineWith(h, new SessionManager());
-    await engine.pollSession(ist(9, 16)); // open (from null → open: no transition)
-    // Force a real open transition so close later fires, then leave a bar open.
-    await engine.ingestRaw(raw(9_000_000, 100)); // an open, unclosed bar
-    await engine.pollSession(ist(15, 45)); // close → flush
+    const engine = new MarketDataEngine({
+      ports: h.ports,
+      normalizer: fixtureNormalizer,
+      intervals: ["1m", "5m"],
+      onError: (error, context) => h.errors.push({ error, context }),
+    });
 
-    const closed = h.events.filter((e) => e.name === "CANDLE_CLOSED");
-    expect(closed).toHaveLength(1); // the still-open bar was flushed
+    await engine.ingestRaw(raw(ist(15, 28), 100));
+    await engine.ingestRaw({ ...raw(ist(15, 28), 250), sym: "NSE:INFY-EQ" });
+    await engine.flushOpenBars();
+
+    // Two symbols × two intervals.
+    expect(h.candles).toHaveLength(4);
+    expect(new Set(h.candles.map((c) => c.symbol))).toEqual(
+      new Set(["NSE:RELIANCE-EQ", "NSE:INFY-EQ"]),
+    );
+    expect(new Set(h.candles.map((c) => c.interval))).toEqual(
+      new Set(["1m", "5m"]),
+    );
+  });
+
+  it("is idempotent — a second flush emits nothing", async () => {
+    const h = harness();
+    const engine = engineWith(h);
+    await engine.ingestRaw(raw(ist(15, 28), 100));
+
+    await engine.flushOpenBars();
+    await engine.flushOpenBars();
+
     expect(h.candles).toHaveLength(1);
+  });
+
+  it("flushes nothing when no bar is open", async () => {
+    const h = harness();
+    const engine = engineWith(h);
+    await engine.flushOpenBars();
+    expect(h.candles).toHaveLength(0);
+    expect(h.events).toHaveLength(0);
+  });
+
+  it("routes a persistence failure to onError instead of rejecting", async () => {
+    const h = harness();
+    const engine = new MarketDataEngine({
+      ports: {
+        ...h.ports,
+        saveCandle: () => Promise.reject(new Error("mongo down")),
+      },
+      normalizer: fixtureNormalizer,
+      intervals: ["1m"],
+      onError: (error, context) => h.errors.push({ error, context }),
+    });
+    await engine.ingestRaw(raw(ist(15, 28), 100));
+
+    // Must not throw: a failed flush cannot take down the session transition.
+    await expect(engine.flushOpenBars()).resolves.toBeUndefined();
+    expect(h.errors).toHaveLength(1);
+    expect(h.errors[0]?.context).toMatchObject({ where: "flushOpenBars" });
+  });
+
+  /**
+   * The engine no longer drives the session. The runtime does, on its own
+   * timer, with its own SessionManager — and `evaluate()` consumes the
+   * open/close edge, so a second driver sharing that manager would eat the
+   * transition the runtime's MARKET_OPEN/MARKET_CLOSE publishing depends on.
+   */
+  it("exposes no session driver at all", () => {
+    const h = harness();
+    const engine = engineWith(h);
+    expect("pollSession" in engine).toBe(false);
   });
 });
 
