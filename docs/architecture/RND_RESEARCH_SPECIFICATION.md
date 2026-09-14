@@ -136,15 +136,32 @@ Deployment starts as `neelkanth-rnd` (API + worker in one project) and splits in
 
 Sixteen phases in strict dependency order. **This numbering is canonical.** Phases 0–4 contain no research at all — they are plumbing, and that is the point.
 
-### Phase 0 — Current system audit
+### Phase 0 — Verify repository state and aggregator integrity
 
-**Implementation target:** determine what actually exists, against the working branch, using the status vocabulary `EXISTS` / `PARTIALLY EXISTS` / `BROKEN` / `MISSING`. Never against a ZIP export, a stale clone or a previous conversation.
+**Implementation target, part one:** determine what actually exists, against the working branch, using the status vocabulary `EXISTS` / `PARTIALLY EXISTS` / `BROKEN` / `MISSING`. Never against a ZIP export, a stale clone or a previous conversation.
 
 Output: [CURRENT_STATE.md](CURRENT_STATE.md), re-verified.
 
+**Implementation target, part two:** repair live candle integrity before any historical data is written. Specifically, the aggregator is never flushed at session close ([CURRENT_STATE.md §5.1](CURRENT_STATE.md)), so the final partial bar of every session is lost and open bars carry across days in memory.
+
+**This is a hard prerequisite for Phase 1, not a parallel task.** Backfilling historical data over a still-broken aggregator creates two data-quality problems at the same time, in the same collection, where each masks the other: the missing bar gets silently filled by broker data, and any discrepancy between the two sources becomes impossible to attribute. Debugging is already sufficiently capable of ruining an afternoon without assistance.
+
+The ordering is therefore:
+
+```
+Verify repo → Fix aggregator flush → Phase 1 ingestion
+→ Validate historical + live candle coexistence
+```
+
+That last step is part of Phase 1's acceptance, not an afterthought — see [../design/PHASE_1_HISTORICAL_DATA.md §9](../design/PHASE_1_HISTORICAL_DATA.md).
+
 ### Phase 1 — Historical market data
 
+**Prerequisite:** Phase 0 complete, including the aggregator flush fix.
+
 **Implementation target:** introduce historical 5-minute market-data ingestion and establish the canonical research candle dataset.
+
+Design: [../design/PHASE_1_HISTORICAL_DATA.md](../design/PHASE_1_HISTORICAL_DATA.md).
 
 Pipeline:
 
@@ -275,25 +292,39 @@ Research → Candidate → Historical validation → Walk-forward
 → Paper → Promotion candidate → Approval → Live
 ```
 
-### 4.1 The immediate engineering sequence
+### 4.1 The agreed chain
 
-A compressed view of the same chain, used as the near-term backlog in [CURRENT_STATE.md](CURRENT_STATE.md):
+One numbering, no compressed variant. Phases 0–11 are the chain to the first AI research agent:
 
-| Step                              | Canonical phase |
-| --------------------------------- | --------------- |
-| 1. Verify actual repository state | Phase 0         |
-| 2. Historical 5-minute ingestion  | Phase 1         |
-| 3. Completed Trade entity         | Phase 2         |
-| 4. Exit lifecycle                 | Phase 3         |
-| 5. Deterministic replay           | Phase 4         |
-| 6. Pattern vocabulary             | Phase 5         |
-| 7. Statistical validation         | Phases 6–7      |
-| 8. Daily R&D                      | Phase 8         |
-| 9. AI research agent              | Phase 11        |
+```
+ 0. Verify repo + aggregator integrity
+        ↓
+ 1. Historical 5m ingestion
+        ↓
+ 2. Trade entity + lifecycle
+        ↓
+ 3. Exit lifecycle
+        ↓
+ 4. Deterministic replay
+        ↓
+ 5. Pattern vocabulary
+        ↓
+ 6. Counterfactual strategy evaluation
+        ↓
+ 7. Statistical validation
+        ↓
+ 8. Daily R&D
+        ↓
+ 9. Weekly / monthly / quarterly R&D
+        ↓
+10. Research knowledge base
+        ↓
+11. AI research agent
+```
 
-Where the two disagree, the sixteen-phase numbering is authoritative. Step 7 spans two phases because counterfactual evaluation and the statistical gate are distinct pieces of work that ship together.
+Phases 12–15 — automated hypothesis, backtest and walk-forward, paper validation, promotion — continue unchanged past the end of this chain.
 
-Everything from step 7 onward is downstream of having trustworthy evidence.
+Everything from Phase 7 onward is downstream of having trustworthy evidence.
 
 ---
 

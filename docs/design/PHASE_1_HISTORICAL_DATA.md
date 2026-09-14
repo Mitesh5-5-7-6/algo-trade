@@ -32,9 +32,20 @@ No code is written by this document. It states the decisions an implementation m
 - Any pattern, statistic or research record (Phases 5+).
 - Tick-level history. [ARCHITECTURE_DECISION §10.3](../architecture/ARCHITECTURE_DECISION.md) defers it to proven need.
 
-### Adjacent, decided here but implemented separately
+### Prerequisite — the aggregator flush fix ships first
 
-The aggregator is never flushed ([CURRENT_STATE §5.1](../architecture/CURRENT_STATE.md)), so the final partial bar of every session is missing from storage. Backfill would silently paper over that hole with broker data, converting a visible defect into an invisible one. **Fix the flush before or alongside the first production backfill**, and treat it as its own change so the bug is repaired rather than buried. It is not part of this design's implementation.
+The aggregator is never flushed at session close ([CURRENT_STATE §5.1](../architecture/CURRENT_STATE.md)), so the final partial bar of every session is missing from storage and open bars carry across days in memory.
+
+**This is a hard prerequisite, not an adjacent task.** Backfilling over a still-broken aggregator creates two data-quality problems at once, in the same collection, where each masks the other: the missing bar is silently filled by broker data, and any live-vs-historical discrepancy becomes impossible to attribute to its cause. The fix belongs to [Phase 0](../architecture/RND_RESEARCH_SPECIFICATION.md), is its own change, and lands before the first production backfill.
+
+Sequencing:
+
+```
+Verify repo → Fix aggregator flush → Phase 1 ingestion
+→ Validate historical + live candle coexistence
+```
+
+Implementing the fix is outside this design. Depending on it is not — §9 point 5 is the acceptance check that the two sources coexist correctly, and it is only meaningful once the flush is repaired.
 
 ---
 
@@ -172,7 +183,7 @@ await collection.updateOne(
 
 `sourceRank` is stored denormalised so the conditional is a pure index-supported predicate rather than an application-side read-then-write race.
 
-**Consequence to accept knowingly:** a backfill permanently overwrites live-aggregated bars for the same minute. That is the intent — the broker's record is better than ours — but it means the flush bug in §1 becomes unobservable after the first backfill of an affected day. Hence fixing it first.
+**Consequence to accept knowingly:** a backfill permanently overwrites live-aggregated bars for the same minute. That is the intent — the broker's record is better than ours — but it also means the flush bug becomes unobservable after the first backfill of an affected day. This is precisely why §1 makes the flush fix a Phase 0 prerequisite rather than a parallel task.
 
 ### D4 — Date-range query, no new index
 
@@ -345,23 +356,48 @@ The design is proven when, against a real token:
 2. `findRange` returns exactly 75 bars for a regular NSE session (09:15–15:30), all with `source: "BROKER_HISTORICAL"`.
 3. The same run repeated changes nothing — same document count, same values.
 4. A range spanning a known holiday reports that day under `daysWithNoData` and does not treat it as a failure.
-5. A range spanning a day already covered by live aggregation shows those bars upgraded to `BROKER_HISTORICAL`, with the document count unchanged.
+5. **Historical and live candle coexistence.** A range spanning a day already covered by live aggregation shows those bars upgraded to `BROKER_HISTORICAL`, with the document count unchanged — no duplicate bars, no orphaned `LIVE_TICK` rows at the same `ts`, and the session's final bar present from both sources rather than only from the backfill.
 6. `pnpm typecheck`, `pnpm test` and `pnpm build` pass, and the golden record is unchanged.
 
 Point 2 is the real acceptance criterion: it is the first moment a named trading day can be reconstructed from storage, which is what every later phase stands on.
+
+Point 5 is the one that only works in the right order. Run against an unflushed aggregator, it cannot distinguish "the backfill correctly upgraded a bar" from "the backfill invented a bar we never recorded" — which is the whole argument for §1.
 
 ---
 
 ## 10. Open questions
 
-Each must be answered before implementation, not during it:
+Seven questions remain open. **Do not invent answers.** Each must be settled before implementation, not discovered during it. A plausible-looking guess here produces a dataset that is quietly wrong, and every phase downstream inherits it.
 
-1. The five empirical questions in §3.1.
-2. **Which symbols, and how far back?** The first dataset's shape is a decision, not a default. Index-only, or index plus the breadth basket already in global settings? One year, or three?
-3. **Does the flush fix ship first?** §1 argues it must. If not, the first backfill hides it.
-4. **One process or two?** §7.2 accepts a shared rate-limit budget only if the live order path is provably unaffected.
+### 10.1 Vendor verification — answer against the live API
 
-§2.1's ADR correction is resolved — it has been applied.
+Five questions the vendor client cannot answer. Each needs one real call with a real token.
+
+| #   | Question                                         | Sets                                                                               |
+| --- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| 1   | Maximum range per request, per resolution        | The page size in §7.2                                                              |
+| 2   | How far back 5-minute history is retained        | The floor on question 7                                                            |
+| 3   | Data-API rate limits (per second / minute / day) | The inter-call delay in §7.2, and whether the job needs its own process            |
+| 4   | Whether index volume is real or always zero      | D2's deferred `volumeAvailable` / `volumeSource` / `volumeQuality` fields          |
+| 5   | Behaviour on a holiday or non-trading range      | Whether `daysWithNoData` is driven by empty `candles`, an error, or `s: "no_data"` |
+
+Record the answers in §3 when established, and mark §3.1 resolved.
+
+Question 3 carries a decision with it: §7.2 accepts a shared rate-limit budget only if the live order path is provably unaffected. If the measured limits cannot guarantee that, the backfill moves to its own process before it runs against a full symbol list.
+
+### 10.2 Project sequencing — decide before Phase 1 implementation
+
+Two decisions that are nobody's default:
+
+| #   | Question           | Notes                                                                                                                                                                                                                                                                                                                                      |
+| --- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 6   | **Which symbols?** | Index-only, or index plus the breadth basket already in global settings ([settings-repository.ts](../../packages/db/src/settings-repository.ts) `indexSymbols`, `breadthSymbols`)? Derivatives pull in the F&O continuity rule ([RND_RESEARCH_SPECIFICATION §5.6](../architecture/RND_RESEARCH_SPECIFICATION.md)) and should not be first. |
+| 7   | **How far back?**  | Bounded above by question 2. One year gives roughly 250 trading days and ~18,750 five-minute bars per symbol — enough for daily and weekly research, thin for quarterly regime comparison.                                                                                                                                                 |
+
+### 10.3 Resolved
+
+- **Does the flush fix ship first?** Yes. It is a Phase 0 prerequisite — §1.
+- **§2.1's ADR correction** — applied.
 
 ---
 

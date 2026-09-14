@@ -35,7 +35,7 @@ Every claim here is verified against the **working branch** at the time of writi
 | Completed Trade entity                  | `MISSING`          | 2     |
 | Entry ↔ exit linkage                    | `MISSING`          | 2     |
 | Exit lifecycle completeness             | `PARTIALLY EXISTS` | 3     |
-| Session flush / `pollSession`           | `BROKEN`           | 0–1   |
+| Session flush / `pollSession`           | `BROKEN`           | 0 ‡   |
 | Daily-loss restart persistence          | `BROKEN`           | 0–3   |
 | Deterministic replay coverage           | `PARTIALLY EXISTS` | 4     |
 | Pattern vocabulary                      | `MISSING`          | 5     |
@@ -48,6 +48,8 @@ Every claim here is verified against the **working branch** at the time of writi
 | Daily PnL snapshot durability           | `BROKEN`           | —     |
 
 Phase numbers refer to [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFICATION.md). Entries with no phase are trading-platform defects rather than research dependencies; they are recorded here because they distort the very evidence the research system is meant to consume.
+
+**‡ The session flush is a hard prerequisite for Phase 1**, not merely early work. Backfilling historical candles over a still-broken aggregator creates two data-quality problems in one collection, each masking the other. See §5.1 and [../design/PHASE_1_HISTORICAL_DATA.md §1](../design/PHASE_1_HISTORICAL_DATA.md).
 
 ---
 
@@ -168,7 +170,9 @@ Each of these is constructed, referenced, and does not do what its presence impl
 - **Evidence:** `MarketDataEngine.pollSession()` ([packages/engines/src/market-data/market-data-engine.ts:138](../../packages/engines/src/market-data/market-data-engine.ts#L138)) is called only from within its own module and its unit test. Production never calls it — the runtime evaluates session state through a second `SessionManager` on a 15-second timer and publishes the open/close events itself.
 - **Consequence:** The candle aggregator is **never flushed**. Each session's final partial bar is never persisted, and open bars carry across days in memory.
 - **Why it matters for research:** The dataset the R&D system will consume is silently missing its last bar of every session, and may contain bars that span a day boundary.
-- **Planned phase:** 0–1.
+- **Dependencies:** None. It blocks Phase 1.
+- **Planned phase:** 0 — **a hard prerequisite for the first historical backfill.** Backfill would fill the missing bar with broker data, converting a visible defect into an invisible one and making live-vs-historical discrepancies unattributable. Ship the fix as its own change, first.
+- **Out of scope for the documentation task.**
 
 ### 5.2 Daily-loss counter resets on restart
 
@@ -226,11 +230,23 @@ Recorded for completeness. None of these exist in any form, and each is gated on
 ## 8. Next engineering sequence
 
 ```
-VERIFY REPO → HISTORICAL DATA → TRADE → EXIT → REPLAY
-→ PATTERNS → STATISTICS → DAILY R&D → AI
+ 0. Verify repo + aggregator integrity
+ 1. Historical 5m ingestion
+ 2. Trade entity + lifecycle
+ 3. Exit lifecycle
+ 4. Deterministic replay
+ 5. Pattern vocabulary
+ 6. Counterfactual strategy evaluation
+ 7. Statistical validation
+ 8. Daily R&D
+ 9. Weekly / monthly / quarterly R&D
+10. Research knowledge base
+11. AI research agent
 ```
 
-Mapped to canonical phases in [RND_RESEARCH_SPECIFICATION.md §4.1](RND_RESEARCH_SPECIFICATION.md). Everything from the statistics step onward is downstream of having trustworthy evidence — which is the entire reason this document exists.
+These are the canonical phase numbers from [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFICATION.md); Phases 12–15 continue past the end of this chain. Everything from Phase 7 onward is downstream of having trustworthy evidence — which is the entire reason this document exists.
+
+The first two steps are not independent. Phase 0 includes repairing the session flush (§5.1), and Phase 1 does not begin until it is repaired.
 
 ---
 
