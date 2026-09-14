@@ -261,6 +261,38 @@ export default function SettingsPage() {
             aria-label="Max exposure (percent of capital)"
           />
         </div>
+        <div className="field">
+          <label htmlFor="riskpertrade">
+            Risk per trade —{" "}
+            {((current?.limits.riskPerTrade ?? 0.01) * 100).toFixed(2)}% (₹
+            {formatIN(
+              Math.round(
+                (current?.capitalAllocation ?? 0) *
+                  (current?.limits.riskPerTrade ?? 0.01),
+              ),
+            )}
+            )
+          </label>
+          <input
+            id="riskpertrade"
+            type="range"
+            min={25}
+            max={500}
+            step={25}
+            disabled={disabled}
+            value={Math.round((current?.limits.riskPerTrade ?? 0.01) * 10_000)}
+            onChange={(e) => {
+              edit({ limit: { riskPerTrade: Number(e.target.value) / 10_000 } });
+            }}
+            aria-label="Risk per trade (percent of capital)"
+          />
+          <span className="hint">
+            What one trade is allowed to lose. Size is this budget divided by
+            the distance to the stop, rounded down to whole lots — so a value
+            below one lot&apos;s risk blocks every signal rather than trading
+            smaller.
+          </span>
+        </div>
         <p className="stepup-note">
           ⚠ Loosening any limit or changing capital requires step-up
           re-authentication. Tightening is always one click.

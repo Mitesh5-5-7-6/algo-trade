@@ -97,6 +97,13 @@ export interface LiveSettings {
     maxCapitalPerTrade: number;
     maxOpenPositions: number;
     maxExposure: number;
+    /**
+     * Fraction of capital risked per trade — the input to position sizing.
+     *
+     * Optional here because settings rows written before the field existed
+     * omit it; the API fills the schema default on read.
+     */
+    riskPerTrade?: number;
   };
   marketHours: { open: string; close: string; squareOff: string };
 }
