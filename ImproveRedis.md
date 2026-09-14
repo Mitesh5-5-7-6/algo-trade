@@ -93,7 +93,7 @@ Search for all Redis usage.
 
 Search for:
 
-```text
+````text
 Redis
 redis
 RedisClient
@@ -1019,3 +1019,4 @@ SUBSCRIBE Redis
 Strategy
 
 That distinction could eliminate a very large portion of your current Redis consumption without compromising the trading engine.
+````

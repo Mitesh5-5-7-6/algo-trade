@@ -66,10 +66,7 @@ export function serializeSessionCookie(
  * attributes must match the ones it was set with or the browser keeps the
  * original: a clear that does not clear leaves a dead session id in place.
  */
-export function clearSessionCookie(
-  secure: boolean,
-  crossSite = false,
-): string {
+export function clearSessionCookie(secure: boolean, crossSite = false): string {
   return [
     `${SESSION_COOKIE}=`,
     "Path=/",

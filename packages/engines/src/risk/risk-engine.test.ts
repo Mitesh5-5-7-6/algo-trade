@@ -278,7 +278,9 @@ describe("RiskEngine — check 5 risk-based sizing (plan/14 §4.4)", () => {
    */
   it("sizes from the risk budget and the stop distance", async () => {
     const h = harness({ global: { ...GLOBAL, maxPositionSize: 1000 } });
-    const decision = await h.engine.validate(signal({ qtyProposal: undefined }));
+    const decision = await h.engine.validate(
+      signal({ qtyProposal: undefined }),
+    );
     expect(decision).toEqual({ decision: "approved", cappedQty: 200 });
   });
 
@@ -406,7 +408,9 @@ describe("RiskEngine — check 5 risk-based sizing (plan/14 §4.4)", () => {
       global: { ...GLOBAL, maxPositionSize: 1000 },
       override: { riskPerTrade: 0.005 }, // ₹500 ÷ ₹5 = 100
     });
-    const decision = await h.engine.validate(signal({ qtyProposal: undefined }));
+    const decision = await h.engine.validate(
+      signal({ qtyProposal: undefined }),
+    );
     expect(decision).toEqual({ decision: "approved", cappedQty: 100 });
   });
 });

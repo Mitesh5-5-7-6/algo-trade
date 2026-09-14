@@ -34,7 +34,11 @@ function app(): ApiServer {
     getOpenPositions: (): Position[] => [],
     realizedPnl: () => 0,
     unrealizedPnl: () => 0,
-    session: (): SessionContext => ({ phase: "closed", minutesSinceOpen: -1, sessionOpenTs: 0 }),
+    session: (): SessionContext => ({
+      phase: "closed",
+      minutesSinceOpen: -1,
+      sessionOpenTs: 0,
+    }),
     equityCurve: (): readonly EquityPoint[] => [],
     brokerConnection: () => ({ state: "connected", connected: true }),
   };
@@ -59,20 +63,16 @@ async function patchSymbols(symbols: string[]) {
 }
 
 describe("strategy symbol validation", () => {
-  it.each([
-    "RELIANCE",
-    "HDFCBANK",
-    "ICICIBANK",
-    "INFY",
-    "TCS",
-    "NSE",
-  ])("rejects the bare ticker %s", async (symbol) => {
-    const res = await patchSymbols([symbol]);
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({
-      error: { code: "VALIDATION_ERROR" },
-    });
-  });
+  it.each(["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "NSE"])(
+    "rejects the bare ticker %s",
+    async (symbol) => {
+      const res = await patchSymbols([symbol]);
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({
+        error: { code: "VALIDATION_ERROR" },
+      });
+    },
+  );
 
   it.each([
     "NSE:RELIANCE-EQ",

@@ -101,7 +101,6 @@ const EnvSchema = z
           });
         }
       }
-
     }
 
     // The redirect URL must point at the route that actually exists (apps/api
@@ -122,8 +121,9 @@ const EnvSchema = z
       // `process.env` as an argument precisely so it depends on nothing but
       // zod — no Node types, no runtime globals. `.url()` above already
       // guarantees the string parses, so the match cannot fail here.
-      const path = (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+([^?#]*)/i
-        .exec(redirectUrl)?.[1] ?? "").replace(/\/$/, "");
+      const path = (
+        /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+([^?#]*)/i.exec(redirectUrl)?.[1] ?? ""
+      ).replace(/\/$/, "");
       if (path !== FYERS_CALLBACK_PATH) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

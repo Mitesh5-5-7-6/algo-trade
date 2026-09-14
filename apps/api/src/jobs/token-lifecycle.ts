@@ -25,6 +25,11 @@ export async function startTokenLifecycleJobs(deps: TokenLifecycleDeps) {
 
   const worker = new Worker(
     QUEUE_NAME,
+    // `async` is required by BullMQ's `Processor` type, which must return a
+    // promise — a synchronous handler does not typecheck. There is nothing to
+    // await yet only because the refresh itself is still a stub (see below);
+    // the rule fires on the stub, not on a mistake.
+    // eslint-disable-next-line @typescript-eslint/require-await
     async (job: Job) => {
       if (job.name === "refresh-tokens") {
         deps.logger.info("Running token refresh job");

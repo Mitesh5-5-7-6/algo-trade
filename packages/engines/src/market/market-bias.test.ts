@@ -72,8 +72,12 @@ describe("readIndex", () => {
 });
 
 describe("computeMarketView — agreement between direction and participation", () => {
-  const bullIndex = new Map([[SYM, series([100, 101, 102, 103, 104, 105, 106])]]);
-  const bearIndex = new Map([[SYM, series([106, 105, 104, 103, 102, 101, 100])]]);
+  const bullIndex = new Map([
+    [SYM, series([100, 101, 102, 103, 104, 105, 106])],
+  ]);
+  const bearIndex = new Map([
+    [SYM, series([106, 105, 104, 103, 102, 101, 100])],
+  ]);
 
   const broadUp = new Map([
     ["a", dayMove(100, 105)],
@@ -170,5 +174,56 @@ describe("computeMarketView — agreement between direction and participation", 
     });
     expect(v.detail).toContain("index BULLISH");
     expect(v.detail).toContain("3↑/1↓");
+  });
+});
+
+describe("computeMarketView — breadth needs a real sample", () => {
+  const bullIndex = new Map([
+    [SYM, series([100, 101, 102, 103, 104, 105, 106])],
+  ]);
+
+  /**
+   * The trap an index-options-only setup walks into: breadth used to be
+   * measured over whatever was being traded, so disabling the equity
+   * strategies left ONE symbol in the basket. "Advancing" is then 1-of-1,
+   * breadth reads BULLISH on any up day, and the gate silently refuses every
+   * put for the rest of the session.
+   */
+  it("is NEUTRAL when the basket is a single instrument", () => {
+    const v = computeMarketView({
+      indexCandles: bullIndex,
+      breadthCandles: new Map([["only", dayMove(100, 105)]]),
+      now: 1,
+    });
+    expect(v.breadthBias).toBe("NEUTRAL");
+    expect(v.bias).toBe("NEUTRAL"); // blocks nothing, rather than blocking shorts
+  });
+
+  it("is still NEUTRAL at three instruments, below the minimum", () => {
+    const v = computeMarketView({
+      indexCandles: bullIndex,
+      breadthCandles: new Map([
+        ["a", dayMove(100, 105)],
+        ["b", dayMove(100, 104)],
+        ["c", dayMove(100, 103)],
+      ]),
+      now: 1,
+    });
+    expect(v.breadthBias).toBe("NEUTRAL");
+  });
+
+  it("reads a direction once the basket is big enough", () => {
+    const v = computeMarketView({
+      indexCandles: bullIndex,
+      breadthCandles: new Map([
+        ["a", dayMove(100, 105)],
+        ["b", dayMove(100, 104)],
+        ["c", dayMove(100, 103)],
+        ["d", dayMove(100, 99)],
+      ]),
+      now: 1,
+    });
+    expect(v.breadthBias).toBe("BULLISH");
+    expect(v.bias).toBe("BULLISH");
   });
 });

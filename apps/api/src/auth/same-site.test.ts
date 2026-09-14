@@ -25,16 +25,18 @@ describe("isCrossSite (decides SameSite on the session cookie)", () => {
   });
 
   it("is same-site for identical origins", () => {
-    expect(
-      isCrossSite("https://example.com", "https://example.com"),
-    ).toBe(false);
+    expect(isCrossSite("https://example.com", "https://example.com")).toBe(
+      false,
+    );
   });
 
   it("handles the other PSL hosts a deploy might land on", () => {
-    expect(
-      isCrossSite("https://a.netlify.app", "https://b.netlify.app"),
-    ).toBe(true);
-    expect(isCrossSite("https://a.pages.dev", "https://b.pages.dev")).toBe(true);
+    expect(isCrossSite("https://a.netlify.app", "https://b.netlify.app")).toBe(
+      true,
+    );
+    expect(isCrossSite("https://a.pages.dev", "https://b.pages.dev")).toBe(
+      true,
+    );
     expect(isCrossSite("https://a.fly.dev", "https://b.fly.dev")).toBe(true);
   });
 

@@ -18,7 +18,12 @@
 export function parseSymbols(input: string): string[] | null {
   const symbols = input
     .split(/[,\s]+/)
-    .map((s) => s.replace(/^["'[\]]+|["'[\]]+$/g, "").trim().toUpperCase())
+    .map((s) =>
+      s
+        .replace(/^["'[\]]+|["'[\]]+$/g, "")
+        .trim()
+        .toUpperCase(),
+    )
     .filter((s) => s.length > 0);
   return symbols.length > 0 ? symbols : null;
 }

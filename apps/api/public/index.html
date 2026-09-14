@@ -13,12 +13,27 @@
         place-items: center;
         background: #0b0d10;
         color: #c8cdd4;
-        font: 15px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        font:
+          15px/1.6 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
       }
-      main { max-width: 34rem; padding: 2rem; }
-      h1 { font-size: 1rem; color: #f0f3f6; margin: 0 0 1rem; }
-      p { margin: 0 0 0.75rem; }
-      code { color: #7fd1b9; }
+      main {
+        max-width: 34rem;
+        padding: 2rem;
+      }
+      h1 {
+        font-size: 1rem;
+        color: #f0f3f6;
+        margin: 0 0 1rem;
+      }
+      p {
+        margin: 0 0 0.75rem;
+      }
+      code {
+        color: #7fd1b9;
+      }
     </style>
   </head>
   <body>
@@ -26,14 +41,13 @@
       <h1>Neelkanth API — webhook ingest only</h1>
       <p>
         This deployment builds and typechecks <code>@neelkanth/api</code> on
-        push, and serves exactly one endpoint:
-        <code>/api/webhooks/fyers</code>. It accepts broker callbacks and
-        parks them in Redis — nothing else.
+        push, and serves exactly one endpoint: <code>/api/webhooks/fyers</code>.
+        It accepts broker callbacks and parks them in Redis — nothing else.
       </p>
       <p>
-        The control-plane API is a long-lived Fastify process (socket.io,
-        BullMQ workers, MongoDB and Redis pools) and runs on its own host. It
-        drains the webhook inbox from there.
+        The control-plane API is a long-lived Fastify process (socket.io, BullMQ
+        workers, MongoDB and Redis pools) and runs on its own host. It drains
+        the webhook inbox from there.
       </p>
     </main>
   </body>

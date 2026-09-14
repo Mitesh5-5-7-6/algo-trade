@@ -132,7 +132,10 @@ export function useDashboardData(enabled = true): LiveDashboard {
   const evaluationsToday = strategyStats.data.some(
     (row) => row.evaluationsToday !== undefined,
   )
-    ? strategyStats.data.reduce((sum, row) => sum + (row.evaluationsToday ?? 0), 0)
+    ? strategyStats.data.reduce(
+        (sum, row) => sum + (row.evaluationsToday ?? 0),
+        0,
+      )
     : undefined;
 
   const realized = pnl.data?.realizedPnl ?? mock.dayPnl.realized;

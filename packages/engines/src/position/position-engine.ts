@@ -179,7 +179,9 @@ export class PositionEngine {
         unrealizedPnl: 0,
         // Carried from the opening fill so the stop outlives the process that
         // placed it (plan/13 §3).
-        ...(payload.stopLoss === undefined ? {} : { stopLoss: payload.stopLoss }),
+        ...(payload.stopLoss === undefined
+          ? {}
+          : { stopLoss: payload.stopLoss }),
         ...(payload.takeProfit === undefined
           ? {}
           : { target: payload.takeProfit }),

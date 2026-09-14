@@ -98,10 +98,17 @@ function predictCrosses(closes, fast, slow) {
   const s = emaSeries(slow);
   const crosses = [];
   for (let i = 1; i < closes.length; i++) {
-    if (f[i] === null || s[i] === null || f[i - 1] === null || s[i - 1] === null)
+    if (
+      f[i] === null ||
+      s[i] === null ||
+      f[i - 1] === null ||
+      s[i - 1] === null
+    )
       continue;
-    if (f[i - 1] <= s[i - 1] && f[i] > s[i]) crosses.push({ bar: i + 1, dir: "UP" });
-    if (f[i - 1] >= s[i - 1] && f[i] < s[i]) crosses.push({ bar: i + 1, dir: "DOWN" });
+    if (f[i - 1] <= s[i - 1] && f[i] > s[i])
+      crosses.push({ bar: i + 1, dir: "UP" });
+    if (f[i - 1] >= s[i - 1] && f[i] < s[i])
+      crosses.push({ bar: i + 1, dir: "DOWN" });
   }
   return { f, s, crosses };
 }
@@ -119,19 +126,26 @@ async function main() {
   });
   console.log("    crossings:", JSON.stringify(crosses));
   const hasUp = crosses.some((c) => c.bar === CROSS_UP_BAR && c.dir === "UP");
-  const hasDown = crosses.some((c) => c.bar === CROSS_DOWN_BAR && c.dir === "DOWN");
+  const hasDown = crosses.some(
+    (c) => c.bar === CROSS_DOWN_BAR && c.dir === "DOWN",
+  );
   if (!hasUp || !hasDown) {
     throw new Error(
       `fixture does not cross as intended (up@${CROSS_UP_BAR}=${hasUp}, down@${CROSS_DOWN_BAR}=${hasDown}) — the proof would be vacuous`,
     );
   }
-  console.log(ok(`    ✓ BUY expected on bar ${CROSS_UP_BAR}, SELL on bar ${CROSS_DOWN_BAR}`));
+  console.log(
+    ok(
+      `    ✓ BUY expected on bar ${CROSS_UP_BAR}, SELL on bar ${CROSS_DOWN_BAR}`,
+    ),
+  );
 
   // --- 1. Infrastructure ---------------------------------------------------
   step(1, "Connect Redis + Mongo (the same checks the API boots with)");
   const REDIS_URL = process.env.REDIS_URL;
   const MONGO_URI = process.env.MONGO_URI;
-  if (!REDIS_URL || !MONGO_URI) throw new Error("REDIS_URL and MONGO_URI must be set");
+  if (!REDIS_URL || !MONGO_URI)
+    throw new Error("REDIS_URL and MONGO_URI must be set");
 
   const redis = createRedisConnections(REDIS_URL, (e, src) => {
     if (VERBOSE) console.log(dim(`    redis ${src}: ${e.message}`));
@@ -143,7 +157,10 @@ async function main() {
   // (Regime B), and a provider that silently drops SUBSCRIBE would look like
   // a pipeline bug rather than a platform limit.
   const gotMessage = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("no pub/sub message in 8s")), 8000);
+    const timer = setTimeout(
+      () => reject(new Error("no pub/sub message in 8s")),
+      8000,
+    );
     redis.subscriber.on("message", (ch, msg) => {
       if (ch === "proof:preflight") {
         clearTimeout(timer);
@@ -155,13 +172,18 @@ async function main() {
   await redis.publisher.publish("proof:preflight", "ping");
   await gotMessage;
   await redis.subscriber.unsubscribe("proof:preflight");
-  console.log(ok("    ✓ Redis Pub/Sub delivers (the projection chain can run)"));
+  console.log(
+    ok("    ✓ Redis Pub/Sub delivers (the projection chain can run)"),
+  );
 
   const mongo = await connectMongo(MONGO_URI);
   console.log(ok(`    ✓ Mongo connected (db: ${mongo.db.databaseName})`));
 
   // --- 2. Broker: real paper execution, injectable data --------------------
-  step(2, "Build the broker exactly as the composition root does in paper mode");
+  step(
+    2,
+    "Build the broker exactly as the composition root does in paper mode",
+  );
   const paper = new PaperBroker({
     readPrice: async (symbol) => {
       const val = await redis.client.get(hotPriceKey(symbol));
@@ -214,7 +236,11 @@ async function main() {
     mode: "paper",
   });
   await broker.connect();
-  console.log(ok("    ✓ startEngineRuntime() wired: MarketData → Indicators → Strategy → Risk → Order → Position → PnL"));
+  console.log(
+    ok(
+      "    ✓ startEngineRuntime() wired: MarketData → Indicators → Strategy → Risk → Order → Position → PnL",
+    ),
+  );
 
   const db = mongo.db;
   const cleanup = async () => {
@@ -235,7 +261,10 @@ async function main() {
 
   try {
     // --- 4. Session --------------------------------------------------------
-    step(4, "Open the session (the gate that used to refuse every paper order)");
+    step(
+      4,
+      "Open the session (the gate that used to refuse every paper order)",
+    );
     await runtime.syncSession(MARKET_OPEN_TS);
     const rawSession = await redis.client.get(hotSessionKey());
     console.log(`    hot:session raw          : ${rawSession}`);
@@ -275,7 +304,9 @@ async function main() {
       updatedAt: MARKET_OPEN_TS,
     });
     console.log(ok(`    ✓ ${STRATEGY_ID} enabled on ${SYMBOL}`));
-    console.log(`    working set now subscribed: ${JSON.stringify(subscribed)}`);
+    console.log(
+      `    working set now subscribed: ${JSON.stringify(subscribed)}`,
+    );
 
     // --- 6. Feed ticks -----------------------------------------------------
     step(6, "Inject ticks → candles → indicators → strategy → risk → order");
@@ -302,7 +333,9 @@ async function main() {
       symbol: SYMBOL,
       ltp: CLOSES[CLOSES.length - 1],
       vol_traded_today: 99_000,
-      exch_feed_time: Math.floor((MARKET_OPEN_TS + CLOSES.length * BAR + 1000) / 1000),
+      exch_feed_time: Math.floor(
+        (MARKET_OPEN_TS + CLOSES.length * BAR + 1000) / 1000,
+      ),
     });
 
     // --- 7. Wait for both orders -------------------------------------------
@@ -333,7 +366,9 @@ async function main() {
       .collection("positions")
       .find({ strategyId: STRATEGY_ID })
       .toArray();
-    const candles = await db.collection("candles").countDocuments({ symbol: SYMBOL });
+    const candles = await db
+      .collection("candles")
+      .countDocuments({ symbol: SYMBOL });
 
     console.log(`\n  Candles persisted     : ${candles}`);
     console.log(`  Signals               : ${signals.length}`);
@@ -344,7 +379,10 @@ async function main() {
     }
     console.log(`  Risk decisions        : ${riskLogs.length}`);
     for (const r of riskLogs) {
-      const tag = r.decision === "approved" ? ok("approved") : bad(`blocked (${r.failedCheck})`);
+      const tag =
+        r.decision === "approved"
+          ? ok("approved")
+          : bad(`blocked (${r.failedCheck})`);
       console.log(`    ${tag} ${r.reason ? dim(r.reason) : ""}`);
     }
     console.log(`  Orders                : ${orders.length}`);
@@ -360,8 +398,12 @@ async function main() {
         `    ${p.side} ${p.symbol} qty ${p.qty} avg ${p.avgEntryPrice.toFixed(4)} status ${p.status} realized ${p.realizedPnl.toFixed(2)}`,
       );
     }
-    console.log(`  Runtime realized PnL  : ${runtime.realizedPnl().toFixed(2)}`);
-    console.log(`  Runtime unrealized    : ${runtime.unrealizedPnl().toFixed(2)}`);
+    console.log(
+      `  Runtime realized PnL  : ${runtime.realizedPnl().toFixed(2)}`,
+    );
+    console.log(
+      `  Runtime unrealized    : ${runtime.unrealizedPnl().toFixed(2)}`,
+    );
 
     // --- 9. Verdict --------------------------------------------------------
     const buy = orders.find((o) => o.side === "BUY");
@@ -370,12 +412,18 @@ async function main() {
       ["candles were produced from ticks", candles > 0],
       ["a BUY signal reached risk", signals.some((s) => s.side === "BUY")],
       ["a SELL signal reached risk", signals.some((s) => s.side === "SELL")],
-      ["risk approved both", riskLogs.filter((r) => r.decision === "approved").length >= 2],
+      [
+        "risk approved both",
+        riskLogs.filter((r) => r.decision === "approved").length >= 2,
+      ],
       ["a BUY order was placed", Boolean(buy)],
       ["the BUY filled", buy?.status === "FILLED"],
       ["a SELL order was placed", Boolean(sell)],
       ["the SELL filled", sell?.status === "FILLED"],
-      ["a position opened and closed", positions.some((p) => p.status === "CLOSED")],
+      [
+        "a position opened and closed",
+        positions.some((p) => p.status === "CLOSED"),
+      ],
     ];
     console.log("\n\x1b[1m  VERDICT\x1b[0m");
     let allPassed = true;
@@ -385,7 +433,9 @@ async function main() {
     }
     console.log(
       allPassed
-        ? ok("\n  ✓ PROVEN: one BUY and one SELL executed through the production path.")
+        ? ok(
+            "\n  ✓ PROVEN: one BUY and one SELL executed through the production path.",
+          )
         : bad("\n  ✗ NOT PROVEN — see the failed checks above."),
     );
     process.exitCode = allPassed ? 0 : 1;

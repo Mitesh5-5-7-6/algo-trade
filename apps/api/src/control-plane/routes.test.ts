@@ -55,9 +55,17 @@ function fakeRuntime() {
     getOpenPositions: (): Position[] => [],
     realizedPnl: () => 250,
     unrealizedPnl: () => 40,
-    session: (): SessionContext => ({ phase: "open", minutesSinceOpen: 30, sessionOpenTs: 0 }),
+    session: (): SessionContext => ({
+      phase: "open",
+      minutesSinceOpen: 30,
+      sessionOpenTs: 0,
+    }),
     equityCurve: () => [{ ts: 1000, realizedPnl: 250, unrealizedPnl: 40 }],
-    brokerConnection: () => ({ state: "connected" as const, connected: true, since: 5000 }),
+    brokerConnection: () => ({
+      state: "connected" as const,
+      connected: true,
+      since: 5000,
+    }),
   };
   return { controls, calls, isTradingEnabled: () => tradingEnabled };
 }

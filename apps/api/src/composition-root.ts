@@ -116,7 +116,11 @@ export async function bootstrap(
     const meter = new RedisMeter();
     redis.client = meterRedis(redis.client, meter);
     redis.publisher = meterRedis(redis.publisher, meter);
-    stopMeter = startRedisMeterReport(meter, componentLogger(logger, "redis.meter"), meterMs);
+    stopMeter = startRedisMeterReport(
+      meter,
+      componentLogger(logger, "redis.meter"),
+      meterMs,
+    );
     log.info({ intervalMs: meterMs }, "redis command meter enabled");
   }
 

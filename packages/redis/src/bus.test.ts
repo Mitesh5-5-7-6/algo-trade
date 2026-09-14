@@ -53,7 +53,8 @@ function harness(options: EventBusOptions = {}) {
     subscribed,
     errors,
     /** Simulate Redis delivering a message back on the subscriber socket. */
-    deliver: (channel: string, message: string) => onMessage?.(channel, message),
+    deliver: (channel: string, message: string) =>
+      onMessage?.(channel, message),
     hasListener: () => onMessage !== undefined,
   };
 }
@@ -115,7 +116,9 @@ describe("EventBus — in-process delivery (the default)", () => {
   it("routes a rejected handler to onError without stalling the others", async () => {
     const h = harness();
     const after = vi.fn();
-    await h.bus.subscribe("MARKET_TICK", () => Promise.reject(new Error("boom")));
+    await h.bus.subscribe("MARKET_TICK", () =>
+      Promise.reject(new Error("boom")),
+    );
     await h.bus.subscribe("MARKET_TICK", after);
     await h.bus.publish("MARKET_TICK", TICK);
     await settle();
@@ -153,9 +156,10 @@ describe("EventBus — in-process delivery (the default)", () => {
     await h.bus.subscribe("MARKET_TICK", (event) => {
       received = event.payload;
     });
-    const mutable: { symbol: string; ltp: number; volume: number; ts: number } = {
-      ...TICK,
-    };
+    const mutable: { symbol: string; ltp: number; volume: number; ts: number } =
+      {
+        ...TICK,
+      };
     await h.bus.publish("MARKET_TICK", mutable);
     mutable.volume = 9999;
     await settle();

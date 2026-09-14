@@ -126,7 +126,8 @@ export function createRuntimeProjection(
       let realized = 0;
       for (const value of realizedByStrategy.values()) realized += value;
       let unrealized = 0;
-      for (const position of openPositions) unrealized += position.unrealizedPnl;
+      for (const position of openPositions)
+        unrealized += position.unrealizedPnl;
 
       snapshot = {
         openPositions,

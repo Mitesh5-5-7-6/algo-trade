@@ -21,13 +21,7 @@
  * Listed rather than widened to every verb: these are the methods the routes
  * use (see the control-plane route table), and nothing else needs allowing.
  */
-export const CORS_METHODS = [
-  "GET",
-  "HEAD",
-  "POST",
-  "PATCH",
-  "DELETE",
-] as const;
+export const CORS_METHODS = ["GET", "HEAD", "POST", "PATCH", "DELETE"] as const;
 
 /**
  * How long a browser may reuse one preflight result, in seconds.

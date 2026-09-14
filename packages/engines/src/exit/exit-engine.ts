@@ -85,7 +85,10 @@ export class ExitEngine {
         await this.exit(position, trigger, candle.close, candle.ts);
       }
     } catch (error) {
-      this.deps.onError(error, { where: "onCandleClosed", symbol: candle.symbol });
+      this.deps.onError(error, {
+        where: "onCandleClosed",
+        symbol: candle.symbol,
+      });
     }
   }
 

@@ -86,7 +86,10 @@ const HOT_KEY_TTL_SECONDS = 300;
 const FEED_SILENCE_MS = 60_000;
 
 /** The intervals the aggregator builds, and therefore the ones we can seed. */
-const MARKET_INTERVALS = ["1m", "5m"] as const satisfies readonly CandleInterval[];
+const MARKET_INTERVALS = [
+  "1m",
+  "5m",
+] as const satisfies readonly CandleInterval[];
 
 function parseHHMM(value: string): number {
   const [h, m] = value.split(":");
@@ -314,7 +317,12 @@ export async function startEngineRuntime(deps: {
     // an index has no tradable contract — but the market-bias gate cannot read
     // direction from instruments it does not receive.
     const symbols = [
-      ...new Set([...traded, ...settings.indexSymbols, ...trackedContracts]),
+      ...new Set([
+        ...traded,
+        ...settings.indexSymbols,
+        ...settings.breadthSymbols,
+        ...trackedContracts,
+      ]),
     ];
     await marketDataEngine.subscribe(symbols);
     if (symbols.length === 0) {
@@ -421,7 +429,7 @@ export async function startEngineRuntime(deps: {
         ),
     },
     indexSymbols: () => settings.indexSymbols,
-    breadthSymbols: () => deriveWorkingSet(enabledConfigs.values()),
+    breadthSymbols: () => settings.breadthSymbols,
     bars: CANDLE_WINDOW,
     onError,
   });
@@ -594,7 +602,8 @@ export async function startEngineRuntime(deps: {
               ),
             );
       for (const contract of contracts) {
-        if (contract === null || trackedContracts.has(contract.symbol)) continue;
+        if (contract === null || trackedContracts.has(contract.symbol))
+          continue;
         trackedContracts.add(contract.symbol);
         changed = true;
       }
@@ -662,7 +671,9 @@ export async function startEngineRuntime(deps: {
   for (const config of await strategiesRepo.findEnabled()) {
     enabledConfigs.set(config.strategyId, {
       symbols: config.symbols,
-      ...(config.riskRules === undefined ? {} : { riskRules: config.riskRules }),
+      ...(config.riskRules === undefined
+        ? {}
+        : { riskRules: config.riskRules }),
     });
     try {
       await runner.enable(config);

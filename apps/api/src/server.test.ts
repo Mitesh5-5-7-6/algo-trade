@@ -151,7 +151,8 @@ describe("framework errors keep their own status (not a blanket 500)", () => {
     // The transport stops complaining; the route names the missing fields.
     app = makeServer([]);
     app.post("/needs-body", (request) => {
-      if (request.body === undefined) throw new ValidationError("body required");
+      if (request.body === undefined)
+        throw new ValidationError("body required");
       return { ok: true };
     });
     const res = await app.inject({

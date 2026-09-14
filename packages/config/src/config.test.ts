@@ -140,8 +140,10 @@ describe("FYERS redirect URL (must match the route apps/api serves)", () => {
 
 describe("FYERS_WEBHOOK_SECRET", () => {
   it("reads an empty value as unset, not as a zero-length secret", () => {
-    expect(loadConfig({ ...validEnv, FYERS_WEBHOOK_SECRET: "" })
-      .FYERS_WEBHOOK_SECRET).toBeUndefined();
+    expect(
+      loadConfig({ ...validEnv, FYERS_WEBHOOK_SECRET: "" })
+        .FYERS_WEBHOOK_SECRET,
+    ).toBeUndefined();
   });
 
   it("rejects a secret too short to be worth having", () => {

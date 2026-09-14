@@ -3,6 +3,7 @@
 // Boundary bans (§4: event literals, cross-package infra imports) land as
 // custom rules per the 25 §10 roadmap once the packages they police exist.
 import js from "@eslint/js";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -46,5 +47,15 @@ export default tseslint.config(
   {
     files: ["**/*.js", "**/*.mjs", "**/*.cjs"],
     ...tseslint.configs.disableTypeChecked,
+    /**
+     * Plain-JS files here are Node scripts — the `.probe/*.mjs` diagnostics
+     * and the like. Without Node's globals declared, `no-undef` flags every
+     * `console` and `process` in them, which buried the one real finding in
+     * 87 lines of noise. They are still linted; they are just linted as what
+     * they are.
+     */
+    languageOptions: {
+      globals: globals.node,
+    },
   },
 );

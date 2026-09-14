@@ -45,7 +45,10 @@ export async function loadInstrumentMaster(
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) {
-        log.warn({ url, status: response.status }, "symbol master fetch failed");
+        log.warn(
+          { url, status: response.status },
+          "symbol master fetch failed",
+        );
         continue;
       }
       const { instruments, skipped } = parseInstrumentFile(
@@ -72,6 +75,9 @@ export async function loadInstrumentMaster(
     return EMPTY;
   }
   const master = createInstrumentMaster(all);
-  log.info({ instruments: master.size, skipped: totalSkipped }, "symbol master ready");
+  log.info(
+    { instruments: master.size, skipped: totalSkipped },
+    "symbol master ready",
+  );
   return master;
 }

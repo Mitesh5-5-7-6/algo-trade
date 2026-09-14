@@ -14,6 +14,9 @@ importers:
       eslint:
         specifier: ^9.18.0
         version: 9.39.4
+      globals:
+        specifier: ^14.0.0
+        version: 14.0.0
       prettier:
         specifier: ^3.4.2
         version: 3.9.4

@@ -2,7 +2,12 @@
 
 import { EquityCurve } from "@/components/equity-curve";
 import { useDashboardData } from "@/lib/live";
-import { formatIN, formatINR, formatSignedINR, formatTimeIST } from "@/lib/format";
+import {
+  formatIN,
+  formatINR,
+  formatSignedINR,
+  formatTimeIST,
+} from "@/lib/format";
 import { buildDailyTrades } from "@/lib/trades";
 
 /** P&L — realized vs unrealized, per strategy and global (plan/06 §4, plan/13 §5). */
@@ -17,7 +22,7 @@ export default function PnlPage() {
     unrealizedByStrategy.set(
       position.strategyId,
       (unrealizedByStrategy.get(position.strategyId) ?? 0) +
-      position.unrealizedPnl,
+        position.unrealizedPnl,
     );
   }
 
@@ -100,7 +105,8 @@ export default function PnlPage() {
           <div>
             <p className="panel-title">Daily trade ledger</p>
             <p className="panel-subtitle">
-              Completed BUY to SELL trades. Open positions stay in unrealized P&L.
+              Completed BUY to SELL trades. Open positions stay in unrealized
+              P&L.
             </p>
           </div>
           <span className="trade-count mono">{dailyTrades.length} trades</span>
@@ -135,13 +141,18 @@ export default function PnlPage() {
                     <td className="mono">{index + 1}</td>
                     <td>
                       <div className="trade-details">
-                        <span className="trade-leg buy">BUY {trade.symbol.replace("NSE:", "")}</span>
+                        <span className="trade-leg buy">
+                          BUY {trade.symbol.replace("NSE:", "")}
+                        </span>
                         <span className="trade-arrow">-&gt;</span>
-                        <span className="trade-leg sell">SELL {trade.symbol.replace("NSE:", "")}</span>
+                        <span className="trade-leg sell">
+                          SELL {trade.symbol.replace("NSE:", "")}
+                        </span>
                       </div>
                     </td>
                     <td className="mono">
-                      {formatTimeIST(trade.openedAt, false)} - {formatTimeIST(trade.closedAt, false)}
+                      {formatTimeIST(trade.openedAt, false)} -{" "}
+                      {formatTimeIST(trade.closedAt, false)}
                     </td>
                     <td className="num">{formatIN(trade.qty)}</td>
                     <td className="num">{trade.buyPrice.toFixed(2)}</td>
@@ -153,7 +164,9 @@ export default function PnlPage() {
                     <td className={`num ${trade.pnl < 0 ? "neg" : "pos"}`}>
                       {formatSignedINR(trade.pnl)}
                     </td>
-                    <td>{strategyNames.get(trade.strategyId) ?? trade.strategyId}</td>
+                    <td>
+                      {strategyNames.get(trade.strategyId) ?? trade.strategyId}
+                    </td>
                     <td className="trade-mode">{trade.mode}</td>
                   </tr>
                 ))

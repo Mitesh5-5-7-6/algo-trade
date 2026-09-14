@@ -36,9 +36,31 @@ export const GlobalSettingsSchema = z.object({
    *
    * Defaulted, so settings rows written before it existed still parse.
    */
-  marketHolidays: z
-    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
-    .default([]),
+  marketHolidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).default([]),
+  /**
+   * The basket breadth is measured over — subscribed for DATA only.
+   *
+   * Breadth used to be computed over whatever the enabled strategies traded.
+   * That works while equities are being traded and collapses the moment they
+   * are not: an index-options-only setup leaves ONE symbol in the basket, so
+   * "advancing" is 1-of-1, breadth reads BULLISH on any up day, and the gate
+   * silently refuses every put. Participation has to be measured across a
+   * basket that exists whether or not anything is trading it.
+   *
+   * Defaulted, so settings rows written before it existed still parse.
+   */
+  breadthSymbols: z
+    .array(z.string().min(1))
+    .default([
+      "NSE:RELIANCE-EQ",
+      "NSE:HDFCBANK-EQ",
+      "NSE:ICICIBANK-EQ",
+      "NSE:INFY-EQ",
+      "NSE:TCS-EQ",
+      "NSE:SBIN-EQ",
+      "NSE:AXISBANK-EQ",
+      "NSE:LT-EQ",
+    ]),
   /**
    * Symbols subscribed for **data only** — never traded (plan/17 §7).
    *
@@ -73,6 +95,16 @@ export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   marketHours: { open: "09:15", close: "15:30", squareOff: "15:12" },
   tradingEnabled: false,
   marketHolidays: [],
+  breadthSymbols: [
+    "NSE:RELIANCE-EQ",
+    "NSE:HDFCBANK-EQ",
+    "NSE:ICICIBANK-EQ",
+    "NSE:INFY-EQ",
+    "NSE:TCS-EQ",
+    "NSE:SBIN-EQ",
+    "NSE:AXISBANK-EQ",
+    "NSE:LT-EQ",
+  ],
   indexSymbols: ["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"],
   updatedAt: 0,
 };

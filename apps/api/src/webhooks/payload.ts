@@ -18,11 +18,7 @@
 
 /** What the callback is telling us about. */
 export type FyersWebhookKind =
-  | "order"
-  | "trade"
-  | "position"
-  | "ping"
-  | "unknown";
+  "order" | "trade" | "position" | "ping" | "unknown";
 
 /** Normalized order state. `unknown` is honest, not a default. */
 export type FyersOrderStatus =
@@ -106,7 +102,8 @@ function asString(value: unknown): string | undefined {
 
 /** Numeric coercion that refuses NaN/Infinity — a bad number is no number. */
 function asNumber(value: unknown): number | undefined {
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number")
+    return Number.isFinite(value) ? value : undefined;
   if (typeof value === "string" && value.trim().length > 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
@@ -206,7 +203,9 @@ export function normalizeFyersWebhook(
     side: SIDE_CODES.get(String(pick(subject, ["side", "transactionType"]))),
     status: STATUS_CODES.get(String(pick(subject, ["status", "orderStatus"]))),
     qty: asNumber(pick(subject, ["qty", "quantity", "orderQty"])),
-    filledQty: asNumber(pick(subject, ["filledQty", "filled_qty", "tradedQty"])),
+    filledQty: asNumber(
+      pick(subject, ["filledQty", "filled_qty", "tradedQty"]),
+    ),
     price: asNumber(
       pick(subject, ["tradedPrice", "tradePrice", "limitPrice", "price"]),
     ),

@@ -135,7 +135,10 @@ export function registerFyersAuthRoutes(
       try {
         await deps.onTokenStored();
       } catch (error) {
-        request.log.error({ err: error }, "broker reconnect after token store failed");
+        request.log.error(
+          { err: error },
+          "broker reconnect after token store failed",
+        );
       }
     }
 

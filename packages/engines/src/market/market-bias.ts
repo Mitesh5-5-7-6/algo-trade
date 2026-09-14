@@ -20,12 +20,23 @@ export interface MarketBiasConfig {
   breadthThreshold?: number;
   /** Minimum bars before an index is read at all. */
   minBars?: number;
+  /**
+   * Instruments that must have moved before breadth claims a direction.
+   *
+   * Participation measured across one or two names is not participation. With
+   * a single symbol in the basket "advancing" is 1-of-1, breadth reads BULLISH
+   * on any up day, and — because the gate acts on agreement — every short is
+   * silently refused. Below this count breadth is NEUTRAL, which blocks
+   * nothing, rather than confidently wrong.
+   */
+  minBreadthSymbols?: number;
 }
 
 const DEFAULTS = {
   emaPeriod: 21,
   breadthThreshold: 0.6,
   minBars: 5,
+  minBreadthSymbols: 4,
 };
 
 /** Plain EMA over closes, seeded with the first close (plan/18 §3). */
@@ -96,11 +107,7 @@ export function readIndex(
           : "NEUTRAL";
 
   const bias =
-    session === undefined
-      ? byTrend
-      : byTrend === byVwap
-        ? byTrend
-        : "NEUTRAL";
+    session === undefined ? byTrend : byTrend === byVwap ? byTrend : "NEUTRAL";
 
   return {
     symbol,
@@ -130,7 +137,13 @@ function combineIndices(reads: readonly IndexRead[]): MarketBias {
 function readBreadth(
   series: ReadonlyMap<string, readonly Candle[]>,
   threshold: number,
-): { bias: MarketBias; advancing: number; declining: number; unchanged: number } {
+  minSymbols: number,
+): {
+  bias: MarketBias;
+  advancing: number;
+  declining: number;
+  unchanged: number;
+} {
   let advancing = 0;
   let declining = 0;
   let unchanged = 0;
@@ -143,7 +156,8 @@ function readBreadth(
     else unchanged += 1;
   }
   const decided = advancing + declining;
-  if (decided === 0) {
+  // Too small a sample is not evidence — see `minBreadthSymbols`.
+  if (decided < minSymbols) {
     return { bias: "NEUTRAL", advancing, declining, unchanged };
   }
   const upShare = advancing / decided;
@@ -178,7 +192,11 @@ export function computeMarketView(input: {
     if (read !== null) indices.push(read);
   }
   const indexBias = combineIndices(indices);
-  const breadth = readBreadth(input.breadthCandles, threshold);
+  const breadth = readBreadth(
+    input.breadthCandles,
+    threshold,
+    config.minBreadthSymbols ?? DEFAULTS.minBreadthSymbols,
+  );
 
   if (indices.length === 0 && breadth.advancing + breadth.declining === 0) {
     return { ...UNKNOWN_MARKET_VIEW, ts: input.now };

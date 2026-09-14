@@ -1,10 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { ApiServer } from "../server.js";
 import { UnauthorizedError } from "../errors.js";
-import {
-  normalizeFyersWebhook,
-  type FyersWebhookEvent,
-} from "./payload.js";
+import { normalizeFyersWebhook, type FyersWebhookEvent } from "./payload.js";
 
 /** The one public path for FYERS callbacks. Mirrored by the edge function. */
 export const FYERS_WEBHOOK_PATH = "/webhooks/fyers";
@@ -33,7 +30,10 @@ export interface FyersWebhookDeps {
  * through response timing; `timingSafeEqual` also throws on a length mismatch,
  * so lengths are equalized by comparing digest-length buffers of both.
  */
-function secretMatches(expected: string, presented: string | undefined): boolean {
+function secretMatches(
+  expected: string,
+  presented: string | undefined,
+): boolean {
   if (presented === undefined) return false;
   const a = Buffer.from(expected, "utf8");
   const b = Buffer.from(presented, "utf8");

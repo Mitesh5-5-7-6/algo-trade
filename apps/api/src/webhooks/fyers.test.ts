@@ -103,9 +103,9 @@ describe("normalizeFyersWebhook (plan/04 §4 boundary)", () => {
   });
 
   it("classifies position and trade payloads apart from orders", () => {
-    expect(normalizeFyersWebhook({ d: { netQty: 5, symbol: "X" } }, 1).kind).toBe(
-      "position",
-    );
+    expect(
+      normalizeFyersWebhook({ d: { netQty: 5, symbol: "X" } }, 1).kind,
+    ).toBe("position");
     expect(
       normalizeFyersWebhook({ trades: { tradeNumber: "77", qty: 1 } }, 1).kind,
     ).toBe("trade");

@@ -296,11 +296,14 @@ export class FyersBroker implements Broker {
 
     try {
       const headers = await this.getHeaders(token);
-      const response = await fetch("https://api-t1.fyers.in/api/v3/orders/sync", {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
+      const response = await fetch(
+        "https://api-t1.fyers.in/api/v3/orders/sync",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        },
+      );
 
       const data = (await response.json()) as FyersResponse;
 
@@ -422,7 +425,11 @@ export class FyersBroker implements Broker {
 
     let socket: FyersOrderSocketInstance;
     try {
-      socket = new fyersOrderSocket(`${this.deps.appId}:${accessToken}`, "", false);
+      socket = new fyersOrderSocket(
+        `${this.deps.appId}:${accessToken}`,
+        "",
+        false,
+      );
     } catch {
       // A bad token throws while the SDK decodes it. The data socket reports
       // the same fault through the connection state; nothing to add here.

@@ -58,7 +58,9 @@ describe("parseInstrumentRow (columns verified against live data)", () => {
     expect(
       parseInstrumentRow(BANKNIFTY_FUT.replace(",30,0.2,", ",notanumber,0.2,")),
     ).toBeNull();
-    expect(parseInstrumentRow(BANKNIFTY_FUT.replace(",30,0.2,", ",0,0.2,"))).toBeNull();
+    expect(
+      parseInstrumentRow(BANKNIFTY_FUT.replace(",30,0.2,", ",0,0.2,")),
+    ).toBeNull();
   });
 
   it("counts skipped rows so a layout change is visible", () => {
@@ -150,12 +152,12 @@ describe("instrument selection", () => {
   });
 
   it("moves the offset out-of-the-money — up for calls, down for puts", () => {
-    expect(
-      master.nearestOption("NIFTY", 24_500, "CE", NOW, 1)?.strike,
-    ).toBe(24_600);
-    expect(
-      master.nearestOption("NIFTY", 24_600, "PE", NOW, 1)?.strike,
-    ).toBe(24_500);
+    expect(master.nearestOption("NIFTY", 24_500, "CE", NOW, 1)?.strike).toBe(
+      24_600,
+    );
+    expect(master.nearestOption("NIFTY", 24_600, "PE", NOW, 1)?.strike).toBe(
+      24_500,
+    );
   });
 
   it("returns null rather than a wrong strike when the offset runs off the chain", () => {

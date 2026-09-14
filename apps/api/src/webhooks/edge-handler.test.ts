@@ -115,14 +115,11 @@ describe("edge function /api/webhooks/fyers", () => {
     vi.stubEnv("FYERS_WEBHOOK_SECRET", secret);
     vi.stubEnv("REDIS_URL", "");
 
-    const res = await fetch(
-      `${origin}/api/webhooks/fyers?token=${secret}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: ORDER_UPDATE,
-      },
-    );
+    const res = await fetch(`${origin}/api/webhooks/fyers?token=${secret}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: ORDER_UPDATE,
+    });
 
     expect(res.status).toBe(200);
   });

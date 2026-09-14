@@ -53,8 +53,7 @@ function context(opts: BarOpts): MarketContext {
     // `minutesSinceOpen` is when the bar CLOSED; a bucket is labelled by its
     // start, so back off one interval.
     ts:
-      sessionOpenTs +
-      (minutesSinceOpen - INTERVAL_MINUTES[interval]) * 60_000,
+      sessionOpenTs + (minutesSinceOpen - INTERVAL_MINUTES[interval]) * 60_000,
   };
   return {
     symbol: SYM,

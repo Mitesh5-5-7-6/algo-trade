@@ -297,13 +297,16 @@ describe("reconcile completes the projection chain (crash recovery)", () => {
 });
 
 describe("order mode is injected, not assumed", () => {
-  it.each(["live", "paper"] as const)("stamps a %s order correctly", async (mode) => {
-    // Hardcoded "paper" meant a live FYERS execution persisted a row saying
-    // "paper" — the audit trail contradicting the money that actually moved.
-    const { manager, orders } = harness({ mode });
-    await manager.place(signal(), approved);
-    expect([...orders.values()][0]?.mode).toBe(mode);
-  });
+  it.each(["live", "paper"] as const)(
+    "stamps a %s order correctly",
+    async (mode) => {
+      // Hardcoded "paper" meant a live FYERS execution persisted a row saying
+      // "paper" — the audit trail contradicting the money that actually moved.
+      const { manager, orders } = harness({ mode });
+      await manager.place(signal(), approved);
+      expect([...orders.values()][0]?.mode).toBe(mode);
+    },
+  );
 });
 
 describe("a rejection explains itself (plan/12 §5)", () => {
@@ -327,7 +330,9 @@ describe("a rejection explains itself (plan/12 §5)", () => {
   it("persists the broker's reason on the order row", async () => {
     // It used to be returned to the caller and dropped, leaving a REJECTED row
     // with no explanation anywhere — database, events, or logs.
-    const { manager, orders } = harness({ broker: rejectingBroker(LOT, "-99") });
+    const { manager, orders } = harness({
+      broker: rejectingBroker(LOT, "-99"),
+    });
     await manager.place(signal(), approved);
 
     const stored = [...orders.values()][0];
@@ -503,10 +508,7 @@ describe("the decision price reaches the broker (plan/19 §5)", () => {
     // offset, and the adapter refuses the order outright.
     const broker = new ScriptedFakeBroker({ defaultFillPrice: 100 });
     const h = harness({ broker });
-    await h.manager.place(
-      signal({ stopLoss: 95, target: 110 }),
-      approved,
-    );
+    await h.manager.place(signal({ stopLoss: 95, target: 110 }), approved);
 
     expect(broker.submitted[0]).toMatchObject({
       type: "MARKET",

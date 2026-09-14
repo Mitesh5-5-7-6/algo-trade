@@ -8,21 +8,21 @@ patterns, strategy behavior, and actual BUY/SELL outcomes.
 
 The AI should discover:
 
--   Why a particular market pattern worked.
--   Which strategies worked with that pattern.
--   Which strategies failed with the same pattern.
--   Under which market conditions each strategy works or fails.
--   Whether the same pattern has appeared historically.
--   What strategy improvements are worth testing.
+- Why a particular market pattern worked.
+- Which strategies worked with that pattern.
+- Which strategies failed with the same pattern.
+- Under which market conditions each strategy works or fails.
+- Whether the same pattern has appeared historically.
+- What strategy improvements are worth testing.
 
 This is **not** a generic daily P&L report and not an LLM directly
 controlling the broker.
 
-------------------------------------------------------------------------
+---
 
 ## 2. Core Learning Loop
 
-``` text
+```text
 Market Data
     ↓
 5-Minute Candle Analysis
@@ -52,7 +52,7 @@ Walk-Forward Validation
 Candidate Strategy Version
 ```
 
-------------------------------------------------------------------------
+---
 
 ## 3. Daily R&D: What Must Happen
 
@@ -78,7 +78,7 @@ For every trading day and instrument:
 
 Instead of:
 
-``` text
+```text
 8 trades
 5 wins
 3 losses
@@ -87,7 +87,7 @@ Instead of:
 
 the R&D record should contain:
 
-``` text
+```text
 Pattern: Bullish breakout
 
 Before breakout:
@@ -115,7 +115,7 @@ for mean-reversion strategies.
 
 The conclusion must be based on measurable stored evidence.
 
-------------------------------------------------------------------------
+---
 
 ## 4. Pattern → Strategy → Outcome Learning
 
@@ -123,13 +123,13 @@ This is the most important part of the R&D system.
 
 The system must not learn only:
 
-``` text
+```text
 EMA = profitable
 ```
 
 It should learn:
 
-``` text
+```text
 Pattern A
     +
 Market Context
@@ -141,7 +141,7 @@ Outcome
 
 Example:
 
-``` text
+```text
 Pattern A
 
 ORB          → 78% profitable
@@ -155,7 +155,7 @@ Then investigate **why**.
 
 Possible explanation:
 
-``` text
+```text
 Pattern A:
 - Strong trend
 - Volume expansion
@@ -171,7 +171,7 @@ The same system must learn failure patterns.
 
 Example:
 
-``` text
+```text
 EMA BUY
 
 EMA crossover
@@ -196,7 +196,7 @@ After enough historical examples, this becomes a research hypothesis:
 
 It must then be tested rather than automatically accepted.
 
-------------------------------------------------------------------------
+---
 
 ## 5. Historical Learning Windows
 
@@ -204,18 +204,18 @@ It must then be tested rather than automatically accepted.
 
 Analyze:
 
--   Every 5-minute candle.
--   Detected patterns.
--   Strategy signals.
--   Actual orders.
--   Entry/exit behavior.
--   Profitable setups.
--   Losing setups.
--   Chart examples.
+- Every 5-minute candle.
+- Detected patterns.
+- Strategy signals.
+- Actual orders.
+- Entry/exit behavior.
+- Profitable setups.
+- Losing setups.
+- Chart examples.
 
 Output:
 
-``` text
+```text
 Daily Research Record
 +
 Pattern Examples
@@ -231,15 +231,15 @@ Combine approximately one trading week of data.
 
 Questions:
 
--   Which patterns appeared repeatedly?
--   Which strategies worked with them?
--   Which strategies repeatedly failed?
--   What conditions caused failures?
--   Are the same findings appearing across multiple days?
+- Which patterns appeared repeatedly?
+- Which strategies worked with them?
+- Which strategies repeatedly failed?
+- What conditions caused failures?
+- Are the same findings appearing across multiple days?
 
 Output:
 
-``` text
+```text
 Weekly Pattern/Strategy Relationships
 +
 Recurring Findings
@@ -253,15 +253,15 @@ Analyze the full month.
 
 Questions:
 
--   Which strategy weaknesses repeatedly appeared?
--   Which patterns were most profitable?
--   Which patterns caused the largest losses?
--   Did strategy behavior change between market regimes?
--   Which hypotheses deserve backtesting?
+- Which strategy weaknesses repeatedly appeared?
+- Which patterns were most profitable?
+- Which patterns caused the largest losses?
+- Did strategy behavior change between market regimes?
+- Which hypotheses deserve backtesting?
 
 Output:
 
-``` text
+```text
 Monthly R&D Report
 +
 Strategy Weaknesses
@@ -277,14 +277,14 @@ Use a larger rolling dataset.
 
 Questions:
 
--   Are monthly findings still valid?
--   Do they work across different market regimes?
--   Are the findings robust or overfit?
--   Does a proposed strategy improvement survive different periods?
+- Are monthly findings still valid?
+- Do they work across different market regimes?
+- Are the findings robust or overfit?
+- Does a proposed strategy improvement survive different periods?
 
 Output:
 
-``` text
+```text
 Long-Term Pattern Knowledge
 +
 Strategy Robustness Analysis
@@ -292,7 +292,7 @@ Strategy Robustness Analysis
 Research Candidates
 ```
 
-------------------------------------------------------------------------
+---
 
 ## 6. Chart and Visual Memory
 
@@ -300,7 +300,7 @@ Visual evidence is a first-class R&D artifact.
 
 For important patterns, store:
 
-``` text
+```text
 Full session chart
         +
 Pattern-specific chart crop
@@ -318,7 +318,7 @@ Outcome
 
 Example storage:
 
-``` text
+```text
 research/
 └── 2026/
     └── 09/
@@ -335,23 +335,23 @@ research data.
 
 This allows future retrieval such as:
 
-``` text
+```text
 Show profitable ORB breakout examples
 from the last 3 months.
 ```
 
 The system should retrieve both:
 
--   Structured historical evidence.
--   Actual chart examples.
+- Structured historical evidence.
+- Actual chart examples.
 
-------------------------------------------------------------------------
+---
 
 ## 7. Data Model
 
 At minimum, the R&D system should eventually contain:
 
-``` text
+```text
 market_candles
 market_features
 detected_patterns
@@ -373,7 +373,7 @@ research_artifacts
 
 ### Critical relationship
 
-``` text
+```text
 Pattern
    ↓
 Pattern Occurrence
@@ -393,11 +393,11 @@ Outcome
 
 This relationship is the foundation of the R&D engine.
 
-------------------------------------------------------------------------
+---
 
 ## 8. Example Research Record
 
-``` json
+```json
 {
   "date": "2026-09-09",
   "symbol": "NIFTY",
@@ -444,13 +444,11 @@ This relationship is the foundation of the R&D engine.
     "hypotheses": []
   },
 
-  "artifacts": [
-    "pattern-P027.png"
-  ]
+  "artifacts": ["pattern-P027.png"]
 }
 ```
 
-------------------------------------------------------------------------
+---
 
 ## 9. AI Agent Responsibilities
 
@@ -461,10 +459,10 @@ responsibilities:
 
 Reads:
 
--   Candles
--   Indicators
--   Market features
--   Historical context
+- Candles
+- Indicators
+- Market features
+- Historical context
 
 Produces structured market observations.
 
@@ -472,20 +470,20 @@ Produces structured market observations.
 
 Finds:
 
--   Breakouts
--   Rejections
--   Reversals
--   Consolidations
--   Trend structures
--   Volume patterns
--   Repeated candle structures
--   Other statistically meaningful patterns
+- Breakouts
+- Rejections
+- Reversals
+- Consolidations
+- Trend structures
+- Volume patterns
+- Repeated candle structures
+- Other statistically meaningful patterns
 
 ### Trade Analysis Agent
 
 Connects:
 
-``` text
+```text
 Pattern
 → Signal
 → Order
@@ -508,16 +506,16 @@ Generates candidate strategy improvements.
 
 Creates:
 
--   Daily research
--   Weekly research
--   Monthly research
--   3-month research
+- Daily research
+- Weekly research
+- Monthly research
+- 3-month research
 
-------------------------------------------------------------------------
+---
 
 ## 10. Recommended Architecture
 
-``` text
+```text
 Next.js Dashboard
         ↓
 Node.js / Fastify API
@@ -549,7 +547,7 @@ LLM / AI Agent
 Use LangGraph when the workflow becomes multi-step/stateful, for
 example:
 
-``` text
+```text
 Retrieve data
     ↓
 Analyze market
@@ -582,27 +580,27 @@ First build a clean dataset.
 
 Later, specialized models could handle tasks such as:
 
--   Market-regime classification.
--   Pattern classification.
--   News classification.
--   Strategy ranking.
+- Market-regime classification.
+- Pattern classification.
+- News classification.
+- Strategy ranking.
 
 ### LLM
 
 Use the LLM primarily for:
 
--   Research reasoning.
--   Explanation.
--   Hypothesis generation.
--   Historical research synthesis.
+- Research reasoning.
+- Explanation.
+- Hypothesis generation.
+- Historical research synthesis.
 
-------------------------------------------------------------------------
+---
 
 ## 11. Strategy Improvement Rules
 
 The AI can propose:
 
-``` text
+```text
 EMA v1
     ↓
 Observed repeated failure
@@ -617,7 +615,7 @@ But the AI must NOT automatically decide that v2 is better.
 
 Validation must follow:
 
-``` text
+```text
 Candidate Strategy
        ↓
 Historical Backtest
@@ -641,20 +639,20 @@ Strategy Approval
 
 Evaluate more than win rate:
 
--   Expectancy
--   Profit factor
--   Max drawdown
--   Sharpe/Sortino where appropriate
--   Trade count
--   Stability
--   Slippage sensitivity
--   Transaction costs
--   Performance across market regimes
--   Out-of-sample performance
+- Expectancy
+- Profit factor
+- Max drawdown
+- Sharpe/Sortino where appropriate
+- Trade count
+- Stability
+- Slippage sensitivity
+- Transaction costs
+- Performance across market regimes
+- Out-of-sample performance
 
 Never promote a strategy because of one good day or a small sample.
 
-------------------------------------------------------------------------
+---
 
 ## 12. Implementation Phases
 
@@ -662,76 +660,76 @@ Never promote a strategy because of one good day or a small sample.
 
 Build:
 
--   5-minute candle storage.
--   Market feature storage.
--   Pattern schema.
--   Strategy evaluation schema.
--   Trade linkage.
--   Research artifact schema.
+- 5-minute candle storage.
+- Market feature storage.
+- Pattern schema.
+- Strategy evaluation schema.
+- Trade linkage.
+- Research artifact schema.
 
 ### Phase 2 --- Daily R&D Engine
 
 Build:
 
--   Candle-by-candle analysis.
--   Pattern detection.
--   Strategy mapping.
--   Trade analysis.
--   Daily research generation.
+- Candle-by-candle analysis.
+- Pattern detection.
+- Strategy mapping.
+- Trade analysis.
+- Daily research generation.
 
 ### Phase 3 --- Visual Research
 
 Build:
 
--   Full-session charts.
--   Pattern crops.
--   Entry/exit markers.
--   Pattern snapshots.
--   Research artifact storage.
--   Dashboard viewer.
+- Full-session charts.
+- Pattern crops.
+- Entry/exit markers.
+- Pattern snapshots.
+- Research artifact storage.
+- Dashboard viewer.
 
 ### Phase 4 --- Historical Learning
 
 Build:
 
--   Weekly aggregation.
--   Monthly aggregation.
--   3-month aggregation.
--   Pattern/strategy statistics.
--   Recurring pattern detection.
+- Weekly aggregation.
+- Monthly aggregation.
+- 3-month aggregation.
+- Pattern/strategy statistics.
+- Recurring pattern detection.
 
 ### Phase 5 --- AI Agent + RAG
 
 Build:
 
--   Tool calling.
--   Research retrieval.
--   Structured AI analysis.
--   R&D reports.
--   Historical pattern retrieval.
+- Tool calling.
+- Research retrieval.
+- Structured AI analysis.
+- R&D reports.
+- Historical pattern retrieval.
 
 ### Phase 6 --- Strategy Research
 
 Build:
 
--   Research hypotheses.
--   Candidate strategy generation.
--   Experiment tracking.
--   Strategy comparison.
+- Research hypotheses.
+- Candidate strategy generation.
+- Experiment tracking.
+- Strategy comparison.
 
 ### Phase 7 --- Validation
 
 Build:
 
--   Backtesting.
--   Walk-forward testing.
--   Robustness checks.
--   Risk gates.
--   Strategy versioning.
+- Backtesting.
+- Walk-forward testing.
+- Robustness checks.
+- Risk gates.
+- Strategy versioning.
 
 ### Phase 8 --- Continuous Feedback
 
-``` text
+```text
 Production / Paper Trading
         ↓
 New Market Data
@@ -749,7 +747,7 @@ Validation
 Improved Candidate
 ```
 
-------------------------------------------------------------------------
+---
 
 # 13. Tomorrow's First Implementation Plan
 
@@ -762,24 +760,24 @@ foundation around the data already available.
 
 Identify the current:
 
--   Market-data flow.
--   5-minute candle flow.
--   Indicators.
--   Strategy engine.
--   Signals.
--   Orders.
--   Positions.
--   Trades.
--   P&L.
--   Database repositories.
--   Redis/event system.
--   WebSocket system.
+- Market-data flow.
+- 5-minute candle flow.
+- Indicators.
+- Strategy engine.
+- Signals.
+- Orders.
+- Positions.
+- Trades.
+- P&L.
+- Database repositories.
+- Redis/event system.
+- WebSocket system.
 
 ### Task 2 --- Define R&D Schemas
 
 Create canonical models for:
 
-``` text
+```text
 Candle
 MarketFeature
 Pattern
@@ -795,7 +793,7 @@ ResearchHypothesis
 
 Every actual trade must be traceable to:
 
-``` text
+```text
 Symbol
 +
 Timeframe
@@ -824,7 +822,7 @@ trading behavior.
 
 Take one complete trading day and prove:
 
-``` text
+```text
 5m candles
     ↓
 Pattern detection
@@ -842,7 +840,7 @@ Research record
 
 Create at least:
 
-``` text
+```text
 1 full-session chart
 +
 1 important pattern snapshot
@@ -858,7 +856,7 @@ The same research should be reproducible from the stored data.
 
 Support queries such as:
 
-``` text
+```text
 Find profitable ORB patterns.
 
 Find EMA failures.
@@ -874,7 +872,7 @@ Show chart examples of successful breakout patterns.
 
 Once the data foundation works:
 
-``` text
+```text
 Structured R&D Data
         ↓
 Tools
@@ -884,36 +882,36 @@ RAG
 AI Research Agent
 ```
 
-------------------------------------------------------------------------
+---
 
 # 14. First-Version Definition of Done
 
 The first R&D version is complete when the system can:
 
--   Reconstruct a historical trading day using 5-minute candles.
--   Analyze the candle sequence.
--   Detect/store meaningful patterns.
--   Store the market context surrounding each pattern.
--   Identify which strategies generated signals.
--   Link actual BUY/SELL trades to the relevant market window.
--   Determine what happened after the signal.
--   Store successful and failed pattern examples.
--   Generate chart snapshots.
--   Store structured research and visual artifacts together.
--   Generate a daily R&D report.
--   Aggregate daily research into weekly/monthly/3-month research.
--   Retrieve historical patterns and their outcomes.
--   Generate research hypotheses without changing production strategy.
--   Reproduce the research from stored data.
+- Reconstruct a historical trading day using 5-minute candles.
+- Analyze the candle sequence.
+- Detect/store meaningful patterns.
+- Store the market context surrounding each pattern.
+- Identify which strategies generated signals.
+- Link actual BUY/SELL trades to the relevant market window.
+- Determine what happened after the signal.
+- Store successful and failed pattern examples.
+- Generate chart snapshots.
+- Store structured research and visual artifacts together.
+- Generate a daily R&D report.
+- Aggregate daily research into weekly/monthly/3-month research.
+- Retrieve historical patterns and their outcomes.
+- Generate research hypotheses without changing production strategy.
+- Reproduce the research from stored data.
 
-------------------------------------------------------------------------
+---
 
 # 15. Final Vision
 
 The Algo Trade AI/R&D system should eventually behave like a
 continuously growing research laboratory:
 
-``` text
+```text
 OBSERVE
    ↓
 RECORD
@@ -937,7 +935,7 @@ OBSERVE AGAIN
 
 The most valuable long-term dataset is:
 
-``` text
+```text
 5m Candle Sequence
 +
 Market Context
@@ -968,7 +966,7 @@ This allows the system to eventually answer questions such as:
 That is the foundation for a genuinely useful AI-assisted trading R&D
 system.
 
-------------------------------------------------------------------------
+---
 
 ## Tomorrow's priority
 
@@ -977,7 +975,7 @@ the AI autonomous.**
 
 Start with:
 
-``` text
+```text
 5m historical data
         ↓
 Pattern dataset

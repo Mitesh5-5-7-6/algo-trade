@@ -22,7 +22,10 @@ import {
   SESSION_IDLE_TTL_SECONDS,
 } from "../auth/index.js";
 import { registerFyersAuthRoutes } from "../auth/fyers.js";
-import { registerFyersWebhookRoutes, FYERS_WEBHOOK_PATH } from "../webhooks/index.js";
+import {
+  registerFyersWebhookRoutes,
+  FYERS_WEBHOOK_PATH,
+} from "../webhooks/index.js";
 import { createRuntimeProjection } from "./runtime-projection.js";
 import { isCrossSite } from "../auth/same-site.js";
 import { corsOptions } from "../cors.js";

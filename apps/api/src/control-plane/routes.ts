@@ -178,13 +178,17 @@ export function registerControlPlane(
   // Static segment — registered alongside /strategies/:id, static wins.
   app.get("/strategies/stats", async () => {
     const since = startOfDayIST(Date.now());
-    const [configs, realizedByStrategy, signalsByStrategy, evaluationsByStrategy] =
-      await Promise.all([
-        strategies.listByOwner(OPERATOR_ID),
-        positions.sumRealizedByStrategySince(since),
-        signals.countActionableByStrategySince(since),
-        signals.countEvaluationsByStrategySince(since),
-      ]);
+    const [
+      configs,
+      realizedByStrategy,
+      signalsByStrategy,
+      evaluationsByStrategy,
+    ] = await Promise.all([
+      strategies.listByOwner(OPERATOR_ID),
+      positions.sumRealizedByStrategySince(since),
+      signals.countActionableByStrategySince(since),
+      signals.countEvaluationsByStrategySince(since),
+    ]);
     return configs.map((config) => ({
       strategyId: config.strategyId,
       dayRealizedPnl: realizedByStrategy.get(config.strategyId) ?? 0,

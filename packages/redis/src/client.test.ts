@@ -22,9 +22,9 @@ function fakeClient(options: {
 
 describe("redactRedisUrl", () => {
   it("removes the password but keeps the host — the host is the diagnosis", () => {
-    expect(redactRedisUrl("redis://default:hunter2@my-redis.example.com:6379")).toBe(
-      "redis://***@my-redis.example.com:6379",
-    );
+    expect(
+      redactRedisUrl("redis://default:hunter2@my-redis.example.com:6379"),
+    ).toBe("redis://***@my-redis.example.com:6379");
   });
 
   it("redacts a bare password with no username", () => {
@@ -80,7 +80,9 @@ describe("verifyRedisConnection (plan/22 §4: die legibly, not late)", () => {
   it("names the host and the TLS trap, and never the password", async () => {
     try {
       await verifyRedisConnection(
-        { client: fakeClient({ ping: () => Promise.reject(new Error("boom")) }) },
+        {
+          client: fakeClient({ ping: () => Promise.reject(new Error("boom")) }),
+        },
         URL_WITH_SECRET,
       );
       expect.unreachable("should have thrown");
