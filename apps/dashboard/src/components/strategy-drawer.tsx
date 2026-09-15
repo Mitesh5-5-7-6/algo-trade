@@ -125,11 +125,16 @@ export function StrategyDrawer({
                 }}
               >
                 <option value="">Custom</option>
-                {INDEX_OPTION_PROFILE_LIST.map((preset: (typeof INDEX_OPTION_PROFILE_LIST)[number]) => (
-                  <option key={`${preset.underlying}:${preset.type}`} value={`${preset.underlying}:${preset.type}`}>
-                    {preset.label}
-                  </option>
-                ))}
+                {INDEX_OPTION_PROFILE_LIST.map(
+                  (preset: (typeof INDEX_OPTION_PROFILE_LIST)[number]) => (
+                    <option
+                      key={`${preset.underlying}:${preset.type}`}
+                      value={`${preset.underlying}:${preset.type}`}
+                    >
+                      {preset.label}
+                    </option>
+                  ),
+                )}
               </select>
             </div>
 
@@ -142,10 +147,13 @@ export function StrategyDrawer({
                   const nextType = e.target.value;
                   setType(nextType);
                   const presetMatch = INDEX_OPTION_PROFILE_LIST.find(
-                    (preset: (typeof INDEX_OPTION_PROFILE_LIST)[number]) => preset.type === nextType,
+                    (preset: (typeof INDEX_OPTION_PROFILE_LIST)[number]) =>
+                      preset.type === nextType,
                   );
                   if (presetMatch !== undefined) {
-                    setPresetKey(`${presetMatch.underlying}:${presetMatch.type}`);
+                    setPresetKey(
+                      `${presetMatch.underlying}:${presetMatch.type}`,
+                    );
                     applyPreset(nextType, presetMatch.underlying);
                     return;
                   }

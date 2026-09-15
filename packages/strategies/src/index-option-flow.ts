@@ -117,11 +117,16 @@ export const indexOptionFlowBreakout: StrategyDefinition<
       state.boughtCall = true;
       return {
         side: "BUY",
-        confidence: clamp01(0.5 + (context.candle.close - priorHigh) / Math.max(priorHigh - priorLow, 1)),
+        confidence: clamp01(
+          0.5 +
+            (context.candle.close - priorHigh) /
+              Math.max(priorHigh - priorLow, 1),
+        ),
         ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
         stopLossPct: p.stopLossPct,
         targetPct: p.targetPct,
-        reason: "flow breakout: breakout with momentum, volume and positive sentiment",
+        reason:
+          "flow breakout: breakout with momentum, volume and positive sentiment",
       };
     }
 
@@ -136,11 +141,16 @@ export const indexOptionFlowBreakout: StrategyDefinition<
       state.boughtPut = true;
       return {
         side: "SELL",
-        confidence: clamp01(0.5 + (priorLow - context.candle.close) / Math.max(priorHigh - priorLow, 1)),
+        confidence: clamp01(
+          0.5 +
+            (priorLow - context.candle.close) /
+              Math.max(priorHigh - priorLow, 1),
+        ),
         ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
         stopLossPct: p.stopLossPct,
         targetPct: p.targetPct,
-        reason: "flow breakout: breakdown with momentum, volume and negative sentiment",
+        reason:
+          "flow breakout: breakdown with momentum, volume and negative sentiment",
       };
     }
 

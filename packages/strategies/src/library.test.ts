@@ -70,7 +70,9 @@ function context(opts: BarOpts): MarketContext {
     session: { phase: "open", minutesSinceOpen, sessionOpenTs },
     position: opts.position ?? null,
     sentiment: opts.sentiment ?? 0,
-    ...(opts.optionChain === undefined ? {} : { optionChain: opts.optionChain }),
+    ...(opts.optionChain === undefined
+      ? {}
+      : { optionChain: opts.optionChain }),
   };
 }
 
@@ -634,8 +636,20 @@ describe("Index Option PCR/OI hybrid", () => {
     asOf,
     spot: 100,
     rows: [
-      { strike: 100, callOI: 100, putOI: 130, callChangeOI: 2, putChangeOI: 20 },
-      { strike: 105, callOI: 100, putOI: 120, callChangeOI: 1, putChangeOI: 15 },
+      {
+        strike: 100,
+        callOI: 100,
+        putOI: 130,
+        callChangeOI: 2,
+        putChangeOI: 20,
+      },
+      {
+        strike: 105,
+        callOI: 100,
+        putOI: 120,
+        callChangeOI: 1,
+        putChangeOI: 15,
+      },
     ],
   });
 
@@ -660,8 +674,20 @@ describe("Index Option PCR/OI hybrid", () => {
     const bearishChain: OptionChainSnapshot = {
       ...chain(),
       rows: [
-        { strike: 100, callOI: 150, putOI: 80, callChangeOI: 20, putChangeOI: 2 },
-        { strike: 105, callOI: 150, putOI: 70, callChangeOI: 18, putChangeOI: 1 },
+        {
+          strike: 100,
+          callOI: 150,
+          putOI: 80,
+          callChangeOI: 20,
+          putChangeOI: 2,
+        },
+        {
+          strike: 105,
+          callOI: 150,
+          putOI: 70,
+          callChangeOI: 18,
+          putChangeOI: 1,
+        },
       ],
     };
     const verdicts = run(

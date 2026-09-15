@@ -100,11 +100,7 @@ export const indexOptionSentimentFade: StrategyDefinition<
     const bullishRecovery =
       prevRsi !== null && prevRsi <= p.oversold && rsi > prevRsi;
 
-    if (
-      bearishPanic &&
-      bullishRecovery &&
-      !state.boughtCall
-    ) {
+    if (bearishPanic && bullishRecovery && !state.boughtCall) {
       state.boughtCall = true;
       return {
         side: "BUY",

@@ -33,9 +33,18 @@ function shiftDate(date: string, days: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
-function rangeForPreset(preset: Exclude<RangePreset, "custom">): OrderDateRange {
+function rangeForPreset(
+  preset: Exclude<RangePreset, "custom">,
+): OrderDateRange {
   const to = todayIST();
-  const days = preset === "today" ? 0 : preset === "week" ? 6 : preset === "month" ? 29 : 89;
+  const days =
+    preset === "today"
+      ? 0
+      : preset === "week"
+        ? 6
+        : preset === "month"
+          ? 29
+          : 89;
   return { from: shiftDate(to, -days), to };
 }
 
@@ -43,18 +52,24 @@ function rangeForPreset(preset: Exclude<RangePreset, "custom">): OrderDateRange 
 export default function PnlPage() {
   const { dayPnl, strategies, positions, orders } = useDashboardData().snapshot;
   const [preset, setPreset] = useState<RangePreset>("today");
-  const [range, setRange] = useState<OrderDateRange>(() => rangeForPreset("today"));
+  const [range, setRange] = useState<OrderDateRange>(() =>
+    rangeForPreset("today"),
+  );
   const [rangeError, setRangeError] = useState<string | null>(null);
   const rangeOrders = useQuery({
     queryKey: qk.ordersRange(range.from, range.to),
     queryFn: () => api.orders(range),
     initialData: range.from === range.to ? orders : undefined,
-    enabled: rangeError === null && range.from.length > 0 && range.to.length > 0,
+    enabled:
+      rangeError === null && range.from.length > 0 && range.to.length > 0,
   });
   const selectedOrders = rangeOrders.data ?? (preset === "today" ? orders : []);
   const dailyTrades = buildDailyTrades(selectedOrders);
   const grossPnl = dailyTrades.reduce((sum, trade) => sum + trade.grossPnl, 0);
-  const brokerCharges = dailyTrades.reduce((sum, trade) => sum + trade.charges, 0);
+  const brokerCharges = dailyTrades.reduce(
+    (sum, trade) => sum + trade.charges,
+    0,
+  );
   const selectedNetPnl = dailyTrades.reduce((sum, trade) => sum + trade.pnl, 0);
   const strategyNames = new Map(
     strategies.map(({ config }) => [config.strategyId, config.name]),
@@ -81,7 +96,9 @@ export default function PnlPage() {
     setRange(nextRange);
     setPreset("custom");
     setRangeError(
-      nextRange.from > nextRange.to ? "Start date must be on or before end date." : null,
+      nextRange.from > nextRange.to
+        ? "Start date must be on or before end date."
+        : null,
     );
   };
 
@@ -92,19 +109,25 @@ export default function PnlPage() {
       <section className="panel pnl-filter" aria-labelledby="pnl-filter-title">
         <div className="panel-heading">
           <div>
-            <p className="panel-title" id="pnl-filter-title">Compare P&L by date</p>
+            <p className="panel-title" id="pnl-filter-title">
+              Compare P&L by date
+            </p>
             <p className="panel-subtitle">
               Today is selected by default. Choose a preset or set both dates.
             </p>
           </div>
-          <span className="filter-range mono">{range.from} to {range.to}</span>
+          <span className="filter-range mono">
+            {range.from} to {range.to}
+          </span>
         </div>
         <div className="pnl-filter-controls">
           <label className="filter-field">
             <span>Range</span>
             <select
               value={preset}
-              onChange={(event) => updatePreset(event.target.value as RangePreset)}
+              onChange={(event) => {
+                updatePreset(event.target.value as RangePreset);
+              }}
             >
               <option value="today">Today</option>
               <option value="week">This week</option>
@@ -119,7 +142,9 @@ export default function PnlPage() {
               type="date"
               value={range.from}
               max={range.to}
-              onChange={(event) => updateCustomRange("from", event.target.value)}
+              onChange={(event) => {
+                updateCustomRange("from", event.target.value);
+              }}
             />
           </label>
           <label className="filter-field">
@@ -128,7 +153,9 @@ export default function PnlPage() {
               type="date"
               value={range.to}
               min={range.from}
-              onChange={(event) => updateCustomRange("to", event.target.value)}
+              onChange={(event) => {
+                updateCustomRange("to", event.target.value);
+              }}
             />
           </label>
         </div>
@@ -208,22 +235,49 @@ export default function PnlPage() {
       <div className="panel trade-ledger-panel">
         <div className="panel-heading">
           <div>
-            <p className="panel-title">Trade ledger · {preset === "today" ? "Today" : preset === "custom" ? "Custom range" : preset === "week" ? "This week" : preset === "month" ? "This month" : "Last 3 months"}</p>
+            <p className="panel-title">
+              Trade ledger ·{" "}
+              {preset === "today"
+                ? "Today"
+                : preset === "custom"
+                  ? "Custom range"
+                  : preset === "week"
+                    ? "This week"
+                    : preset === "month"
+                      ? "This month"
+                      : "Last 3 months"}
+            </p>
             <p className="panel-subtitle">
               Completed BUY to SELL trades within the selected date range.
             </p>
           </div>
           <div className="trade-summary">
-            <span className="trade-count mono">{dailyTrades.length} trades</span>
-            <span className={`trade-count mono ${selectedNetPnl < 0 ? "neg" : "pos"}`}>
+            <span className="trade-count mono">
+              {dailyTrades.length} trades
+            </span>
+            <span
+              className={`trade-count mono ${selectedNetPnl < 0 ? "neg" : "pos"}`}
+            >
               Net {formatSignedINR(selectedNetPnl)}
             </span>
           </div>
         </div>
         <div className="range-summary" aria-label="Selected range totals">
-          <span>Gross <strong className={grossPnl < 0 ? "neg" : "pos"}>{formatSignedINR(grossPnl)}</strong></span>
-          <span>Charges <strong className="neg">{formatINR(brokerCharges)}</strong></span>
-          <span>Net <strong className={selectedNetPnl < 0 ? "neg" : "pos"}>{formatSignedINR(selectedNetPnl)}</strong></span>
+          <span>
+            Gross{" "}
+            <strong className={grossPnl < 0 ? "neg" : "pos"}>
+              {formatSignedINR(grossPnl)}
+            </strong>
+          </span>
+          <span>
+            Charges <strong className="neg">{formatINR(brokerCharges)}</strong>
+          </span>
+          <span>
+            Net{" "}
+            <strong className={selectedNetPnl < 0 ? "neg" : "pos"}>
+              {formatSignedINR(selectedNetPnl)}
+            </strong>
+          </span>
         </div>
         <div className="table-scroll">
           <table className="data trade-ledger">

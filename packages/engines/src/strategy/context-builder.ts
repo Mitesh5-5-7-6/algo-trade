@@ -37,6 +37,8 @@ export function buildContext(input: ContextInput): MarketContext {
     session: input.session,
     position: input.position,
     sentiment: input.sentiment,
-    ...(input.optionChain === undefined ? {} : { optionChain: input.optionChain }),
+    ...(input.optionChain === undefined
+      ? {}
+      : { optionChain: input.optionChain }),
   };
 }

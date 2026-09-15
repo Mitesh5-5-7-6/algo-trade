@@ -89,12 +89,15 @@ export const indexOptionPcrOi: StrategyDefinition<
       state.boughtPut = false;
       state.sessionMarker = sessionOpenTs;
     }
-    if (minutesSinceOpen < p.skipOpenMinutes) return hold("inside the opening window");
-    if (minutesSinceOpen > p.lastEntryMinutes) return hold("past the last entry time");
+    if (minutesSinceOpen < p.skipOpenMinutes)
+      return hold("inside the opening window");
+    if (minutesSinceOpen > p.lastEntryMinutes)
+      return hold("past the last entry time");
 
     const chain = context.optionChain;
     if (chain === undefined) return hold("option chain not available");
-    if (chain.underlying !== p.underlying) return hold("option chain underlying mismatch");
+    if (chain.underlying !== p.underlying)
+      return hold("option chain underlying mismatch");
     if (
       chain.asOf > context.candle.ts ||
       context.candle.ts - chain.asOf > p.maxChainAgeMinutes * 60_000
@@ -125,7 +128,9 @@ export const indexOptionPcrOi: StrategyDefinition<
       state.boughtCall = true;
       return {
         side: "BUY",
-        confidence: clamp01(0.45 + Math.min(chainMetrics.pcr - p.bullishPcrMin, 0.5)),
+        confidence: clamp01(
+          0.45 + Math.min(chainMetrics.pcr - p.bullishPcrMin, 0.5),
+        ),
         ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
         stopLossPct: p.stopLossPct,
         targetPct: p.targetPct,
@@ -137,7 +142,9 @@ export const indexOptionPcrOi: StrategyDefinition<
       state.boughtPut = true;
       return {
         side: "SELL",
-        confidence: clamp01(0.45 + Math.min(p.bearishPcrMax - chainMetrics.pcr, 0.5)),
+        confidence: clamp01(
+          0.45 + Math.min(p.bearishPcrMax - chainMetrics.pcr, 0.5),
+        ),
         ...(p.quantity === undefined ? {} : { qtyProposal: p.quantity }),
         stopLossPct: p.stopLossPct,
         targetPct: p.targetPct,

@@ -282,7 +282,9 @@ export default function SettingsPage() {
             disabled={disabled}
             value={Math.round((current?.limits.riskPerTrade ?? 0.01) * 10_000)}
             onChange={(e) => {
-              edit({ limit: { riskPerTrade: Number(e.target.value) / 10_000 } });
+              edit({
+                limit: { riskPerTrade: Number(e.target.value) / 10_000 },
+              });
             }}
             aria-label="Risk per trade (percent of capital)"
           />

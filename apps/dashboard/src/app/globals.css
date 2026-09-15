@@ -127,7 +127,10 @@ textarea {
 }
 .pnl-filter-controls {
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr);
+  grid-template-columns: minmax(170px, 1fr) minmax(150px, 0.8fr) minmax(
+      150px,
+      0.8fr
+    );
   gap: 12px;
 }
 .filter-field {
