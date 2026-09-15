@@ -295,7 +295,12 @@ export function registerControlPlane(
   app.get("/positions", () => runtime.getOpenPositions());
   app.get("/orders", async (request) => {
     const query = request.query as unknown;
-    if (query && typeof query === "object" && "from" in query && "to" in query) {
+    if (
+      query &&
+      typeof query === "object" &&
+      "from" in query &&
+      "to" in query
+    ) {
       const { from, to } = parse(DateRangeQuery, query);
       const fromMs = istDateToUtcMs(from);
       const toMsExclusive = istDateToUtcMs(to) + 86_400_000;
