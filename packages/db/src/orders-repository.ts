@@ -99,4 +99,22 @@ export class OrdersRepository {
       .toArray();
     return docs.map((doc) => OrderSchema.parse(doc));
   }
+
+  /** Filled/order activity within an inclusive IST date range. */
+  async findByDateRange(
+    fromMs: number,
+    toMsExclusive: number,
+    limit: number,
+  ): Promise<Order[]> {
+    const range = { $gte: fromMs, $lt: toMsExclusive };
+    const docs = await this.collection
+      .find(
+        { $or: [{ filledAt: range }, { createdAt: range }] },
+        { projection: { _id: 0 } },
+      )
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .toArray();
+    return docs.map((doc) => OrderSchema.parse(doc));
+  }
 }

@@ -3,9 +3,11 @@ import type {
   BrokerOrderRequest,
   BrokerOrderStatus,
   ExecutionOutcome,
+  OptionChainSnapshot,
   OrderStatus,
   OrderUpdate,
 } from "@neelkanth/core";
+import { OptionChainSnapshotSchema } from "@neelkanth/core";
 import type { Broker } from "./broker.js";
 import {
   fyersDataSocket,
@@ -30,6 +32,12 @@ interface FyersResponse {
   id?: string;
   access_token?: string;
   refresh_token?: string;
+  data?: {
+    expiryData?: Array<{ expiryEpoch?: number; expiry?: number }>;
+    optionsChain?: FyersOptionChainRow[];
+    spot?: number;
+    ltp?: number;
+  };
   orderBook?: Array<{
     orderTag: string;
     id: string;
@@ -41,6 +49,174 @@ interface FyersResponse {
     orderDateTime?: string;
     exchOrdId?: string;
   }>;
+}
+
+interface FyersOptionChainRow {
+  strike_price?: number;
+  option_type?: string;
+  oi?: number;
+  oich?: number;
+  ltp?: number;
+  volume?: number;
+  bid?: number;
+  ask?: number;
+  bid_price?: number;
+  ask_price?: number;
+  iv?: number;
+}
+
+const FYERS_INDEX_SYMBOLS: Record<string, string> = {
+  NIFTY: "NSE:NIFTY50-INDEX",
+  BANKNIFTY: "NSE:NIFTYBANK-INDEX",
+};
+
+function fyersIndexSymbol(underlying: string): string {
+  return FYERS_INDEX_SYMBOLS[underlying] ?? `NSE:${underlying}-INDEX`;
+}
+
+function toChainEpochMs(value: number): number {
+  return value > 1e11 ? value : value * 1000;
+}
+
+function normalizeOptionChain(
+  underlying: string,
+  response: FyersResponse,
+  asOf: number,
+): OptionChainSnapshot | null {
+  const data = response.data;
+  if (
+    response.s !== "ok" ||
+    data === undefined ||
+    data.optionsChain === undefined
+  ) {
+    return null;
+  }
+
+  const expiry = (data.expiryData ?? [])
+    .map((entry) => {
+      const value = entry.expiryEpoch ?? entry.expiry;
+      return value === undefined ? undefined : toChainEpochMs(value);
+    })
+    .filter(
+      (value): value is number => typeof value === "number" && value > asOf,
+    )
+    .sort((a, b) => a - b)[0];
+  if (expiry === undefined) return null;
+
+  const spot = data.spot ?? data.ltp;
+  const rows = new Map<
+    number,
+    {
+      callOI?: number;
+      putOI?: number;
+      callChangeOI?: number;
+      putChangeOI?: number;
+      callLtp?: number;
+      putLtp?: number;
+      callVolume?: number;
+      putVolume?: number;
+      callBid?: number;
+      callAsk?: number;
+      putBid?: number;
+      putAsk?: number;
+      callIV?: number;
+      putIV?: number;
+    }
+  >();
+  let chainSpot = spot;
+
+  for (const entry of data.optionsChain) {
+    if (entry.option_type === "XX" || entry.option_type === "INDEX") {
+      if (typeof entry.ltp === "number" && entry.ltp > 0) chainSpot = entry.ltp;
+      continue;
+    }
+    if (
+      (entry.option_type !== "CE" && entry.option_type !== "PE") ||
+      typeof entry.strike_price !== "number" ||
+      typeof entry.oi !== "number" ||
+      typeof entry.oich !== "number" ||
+      entry.strike_price <= 0 ||
+      entry.oi < 0
+    ) {
+      continue;
+    }
+
+    const current = rows.get(entry.strike_price) ?? {};
+    const quote = {
+      ltp: entry.ltp,
+      volume: entry.volume,
+      bid: entry.bid ?? entry.bid_price,
+      ask: entry.ask ?? entry.ask_price,
+      iv: entry.iv,
+    };
+    rows.set(
+      entry.strike_price,
+      entry.option_type === "CE"
+        ? {
+            ...current,
+            callOI: entry.oi,
+            callChangeOI: entry.oich,
+            ...(quote.ltp === undefined ? {} : { callLtp: quote.ltp }),
+            ...(quote.volume === undefined ? {} : { callVolume: quote.volume }),
+            ...(quote.bid === undefined ? {} : { callBid: quote.bid }),
+            ...(quote.ask === undefined ? {} : { callAsk: quote.ask }),
+            ...(quote.iv === undefined ? {} : { callIV: quote.iv }),
+          }
+        : {
+            ...current,
+            putOI: entry.oi,
+            putChangeOI: entry.oich,
+            ...(quote.ltp === undefined ? {} : { putLtp: quote.ltp }),
+            ...(quote.volume === undefined ? {} : { putVolume: quote.volume }),
+            ...(quote.bid === undefined ? {} : { putBid: quote.bid }),
+            ...(quote.ask === undefined ? {} : { putAsk: quote.ask }),
+            ...(quote.iv === undefined ? {} : { putIV: quote.iv }),
+          },
+    );
+  }
+
+  if (chainSpot === undefined || chainSpot <= 0) return null;
+  const normalizedRows = [...rows.entries()]
+    .sort(([left], [right]) => left - right)
+    .flatMap(([strike, row]) =>
+      row.callOI === undefined ||
+      row.putOI === undefined ||
+      row.callChangeOI === undefined ||
+      row.putChangeOI === undefined
+        ? []
+        : [
+            {
+              strike,
+              callOI: row.callOI,
+              putOI: row.putOI,
+              callChangeOI: row.callChangeOI,
+              putChangeOI: row.putChangeOI,
+              ...(row.callLtp === undefined ? {} : { callLtp: row.callLtp }),
+              ...(row.putLtp === undefined ? {} : { putLtp: row.putLtp }),
+              ...(row.callVolume === undefined
+                ? {}
+                : { callVolume: row.callVolume }),
+              ...(row.putVolume === undefined
+                ? {}
+                : { putVolume: row.putVolume }),
+              ...(row.callBid === undefined ? {} : { callBid: row.callBid }),
+              ...(row.callAsk === undefined ? {} : { callAsk: row.callAsk }),
+              ...(row.putBid === undefined ? {} : { putBid: row.putBid }),
+              ...(row.putAsk === undefined ? {} : { putAsk: row.putAsk }),
+              ...(row.callIV === undefined ? {} : { callIV: row.callIV }),
+              ...(row.putIV === undefined ? {} : { putIV: row.putIV }),
+            },
+          ],
+    );
+
+  const parsed = OptionChainSnapshotSchema.safeParse({
+    underlying,
+    expiry,
+    asOf,
+    spot: chainSpot,
+    rows: normalizedRows,
+  });
+  return parsed.success ? parsed.data : null;
 }
 
 type ProtectiveLegs = {
@@ -329,6 +505,31 @@ export class FyersBroker implements Broker {
         clientOrderId: order.clientOrderId,
         reason: (err as Error).message || "Network error",
       };
+    }
+  }
+
+  async readOptionChain(
+    underlying: string,
+  ): Promise<OptionChainSnapshot | null> {
+    if (this.deps.checkRateLimit) await this.deps.checkRateLimit();
+    const token = await this.deps.getToken();
+    if (!token) return null;
+
+    try {
+      const headers = await this.getHeaders(token);
+      const params = new URLSearchParams({
+        symbol: fyersIndexSymbol(underlying),
+        strikecount: "10",
+      });
+      const response = await fetch(
+        `https://api-t1.fyers.in/data/optionchain?${params.toString()}`,
+        { method: "GET", headers },
+      );
+      const data = (await response.json()) as FyersResponse;
+      if (!response.ok) return null;
+      return normalizeOptionChain(underlying, data, Date.now());
+    } catch {
+      return null;
     }
   }
 

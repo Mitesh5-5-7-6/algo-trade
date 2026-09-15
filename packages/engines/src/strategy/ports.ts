@@ -6,6 +6,7 @@ import type {
   Position,
   SessionContext,
   Signal,
+  OptionChainSnapshot,
 } from "@neelkanth/core";
 import type { IndicatorSpec } from "@neelkanth/indicators";
 import type { PublishFn } from "../market-data/ports.js";
@@ -29,6 +30,8 @@ export interface StrategyPorts {
   readPosition(strategyId: string, symbol: string): Promise<Position | null>;
   /** Cached AI sentiment; 0 when absent (Phase 1, plan/20). */
   readSentiment(symbol: string): Promise<number>;
+  /** Latest normalized option chain; absent when the feed has no chain data. */
+  readOptionChain?(underlying: string): Promise<OptionChainSnapshot | null>;
   /** Persist the decision to `signals` — sole owner (plan/02 §8, plan/07). */
   persistSignal(signal: Signal): Promise<void>;
   /**

@@ -8,6 +8,7 @@ import type {
   SessionContext,
   SessionPhase,
   Signal,
+  OptionChainSnapshot,
 } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
 import { componentLogger, type Logger } from "@neelkanth/logger";
@@ -84,6 +85,7 @@ const HOT_KEY_TTL_SECONDS = 300;
  * instrument, far shorter than the broker's ~120s idle disconnect.
  */
 const FEED_SILENCE_MS = 60_000;
+const OPTION_CHAIN_CACHE_MS = 30_000;
 
 /** The intervals the aggregator builds, and therefore the ones we can seed. */
 const MARKET_INTERVALS = [
@@ -125,6 +127,22 @@ export function deriveWorkingSet(
 export interface EngineRuntime extends RuntimeControls {
   readonly bus: EventBus;
   readonly positionEngine: PositionEngine;
+  /** Publish a fresh option-chain snapshot for the underlying, so chain-dependent strategies can read it synchronously. */
+  setOptionChainSnapshot(snapshot: {
+    underlying: string;
+    expiry: number;
+    asOf: number;
+    spot: number;
+    rows: Array<{
+      strike: number;
+      callOI: number;
+      putOI: number;
+      callChangeOI: number;
+      putChangeOI: number;
+      callIV?: number;
+      putIV?: number;
+    }>;
+  }): void;
   /** Evaluate the session at `now` and drive its side effects (plan/17 §6). */
   syncSession(now: number): Promise<void>;
   /** Record an intraday equity sample at `now` (plan/06 §4 day curve). */
@@ -184,6 +202,10 @@ export async function startEngineRuntime(deps: {
   // Shared with the Paper Broker so execution prices and decision prices are
   // the same number, from the same place.
   const lastPrices = deps.liveState.prices;
+  const optionChainRequests = new Map<
+    string,
+    { fetchedAt: number; request?: Promise<OptionChainSnapshot | null> }
+  >();
   const candleWindows = new Map<string, Candle[]>();
   // Symbols ride along with the risk rules because the market-data working
   // set is derived from them: subscribing is not a side effect of enabling a
@@ -273,7 +295,9 @@ export async function startEngineRuntime(deps: {
   const marketDataPorts: MarketDataPorts = {
     writeHotSession: (phase) =>
       writeHot(hotSessionKey(), { phase }).then(() => undefined),
-    saveCandle: (candle) => candles.upsert(candle),
+    saveCandle: async (candle) => {
+      await candles.upsert(candle);
+    },
     publish,
   };
   const marketDataEngine = new MarketDataEngine({
@@ -512,6 +536,31 @@ export async function startEngineRuntime(deps: {
     readPosition: (strategyId, symbol) =>
       Promise.resolve(positionEngine.getPosition(strategyId, symbol)),
     readSentiment: () => Promise.resolve(0),
+    readOptionChain: async (underlying: string) => {
+      const now = Date.now();
+      const cached = deps.liveState.optionChains.get(underlying);
+      const request = optionChainRequests.get(underlying);
+      if (cached !== undefined && now - cached.asOf < OPTION_CHAIN_CACHE_MS) {
+        return cached;
+      }
+      if (request?.request !== undefined) return request.request;
+
+      const fetchRequest =
+        deps.broker.readOptionChain?.(underlying) ??
+        Promise.resolve<OptionChainSnapshot | null>(null);
+      optionChainRequests.set(underlying, {
+        fetchedAt: now,
+        request: fetchRequest,
+      });
+      try {
+        const snapshot = await fetchRequest;
+        if (snapshot !== null)
+          deps.liveState.optionChains.set(underlying, snapshot);
+        return snapshot;
+      } finally {
+        optionChainRequests.delete(underlying);
+      }
+    },
     resolveContract: (target, side, spot, now) =>
       target.kind === "FUTURE"
         ? instruments.nearestFuture(target.underlying, now)
@@ -755,6 +804,15 @@ export async function startEngineRuntime(deps: {
   return {
     bus,
     positionEngine,
+    setOptionChainSnapshot(snapshot) {
+      deps.liveState.optionChains.set(snapshot.underlying, {
+        underlying: snapshot.underlying,
+        expiry: snapshot.expiry,
+        asOf: snapshot.asOf,
+        spot: snapshot.spot,
+        rows: snapshot.rows,
+      });
+    },
     setTradingEnabled(enabled) {
       state.tradingEnabled = enabled;
     },

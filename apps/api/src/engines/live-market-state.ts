@@ -1,3 +1,5 @@
+import type { OptionChainSnapshot } from "@neelkanth/core";
+
 /**
  * The live market state the process trades on — in memory, one copy.
  *
@@ -16,10 +18,12 @@
 export interface LiveMarketState {
   /** Latest traded price per symbol, updated on every tick and candle close. */
   readonly prices: Map<string, number>;
+  /** Latest normalized option-chain snapshot per underlying, for chain-based strategies. */
+  readonly optionChains: Map<string, OptionChainSnapshot>;
   /** Whether the exchange session is open, per the Session Manager. */
   sessionOpen: boolean;
 }
 
 export function createLiveMarketState(): LiveMarketState {
-  return { prices: new Map(), sessionOpen: false };
+  return { prices: new Map(), optionChains: new Map(), sessionOpen: false };
 }

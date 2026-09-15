@@ -28,6 +28,7 @@ import { buildActivityFeed } from "./activity.js";
 /** Single-operator system (plan/21 §6); replaced by the session user with auth. */
 const OPERATOR_ID = "operator";
 const LIST_LIMIT = 100;
+const HISTORY_LIMIT = 1_000;
 
 /**
  * Validate at the boundary (plan/04 §4) and tell the caller what was wrong.
@@ -55,6 +56,17 @@ function parse<T>(schema: ZodType<T>, data: unknown): T {
 }
 
 const IdParams = z.object({ id: z.string().min(1) });
+const DateRangeQuery = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+function istDateToUtcMs(date: string): number {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  return Date.UTC(year, month - 1, day, -5, -30);
+}
 
 /**
  * A symbol the broker can actually stream: `EXCHANGE:INSTRUMENT`, e.g.
@@ -281,7 +293,19 @@ export function registerControlPlane(
   // --- Read models (plan/06 §5: snapshot-then-stream) ---
 
   app.get("/positions", () => runtime.getOpenPositions());
-  app.get("/orders", () => orders.findRecent(LIST_LIMIT));
+  app.get("/orders", async (request) => {
+    const query = request.query as unknown;
+    if (query && typeof query === "object" && "from" in query && "to" in query) {
+      const { from, to } = parse(DateRangeQuery, query);
+      const fromMs = istDateToUtcMs(from);
+      const toMsExclusive = istDateToUtcMs(to) + 86_400_000;
+      if (fromMs >= toMsExclusive) {
+        throw new ValidationError("from must be on or before to");
+      }
+      return orders.findByDateRange(fromMs, toMsExclusive, HISTORY_LIMIT);
+    }
+    return orders.findRecent(LIST_LIMIT);
+  });
   app.get("/signals", () => signals.findRecent(LIST_LIMIT));
   app.get("/risk-logs", () => riskLogs.findRecent(LIST_LIMIT));
 

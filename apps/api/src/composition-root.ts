@@ -213,15 +213,16 @@ export async function bootstrap(
     });
 
     if (fyersBroker) {
+      const liveFyersBroker = fyersBroker;
       broker = {
-        connect: () => fyersBroker.connect(),
-        disconnect: () => fyersBroker.disconnect(),
-        subscribe: (symbols) => fyersBroker.subscribe(symbols),
+        connect: () => liveFyersBroker.connect(),
+        disconnect: () => liveFyersBroker.disconnect(),
+        subscribe: (symbols) => liveFyersBroker.subscribe(symbols),
         onData: (cb) => {
-          fyersBroker.onData(cb);
+          liveFyersBroker.onData(cb);
         },
         onConnectionChange: (cb) => {
-          fyersBroker.onConnectionChange(cb);
+          liveFyersBroker.onConnectionChange(cb);
         },
         execute: (order) => paper.execute(order),
         cancel: (id) => paper.cancel(id),
@@ -229,6 +230,8 @@ export async function bootstrap(
         onOrderUpdate: (cb) => {
           paper.onOrderUpdate(cb);
         },
+        readOptionChain: (underlying) =>
+          liveFyersBroker.readOptionChain(underlying),
       };
     } else {
       broker = paper;

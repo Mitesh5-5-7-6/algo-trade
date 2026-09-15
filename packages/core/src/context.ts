@@ -6,6 +6,7 @@ import {
 } from "./primitives.js";
 import { CandleSchema, SessionPhaseSchema } from "./market.js";
 import { PositionSchema } from "./position.js";
+import { OptionChainSnapshotSchema } from "./option-chain.js";
 
 /**
  * The Market Context (plan/15 §3): one immutable snapshot per symbol, built by
@@ -48,5 +49,7 @@ export const MarketContextSchema = z.object({
   position: PositionSchema.nullable(),
   /** Clamped AI sentiment (plan/20); 0 = neutral/absent (Phase 1). */
   sentiment: z.number().min(-1).max(1),
+  /** Latest normalized option chain, when the data feed provides one. */
+  optionChain: OptionChainSnapshotSchema.optional(),
 });
 export type MarketContext = z.infer<typeof MarketContextSchema>;

@@ -299,6 +299,77 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
   });
 });
 
+describe("FyersBroker.readOptionChain", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("normalizes the nearest FYERS expiry into paired strike rows", async () => {
+    const now = Date.now();
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          s: "ok",
+          data: {
+            expiryData: [
+              { expiryEpoch: Math.floor((now + 86_400_000) / 1000) },
+            ],
+            optionsChain: [
+              { option_type: "XX", ltp: 24_500 },
+              { option_type: "CE", strike_price: 24_500, oi: 100, oich: 10 },
+              { option_type: "PE", strike_price: 24_500, oi: 120, oich: 20 },
+            ],
+          },
+        }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const broker = new FyersBroker(deps());
+    const snapshot = await broker.readOptionChain("NIFTY");
+
+    expect(snapshot).toMatchObject({
+      underlying: "NIFTY",
+      spot: 24_500,
+      rows: [
+        {
+          strike: 24_500,
+          callOI: 100,
+          putOI: 120,
+          callChangeOI: 10,
+          putChangeOI: 20,
+        },
+      ],
+    });
+    const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/data/optionchain?");
+    expect(url).toContain("symbol=NSE%3ANIFTY50-INDEX");
+    expect((options.headers as Record<string, string>)["Authorization"]).toBe(
+      `${APP_ID}:${ACCESS_TOKEN}`,
+    );
+  });
+
+  it("returns null when the response cannot produce a complete chain", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            s: "ok",
+            data: {
+              expiryData: [{ expiryEpoch: Date.now() + 86_400_000 }],
+              optionsChain: [],
+            },
+          }),
+      }),
+    );
+
+    const broker = new FyersBroker(deps());
+    await expect(broker.readOptionChain("NIFTY")).resolves.toBeNull();
+  });
+});
+
 describe("FyersBroker.status (plan/12 §8 reconciliation)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();

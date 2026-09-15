@@ -3,6 +3,7 @@ import type {
   MarketContext,
   Position,
   SessionContext,
+  OptionChainSnapshot,
 } from "@neelkanth/core";
 
 export interface ContextInput {
@@ -14,6 +15,7 @@ export interface ContextInput {
   session: SessionContext;
   position: Position | null;
   sentiment: number;
+  optionChain?: OptionChainSnapshot;
 }
 
 /**
@@ -35,5 +37,6 @@ export function buildContext(input: ContextInput): MarketContext {
     session: input.session,
     position: input.position,
     sentiment: input.sentiment,
+    ...(input.optionChain === undefined ? {} : { optionChain: input.optionChain }),
   };
 }

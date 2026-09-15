@@ -39,6 +39,8 @@ export interface StrategyDefinition<Params, State> {
   interval(params: Params): CandleInterval;
   /** The indicators the context must contain (plan/15 §2). */
   requiredIndicators(params: Params): readonly IndicatorSpec[];
+  /** Whether this strategy requires a live option-chain snapshot. */
+  readonly requiresOptionChain?: (params: Params) => boolean;
   /** History needed before the first valid analysis (plan/15 §2). */
   warmupBars(params: Params): number;
   /**

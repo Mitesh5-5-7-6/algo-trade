@@ -39,7 +39,7 @@ export function useDashboardData(enabled = true): LiveDashboard {
   });
   const orders = useQuery({
     queryKey: qk.orders,
-    queryFn: api.orders,
+    queryFn: () => api.orders(),
     initialData: mock.orders,
     enabled,
   });

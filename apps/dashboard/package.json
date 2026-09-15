@@ -13,6 +13,7 @@
   "dependencies": {
     "@neelkanth/contracts": "workspace:*",
     "@neelkanth/core": "workspace:*",
+    "@neelkanth/strategies": "workspace:*",
     "@tanstack/react-query": "^5.64.0",
     "next": "^15.1.4",
     "react": "^19.0.0",

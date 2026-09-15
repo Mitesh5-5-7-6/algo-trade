@@ -2,10 +2,26 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  INDEX_OPTION_PROFILE_LIST,
+  getIndexOptionProfile,
+} from "@neelkanth/strategies";
 import type { StrategyConfig } from "@neelkanth/core";
 import { api } from "@/lib/api-client";
 import { qk } from "@/lib/query-keys";
 import { parseParams, parseSymbols } from "@/lib/forms";
+
+const INDEX_OPTION_SYMBOLS = {
+  NIFTY: "NSE:NIFTY50-INDEX",
+  BANKNIFTY: "NSE:NIFTYBANK-INDEX",
+} as const;
+
+function formatPresetName(type: string): string {
+  return type
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
 
 export type DrawerMode =
   { kind: "create" } | { kind: "edit"; config: StrategyConfig };
@@ -34,6 +50,7 @@ export function StrategyDrawer({
   });
 
   const [type, setType] = useState(editing?.type ?? "");
+  const [presetKey, setPresetKey] = useState<string>("");
   const [name, setName] = useState(editing?.name ?? "");
   const [symbolsText, setSymbolsText] = useState(
     editing?.symbols.join(", ") ?? "",
@@ -43,6 +60,17 @@ export function StrategyDrawer({
   );
   const [enabled, setEnabled] = useState(editing?.enabled ?? false);
   const [error, setError] = useState<string | null>(null);
+
+  const applyPreset = (nextType: string, underlying: "NIFTY" | "BANKNIFTY") => {
+    const profile = getIndexOptionProfile(underlying, nextType);
+    if (profile === null) return;
+
+    setType(nextType);
+    setPresetKey(`${underlying}:${nextType}`);
+    setName(`${underlying} ${formatPresetName(nextType)}`);
+    setSymbolsText(INDEX_OPTION_SYMBOLS[underlying]);
+    setParamsText(JSON.stringify(profile, null, 2));
+  };
 
   const save = useMutation({
     mutationFn: async () => {
@@ -77,23 +105,62 @@ export function StrategyDrawer({
         </p>
 
         {editing === null && (
-          <div className="field">
-            <label htmlFor="s-type">Type</label>
-            <select
-              id="s-type"
-              value={type}
-              onChange={(e) => {
-                setType(e.target.value);
-              }}
-            >
-              <option value="">Select…</option>
-              {(types.data ?? []).map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            <div className="field">
+              <label htmlFor="s-preset">Preset</label>
+              <select
+                id="s-preset"
+                value={presetKey}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setPresetKey(nextValue);
+                  if (nextValue === "") {
+                    return;
+                  }
+                  const [underlying, nextType] = nextValue.split(":") as [
+                    "NIFTY" | "BANKNIFTY",
+                    string,
+                  ];
+                  applyPreset(nextType, underlying);
+                }}
+              >
+                <option value="">Custom</option>
+                {INDEX_OPTION_PROFILE_LIST.map((preset: (typeof INDEX_OPTION_PROFILE_LIST)[number]) => (
+                  <option key={`${preset.underlying}:${preset.type}`} value={`${preset.underlying}:${preset.type}`}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label htmlFor="s-type">Type</label>
+              <select
+                id="s-type"
+                value={type}
+                onChange={(e) => {
+                  const nextType = e.target.value;
+                  setType(nextType);
+                  const presetMatch = INDEX_OPTION_PROFILE_LIST.find(
+                    (preset: (typeof INDEX_OPTION_PROFILE_LIST)[number]) => preset.type === nextType,
+                  );
+                  if (presetMatch !== undefined) {
+                    setPresetKey(`${presetMatch.underlying}:${presetMatch.type}`);
+                    applyPreset(nextType, presetMatch.underlying);
+                    return;
+                  }
+                  setPresetKey("");
+                }}
+              >
+                <option value="">Select…</option>
+                {(types.data ?? []).map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
         )}
 
         <div className="field">

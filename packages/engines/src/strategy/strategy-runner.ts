@@ -186,6 +186,11 @@ export class StrategyRunner {
           instance.strategyId,
           payload.symbol,
         );
+        const optionChain = instance.strategy.requiresOptionChain()
+          ? await this.deps.ports.readOptionChain?.(
+              instance.strategy.derivative()?.underlying ?? payload.symbol,
+            )
+          : undefined;
         const context = buildContext({
           symbol: payload.symbol,
           interval,
@@ -195,6 +200,9 @@ export class StrategyRunner {
           session,
           position,
           sentiment,
+          ...(optionChain === undefined || optionChain === null
+            ? {}
+            : { optionChain }),
         });
 
         await this.runOne(instance, context, candle.ts);

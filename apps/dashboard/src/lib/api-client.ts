@@ -66,6 +66,11 @@ export interface PnlSummary {
   unrealizedPnl: number;
 }
 
+export interface OrderDateRange {
+  from: string;
+  to: string;
+}
+
 /** The `/strategies/stats` read model — per-strategy day stats (plan/06 §4). */
 export interface StrategyDayStats {
   strategyId: string;
@@ -179,7 +184,12 @@ export const api = {
   logout: () => apiFetch<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 
   positions: () => apiFetch<Position[]>("/positions"),
-  orders: () => apiFetch<Order[]>("/orders"),
+  orders: (range?: OrderDateRange) =>
+    apiFetch<Order[]>(
+      range
+        ? `/orders?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`
+        : "/orders",
+    ),
   activity: () => apiFetch<ActivityEntry[]>("/activity"),
   strategies: () => apiFetch<StrategyConfig[]>("/strategies"),
   strategyStats: () => apiFetch<StrategyDayStats[]>("/strategies/stats"),

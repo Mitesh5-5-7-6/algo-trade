@@ -3,6 +3,7 @@ import type {
   BrokerOrderRequest,
   BrokerOrderStatus,
   ExecutionOutcome,
+  OptionChainSnapshot,
   OrderUpdate,
 } from "@neelkanth/core";
 
@@ -60,6 +61,9 @@ export interface Broker {
 
   /** Register the raw, untranslated data callback → Market Data Engine. */
   onData(handler: (raw: unknown) => void): void;
+
+  /** Fetch the latest normalized option-chain snapshot for an underlying. */
+  readOptionChain?(underlying: string): Promise<OptionChainSnapshot | null>;
 
   /** Register the connection-state callback → BROKER_CONNECTED/DISCONNECTED. */
   onConnectionChange(handler: (state: BrokerConnectionState) => void): void;

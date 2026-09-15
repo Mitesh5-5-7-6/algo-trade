@@ -6,6 +6,7 @@
 export const qk = {
   positions: ["positions"] as const,
   orders: ["orders"] as const,
+  ordersRange: (from: string, to: string) => ["orders", from, to] as const,
   activity: ["activity"] as const,
   strategies: ["strategies"] as const,
   strategyStats: ["strategies", "stats"] as const,
@@ -19,4 +20,7 @@ export const qk = {
   controlStatus: ["control", "status"] as const,
 };
 
-export type QueryKey = (typeof qk)[keyof typeof qk];
+export type QueryKey = Exclude<
+  (typeof qk)[keyof typeof qk],
+  (...args: never[]) => readonly unknown[]
+>;

@@ -3,6 +3,7 @@ import type {
   Candle,
   CandleInterval,
   MarketContext,
+  OptionChainSnapshot,
   Position,
   StrategyVerdict,
 } from "@neelkanth/core";
@@ -11,6 +12,9 @@ import { emaCrossover } from "./ema-crossover.js";
 import { rsiReversion } from "./rsi-reversion.js";
 import { orb } from "./orb.js";
 import { indexOptionMomentum } from "./index-option-momentum.js";
+import { indexOptionFlowBreakout } from "./index-option-flow.js";
+import { indexOptionSentimentFade } from "./index-option-sentiment-fade.js";
+import { indexOptionPcrOi } from "./index-option-pcr-oi.js";
 import { createStrategyRegistry } from "./index.js";
 
 const SYM = "NSE:X-EQ";
@@ -36,6 +40,8 @@ interface BarOpts {
   position?: Position | null;
   interval?: CandleInterval;
   sessionOpenTs?: number;
+  sentiment?: number;
+  optionChain?: OptionChainSnapshot;
 }
 
 function context(opts: BarOpts): MarketContext {
@@ -63,7 +69,8 @@ function context(opts: BarOpts): MarketContext {
     indicators: opts.indicators ?? {},
     session: { phase: "open", minutesSinceOpen, sessionOpenTs },
     position: opts.position ?? null,
-    sentiment: 0,
+    sentiment: opts.sentiment ?? 0,
+    ...(opts.optionChain === undefined ? {} : { optionChain: opts.optionChain }),
   };
 }
 
@@ -321,11 +328,15 @@ describe("ORB (plan/16 §5)", () => {
 });
 
 describe("the built-in registry (plan/15 §4, plan/28 §3)", () => {
-  it("registers the three Phase-1 strategies", () => {
+  it("registers the built-in strategy catalog used by the dashboard selector", () => {
     const registry = createStrategyRegistry();
     expect(registry.has("EMA_CROSSOVER")).toBe(true);
     expect(registry.has("RSI")).toBe(true);
     expect(registry.has("ORB")).toBe(true);
+    expect(registry.has("INDEX_OPTION_MOMENTUM")).toBe(true);
+    expect(registry.has("INDEX_OPTION_FLOW_BREAKOUT")).toBe(true);
+    expect(registry.has("INDEX_OPTION_SENTIMENT_FADE")).toBe(true);
+    expect(registry.has("INDEX_OPTION_PCR_OI")).toBe(true);
   });
 });
 
@@ -490,5 +501,208 @@ describe("Index Option Momentum — spot index has no volume", () => {
       series(bars([101, 102, 103, 110])),
     );
     expect(verdicts[3]?.reason).toBe("trend indicators not ready");
+  });
+});
+
+describe("Index Option Flow Breakout", () => {
+  const base = {
+    underlying: "NIFTY",
+    emaPeriod: 5,
+    rsiPeriod: 14,
+    breakoutBars: 3,
+    volumeMultiple: 1.2,
+    sentimentThreshold: 0.2,
+    skipOpenMinutes: 20,
+    lastEntryMinutes: 300,
+  };
+
+  it("buys a call when breakout, volume expansion, trend, and sentiment align", () => {
+    const verdicts = run(
+      indexOptionFlowBreakout,
+      base,
+      series([
+        {
+          close: 101,
+          high: 102,
+          low: 99,
+          volume: 100,
+          minutesSinceOpen: 30,
+          indicators: { ema5: 100, rsi14: 52, vwap: 100 },
+          sentiment: 0.3,
+        },
+        {
+          close: 103,
+          high: 104,
+          low: 100,
+          volume: 170,
+          minutesSinceOpen: 35,
+          indicators: { ema5: 100, rsi14: 62, vwap: 101 },
+          sentiment: 0.35,
+        },
+        {
+          close: 104,
+          high: 105,
+          low: 101,
+          volume: 175,
+          minutesSinceOpen: 40,
+          indicators: { ema5: 101, rsi14: 63, vwap: 102 },
+          sentiment: 0.4,
+        },
+        {
+          close: 107,
+          high: 109,
+          low: 103,
+          volume: 190,
+          minutesSinceOpen: 45,
+          indicators: { ema5: 103, rsi14: 68, vwap: 103 },
+          sentiment: 0.45,
+        },
+      ]),
+    );
+
+    expect(verdicts[3]?.side).toBe("BUY");
+    expect(verdicts[3]?.reason).toContain("flow breakout");
+  });
+});
+
+describe("Index Option Sentiment Fade", () => {
+  const base = {
+    underlying: "NIFTY",
+    emaPeriod: 5,
+    rsiPeriod: 14,
+    swingLookback: 10,
+    oversold: 30,
+    overbought: 70,
+    sentimentThreshold: 0.35,
+    skipOpenMinutes: 20,
+    lastEntryMinutes: 300,
+  };
+
+  it("fades bearish extremes with a bullish reversal when RSI and sentiment are stretched", () => {
+    const verdicts = run(
+      indexOptionSentimentFade,
+      base,
+      series([
+        {
+          close: 103,
+          high: 104,
+          low: 101,
+          volume: 50,
+          minutesSinceOpen: 30,
+          indicators: { ema5: 106, rsi14: 20 },
+          sentiment: -0.45,
+        },
+        {
+          close: 101,
+          high: 102,
+          low: 99,
+          volume: 55,
+          minutesSinceOpen: 35,
+          indicators: { ema5: 105, rsi14: 28 },
+          sentiment: -0.5,
+        },
+        {
+          close: 100,
+          high: 101,
+          low: 98,
+          volume: 60,
+          minutesSinceOpen: 40,
+          indicators: { ema5: 104, rsi14: 35 },
+          sentiment: -0.6,
+        },
+        {
+          close: 102,
+          high: 103,
+          low: 100,
+          volume: 62,
+          minutesSinceOpen: 45,
+          indicators: { ema5: 103, rsi14: 42 },
+          sentiment: -0.4,
+        },
+      ]),
+    );
+
+    expect(verdicts[2]?.side).toBe("BUY");
+    expect(verdicts[2]?.reason).toContain("fade");
+  });
+});
+
+describe("Index Option PCR/OI hybrid", () => {
+  const chain = (asOf = DAY1_OPEN + 40 * 60_000): OptionChainSnapshot => ({
+    underlying: "NIFTY",
+    expiry: DAY1_OPEN + 86_400_000,
+    asOf,
+    spot: 100,
+    rows: [
+      { strike: 100, callOI: 100, putOI: 130, callChangeOI: 2, putChangeOI: 20 },
+      { strike: 105, callOI: 100, putOI: 120, callChangeOI: 1, putChangeOI: 15 },
+    ],
+  });
+
+  it("buys a call when price, PCR, and put OI buildup align", () => {
+    const verdicts = run(
+      indexOptionPcrOi,
+      { underlying: "NIFTY", emaPeriod: 5, minOiChangePct: 0.05 },
+      series([
+        {
+          close: 101,
+          minutesSinceOpen: 45,
+          indicators: { ema5: 100 },
+          optionChain: chain(),
+        },
+      ]),
+    );
+    expect(verdicts[0]?.side).toBe("BUY");
+    expect(verdicts[0]?.reason).toContain("put OI buildup");
+  });
+
+  it("buys a put when price, low PCR, and call OI buildup align", () => {
+    const bearishChain: OptionChainSnapshot = {
+      ...chain(),
+      rows: [
+        { strike: 100, callOI: 150, putOI: 80, callChangeOI: 20, putChangeOI: 2 },
+        { strike: 105, callOI: 150, putOI: 70, callChangeOI: 18, putChangeOI: 1 },
+      ],
+    };
+    const verdicts = run(
+      indexOptionPcrOi,
+      { underlying: "NIFTY", emaPeriod: 5, minOiChangePct: 0.05 },
+      series([
+        {
+          close: 99,
+          minutesSinceOpen: 45,
+          indicators: { ema5: 100 },
+          optionChain: bearishChain,
+        },
+      ]),
+    );
+    expect(verdicts[0]?.side).toBe("SELL");
+  });
+
+  it("holds without a current chain instead of trading index direction alone", () => {
+    const verdict = run(
+      indexOptionPcrOi,
+      { underlying: "NIFTY", emaPeriod: 5 },
+      series([{ close: 101, minutesSinceOpen: 45, indicators: { ema5: 100 } }]),
+    )[0];
+    expect(verdict?.side).toBe("HOLD");
+    expect(verdict?.reason).toBe("option chain not available");
+  });
+
+  it("holds stale chain data", () => {
+    const verdict = run(
+      indexOptionPcrOi,
+      { underlying: "NIFTY", emaPeriod: 5, maxChainAgeMinutes: 5 },
+      series([
+        {
+          close: 101,
+          minutesSinceOpen: 45,
+          indicators: { ema5: 100 },
+          optionChain: chain(DAY1_OPEN),
+        },
+      ]),
+    )[0];
+    expect(verdict?.side).toBe("HOLD");
+    expect(verdict?.reason).toBe("option chain is stale");
   });
 });

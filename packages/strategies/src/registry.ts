@@ -17,6 +17,7 @@ export interface RunnableStrategy {
   readonly type: string;
   readonly interval: CandleInterval;
   requiredIndicators(): readonly IndicatorSpec[];
+  requiresOptionChain(): boolean;
   warmupBars(): number;
   /** The derivative contract shape to trade, or null for "trade what I analyse". */
   derivative(): DerivativeTarget | null;
@@ -35,6 +36,7 @@ function instantiate<P, S>(
     type: def.type,
     interval: def.interval(params),
     requiredIndicators: () => def.requiredIndicators(params),
+    requiresOptionChain: () => def.requiresOptionChain?.(params) ?? false,
     warmupBars: () => def.warmupBars(params),
     derivative: () => def.derivative?.(params) ?? null,
     analyze: (context) => def.analyze(context, state),

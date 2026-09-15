@@ -108,6 +108,9 @@ importers:
       '@neelkanth/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@neelkanth/strategies':
+        specifier: workspace:*
+        version: link:../../packages/strategies
       '@tanstack/react-query':
         specifier: ^5.64.0
         version: 5.101.2(react@19.2.7)
