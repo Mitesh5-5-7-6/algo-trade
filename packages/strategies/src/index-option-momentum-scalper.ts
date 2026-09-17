@@ -208,10 +208,15 @@ export const indexOptionMomentumScalper: StrategyDefinition<
     const emaSlow = context.indicators[`ema${p.emaSlow}`];
     const vwap = context.indicators.vwap;
     const averageVolume = context.indicators[`avgvol${p.averageVolumePeriod}`];
+    // Checked one by one rather than through `.some()`: an array predicate
+    // tells the compiler nothing about the individual bindings, which is what
+    // forced a non-null assertion at every use below. These comparisons narrow
+    // all four to `number` for the rest of the function.
     if (
-      [emaFast, emaSlow, vwap, averageVolume].some(
-        (value) => value === undefined,
-      )
+      emaFast === undefined ||
+      emaSlow === undefined ||
+      vwap === undefined ||
+      averageVolume === undefined
     ) {
       return hold("scalper indicators not ready");
     }
@@ -221,15 +226,15 @@ export const indexOptionMomentumScalper: StrategyDefinition<
     const priorHigh = Math.max(...prior.map((bar) => bar.high));
     const priorLow = Math.min(...prior.map((bar) => bar.low));
     const volumeExpanded =
-      context.candle.volume >= averageVolume! * p.volumeMultiplier;
+      context.candle.volume >= averageVolume * p.volumeMultiplier;
     const bullish =
-      context.candle.close > vwap! &&
-      emaFast! > emaSlow! &&
+      context.candle.close > vwap &&
+      emaFast > emaSlow &&
       context.candle.close > priorHigh &&
       volumeExpanded;
     const bearish =
-      context.candle.close < vwap! &&
-      emaFast! < emaSlow! &&
+      context.candle.close < vwap &&
+      emaFast < emaSlow &&
       context.candle.close < priorLow &&
       volumeExpanded;
     if (!bullish && !bearish) {

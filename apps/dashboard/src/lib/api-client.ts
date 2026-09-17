@@ -109,6 +109,22 @@ export interface LiveSettings {
      * omit it; the API fills the schema default on read.
      */
     riskPerTrade?: number;
+
+    /**
+     * F&O limits. Derivatives are sized in LOTS, not shares, so they carry
+     * their own budget rather than borrowing the equity one.
+     *
+     * All optional: an unset field falls back to its equity counterpart on the
+     * server, which means "not configured" is never looser than today's
+     * limits. `fnoRiskPerTrade` in particular has no widened default — if one
+     * lot risks more than the equity budget allows, the honest answer is that
+     * the trade does not fit, not a budget quietly grown until it does.
+     */
+    fnoRiskPerTrade?: number;
+    fnoMaxLotsPerTrade?: number;
+    fnoMaxCapitalPerTrade?: number;
+    fnoMaxExposure?: number;
+    fnoMaxOpenPositions?: number;
   };
   marketHours: { open: string; close: string; squareOff: string };
 }

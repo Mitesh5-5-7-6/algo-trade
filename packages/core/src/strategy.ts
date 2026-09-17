@@ -14,6 +14,12 @@ export const RiskRulesSchema = z.object({
   maxDailyLoss: z.number().positive().optional(),
   /** Risk a smaller slice of capital on this strategy than the global default. */
   riskPerTrade: z.number().min(0).max(1).optional(),
+  // F&O overrides, stricter-only like every other field here.
+  fnoRiskPerTrade: z.number().min(0).max(1).optional(),
+  fnoMaxLotsPerTrade: z.number().int().positive().optional(),
+  fnoMaxCapitalPerTrade: z.number().positive().optional(),
+  fnoMaxExposure: z.number().min(0).max(1).optional(),
+  fnoMaxOpenPositions: z.number().int().positive().optional(),
 });
 export type RiskRules = z.infer<typeof RiskRulesSchema>;
 

@@ -20,6 +20,53 @@ interface Draft {
   limits: Limits;
 }
 
+/** The F&O-only limits, which are optional and may be cleared back to inherit. */
+type FnoLimitKey =
+  | "fnoRiskPerTrade"
+  | "fnoMaxLotsPerTrade"
+  | "fnoMaxCapitalPerTrade"
+  | "fnoMaxExposure"
+  | "fnoMaxOpenPositions";
+
+const FNO_LIMIT_KEYS: readonly FnoLimitKey[] = [
+  "fnoRiskPerTrade",
+  "fnoMaxLotsPerTrade",
+  "fnoMaxCapitalPerTrade",
+  "fnoMaxExposure",
+  "fnoMaxOpenPositions",
+];
+
+/**
+ * Limits with one F&O field set, or omitted entirely when `value` is null.
+ *
+ * Omission is the point: an absent F&O limit means "inherit the equity one",
+ * which is a different state from zero and from any number. It is rebuilt
+ * rather than deleted because `exactOptionalPropertyTypes` forbids assigning
+ * `undefined` to an optional key, and a dynamic `delete` would only hide that
+ * same problem behind a mutation.
+ */
+function withFnoLimit(
+  limits: Limits,
+  key: FnoLimitKey,
+  value: number | null,
+): Limits {
+  const next: Limits = {
+    maxDailyLoss: limits.maxDailyLoss,
+    maxPositionSize: limits.maxPositionSize,
+    maxCapitalPerTrade: limits.maxCapitalPerTrade,
+    maxOpenPositions: limits.maxOpenPositions,
+    maxExposure: limits.maxExposure,
+    ...(limits.riskPerTrade === undefined
+      ? {}
+      : { riskPerTrade: limits.riskPerTrade }),
+  };
+  for (const candidate of FNO_LIMIT_KEYS) {
+    const resolved = candidate === key ? value : (limits[candidate] ?? null);
+    if (resolved !== null) next[candidate] = resolved;
+  }
+  return next;
+}
+
 /** What the open step-up dialog will do once the password is entered. */
 type PendingStepUp =
   | { kind: "settings"; body: UpdateSettingsBody; title: string }
@@ -64,6 +111,21 @@ export default function SettingsPage() {
         ? { ...current, limits: { ...current.limits, ...change.limit } }
         : { ...current, ...change },
     );
+  };
+
+  /**
+   * Set or clear one F&O limit.
+   *
+   * Clearing is a real state, not zero: an absent F&O field means "inherit the
+   * equity limit", which is how an operator who has not configured derivatives
+   * separately stays on the limits already in force. `exactOptionalPropertyTypes`
+   * will not allow assigning `undefined` to an optional key, so clearing
+   * removes the key rather than blanking it.
+   */
+  const editFno = (key: FnoLimitKey, value: number | null) => {
+    if (current === null) return;
+    setSaved(false);
+    setDraft({ ...current, limits: withFnoLimit(current.limits, key, value) });
   };
 
   const finish = () => {
@@ -295,6 +357,155 @@ export default function SettingsPage() {
             smaller.
           </span>
         </div>
+        <h2 className="section-heading">F&amp;O risk limits</h2>
+        <p className="hint">
+          Equity is sized in <strong>shares</strong>; F&amp;O is sized in whole{" "}
+          <strong>lots</strong>. A derivative&apos;s smallest tradable unit is
+          one lot, so these budgets are divided by what one lot costs and risks
+          — never by a per-share figure. Leave a field empty to inherit the
+          equity limit above; empty is not zero.
+        </p>
+
+        <div className="field">
+          <label htmlFor="fnorisk">
+            F&amp;O risk per trade (% of capital)
+            {current?.limits.fnoRiskPerTrade === undefined
+              ? " — inheriting equity"
+              : ` — ₹${formatIN(
+                  Math.round(
+                    current.capitalAllocation * current.limits.fnoRiskPerTrade,
+                  ),
+                )}`}
+          </label>
+          <input
+            id="fnorisk"
+            type="number"
+            min={0}
+            max={100}
+            step={0.25}
+            disabled={disabled}
+            placeholder={`inherit (${((current?.limits.riskPerTrade ?? 0.01) * 100).toFixed(2)}%)`}
+            value={
+              current?.limits.fnoRiskPerTrade === undefined
+                ? ""
+                : current.limits.fnoRiskPerTrade * 100
+            }
+            onChange={(e) => {
+              editFno(
+                "fnoRiskPerTrade",
+                e.target.value === "" ? null : Number(e.target.value) / 100,
+              );
+            }}
+          />
+          <span className="hint">
+            What one F&amp;O trade may lose. Divided by one lot&apos;s risk
+            (stop distance × lot size) to get the permitted lots. If that is
+            below one, the trade is blocked rather than sized smaller — a lot
+            cannot be split.
+          </span>
+        </div>
+
+        <div className="field">
+          <label htmlFor="fnolots">F&amp;O max lots per trade</label>
+          <input
+            id="fnolots"
+            type="number"
+            min={1}
+            step={1}
+            disabled={disabled}
+            placeholder="no lot ceiling"
+            value={current?.limits.fnoMaxLotsPerTrade ?? ""}
+            onChange={(e) => {
+              editFno(
+                "fnoMaxLotsPerTrade",
+                e.target.value === "" ? null : Number(e.target.value),
+              );
+            }}
+          />
+          <span className="hint">
+            A hard ceiling on lots in one trade. Empty means no explicit ceiling
+            — the risk, capital and exposure budgets still bind.
+          </span>
+        </div>
+
+        <div className="field">
+          <label htmlFor="fnocap">F&amp;O max capital per trade (₹)</label>
+          <input
+            id="fnocap"
+            type="number"
+            min={0}
+            step={1000}
+            disabled={disabled}
+            placeholder={`inherit (₹${formatIN(current?.limits.maxCapitalPerTrade ?? 0)})`}
+            value={current?.limits.fnoMaxCapitalPerTrade ?? ""}
+            onChange={(e) => {
+              editFno(
+                "fnoMaxCapitalPerTrade",
+                e.target.value === "" ? null : Number(e.target.value),
+              );
+            }}
+          />
+          <span className="hint">
+            For a bought option this is the premium actually paid, in full. For
+            a future it is measured against the contract <em>notional</em>, not
+            the margin posted — deliberately conservative until broker margin
+            data exists, so futures may be sized smaller than margin would
+            allow, never larger.
+          </span>
+        </div>
+
+        <div className="field">
+          <label htmlFor="fnoopen">F&amp;O max open positions</label>
+          <input
+            id="fnoopen"
+            type="number"
+            min={1}
+            step={1}
+            disabled={disabled}
+            placeholder={`inherit (${String(current?.limits.maxOpenPositions ?? 0)})`}
+            value={current?.limits.fnoMaxOpenPositions ?? ""}
+            onChange={(e) => {
+              editFno(
+                "fnoMaxOpenPositions",
+                e.target.value === "" ? null : Number(e.target.value),
+              );
+            }}
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="fnoexposure">
+            F&amp;O max exposure (% of capital)
+            {current?.limits.fnoMaxExposure === undefined
+              ? " — inheriting equity"
+              : ` — ₹${formatIN(
+                  Math.round(
+                    current.capitalAllocation * current.limits.fnoMaxExposure,
+                  ),
+                )}`}
+          </label>
+          <input
+            id="fnoexposure"
+            type="number"
+            min={0}
+            max={100}
+            step={5}
+            disabled={disabled}
+            placeholder={`inherit (${formatPct(current?.limits.maxExposure ?? 0)})`}
+            value={
+              current?.limits.fnoMaxExposure === undefined
+                ? ""
+                : Math.round(current.limits.fnoMaxExposure * 100)
+            }
+            onChange={(e) => {
+              editFno(
+                "fnoMaxExposure",
+                e.target.value === "" ? null : Number(e.target.value) / 100,
+              );
+            }}
+          />
+        </div>
+
         <p className="stepup-note">
           ⚠ Loosening any limit or changing capital requires step-up
           re-authentication. Tightening is always one click.

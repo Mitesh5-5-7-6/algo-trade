@@ -1,6 +1,6 @@
 import {
   contradictsMarket,
-  floorToLots,
+  type FnoSizingLog,
   type Position,
   type RiskCheckName,
   type RiskCheckResult,
@@ -9,7 +9,24 @@ import {
   type Signal,
 } from "@neelkanth/core";
 import { resolveLimits } from "./resolve-limits.js";
+import {
+  describeFnoSizing,
+  resolveFnoLimits,
+  sizeEquity,
+  sizeFno,
+  toFnoSizingLog,
+} from "./sizing.js";
 import type { RiskPorts } from "./ports.js";
+
+/** What `evaluateSize` hands back, whichever instrument class it sized. */
+interface SizingOutcome {
+  blocked: boolean;
+  reason: string;
+  cappedQty?: number;
+  result: RiskCheckResult;
+  /** Present for derivatives only — the lot arithmetic, for the audit trail. */
+  fnoSizing?: FnoSizingLog;
+}
 
 export interface RiskEngineDeps {
   ports: RiskPorts;
@@ -163,11 +180,16 @@ export class RiskEngine {
       const sizing = await this.evaluateSize(signal, position, limits);
       checks.push(sizing.result);
       if (sizing.blocked) {
-        return await this.finish(signal, checks, {
-          decision: "blocked",
-          failedCheck: "positionSize",
-          reason: sizing.reason,
-        });
+        return await this.finish(
+          signal,
+          checks,
+          {
+            decision: "blocked",
+            failedCheck: "positionSize",
+            reason: sizing.reason,
+          },
+          sizing.fnoSizing,
+        );
       }
       return await this.finish(
         signal,
@@ -175,6 +197,7 @@ export class RiskEngine {
         sizing.cappedQty === undefined
           ? { decision: "approved" }
           : { decision: "approved", cappedQty: sizing.cappedQty },
+        sizing.fnoSizing,
       );
     } catch (error) {
       // Fail closed (plan/14 §9): an unverifiable signal is unapproved.
@@ -215,31 +238,12 @@ export class RiskEngine {
     signal: Signal,
     position: Position | null,
     limits: RiskLimits,
-  ): Promise<{
-    blocked: boolean;
-    reason: string;
-    cappedQty?: number;
-    result: RiskCheckResult;
-  }> {
-    const block = (
-      reason: string,
-      detail: string,
-    ): { blocked: true; reason: string; result: RiskCheckResult } => ({
+  ): Promise<SizingOutcome> {
+    const block = (reason: string, detail: string): SizingOutcome => ({
       blocked: true,
       reason,
       result: { check: "positionSize", passed: false, detail },
     });
-
-    // Opening a new position must respect the max-open-positions cap.
-    if (position === null) {
-      const openCount = await this.ports.readOpenPositionCount();
-      if (openCount >= limits.maxOpenPositions) {
-        return block(
-          `open positions ${String(openCount)} ≥ max ${String(limits.maxOpenPositions)}`,
-          "max open positions reached",
-        );
-      }
-    }
 
     const price = signal.contextSnapshot.price;
     const stopLoss = signal.stopLoss;
@@ -249,17 +253,11 @@ export class RiskEngine {
         "no stopLoss on signal",
       );
     }
-    const riskPerUnit = Math.abs(price - stopLoss);
-    if (riskPerUnit <= 0) {
-      return block(
-        `stop ${String(stopLoss)} equals entry ${String(price)} — undefined risk`,
-        "zero stop distance",
-      );
-    }
 
-    // Lot size decides what a "unit" even is. Unknown symbol: equity is 1 by
-    // definition, but a derivative's multiplier is not guessable and a wrong
-    // one mis-sizes every order — so refuse rather than assume (plan/17 §7).
+    // The instrument decides which arithmetic applies. A derivative's
+    // multiplier is not guessable and a wrong one mis-sizes every order, so an
+    // unknown non-equity symbol is refused rather than assumed to be lot 1
+    // (plan/17 §7).
     const instrument = this.ports.readInstrument(signal.symbol);
     if (instrument === null && !signal.symbol.endsWith("-EQ")) {
       return block(
@@ -267,40 +265,50 @@ export class RiskEngine {
         "instrument unknown, non-equity",
       );
     }
-    const lotSize = instrument?.lotSize ?? 1;
 
     const portfolio = await this.ports.readPortfolio();
-    const riskBudget = limits.riskPerTrade * portfolio.allocatedCapital;
-    const byRisk = Math.floor(riskBudget / riskPerUnit);
+    const opensNewPosition = position === null;
+    const openCount = opensNewPosition
+      ? await this.ports.readOpenPositionCount()
+      : 0;
 
-    const capByCapital = Math.floor(limits.maxCapitalPerTrade / price);
-    const capByAvailable = Math.floor(portfolio.availableCapital / price);
-    const exposureBudget =
-      limits.maxExposure * portfolio.allocatedCapital - portfolio.investedValue;
-    const capByExposure = Math.floor(exposureBudget / price);
+    if (instrument !== null && instrument.kind !== "EQUITY") {
+      return this.sizeDerivative({
+        signal,
+        instrument,
+        price,
+        stopLoss,
+        portfolio,
+        limits,
+        openCount,
+        opensNewPosition,
+      });
+    }
 
-    const ceiling = signal.qtyProposal;
-    const unrounded = Math.min(
-      byRisk,
-      limits.maxPositionSize,
-      capByCapital,
-      capByAvailable,
-      capByExposure,
-      ...(ceiling === undefined ? [] : [ceiling]),
-    );
-    // Down to whole lots, never up: rounding up would exceed whichever limit
-    // was binding, which is the one direction sizing must never err in.
-    const qty = floorToLots(unrounded, lotSize);
-
-    if (qty <= 0) {
-      const shortfall =
-        unrounded > 0
-          ? `one lot of ${String(lotSize)} does not fit in ${String(unrounded)}`
-          : "capacity exhausted";
+    // --- Cash equity: shares, the original arithmetic ---
+    if (opensNewPosition && openCount >= limits.maxOpenPositions) {
       return block(
-        `no capacity within risk/exposure limits — ${shortfall}`,
-        `risk≤${String(byRisk)} cap≤${String(capByCapital)} avail≤${String(capByAvailable)} ` +
-          `expo≤${String(capByExposure)} lot=${String(lotSize)}`,
+        `open positions ${String(openCount)} ≥ max ${String(limits.maxOpenPositions)}`,
+        "max open positions reached",
+      );
+    }
+
+    const sized = sizeEquity({
+      entryPrice: price,
+      stopPrice: stopLoss,
+      portfolio,
+      limits,
+      lotSize: instrument?.lotSize ?? 1,
+      ...(signal.qtyProposal === undefined
+        ? {}
+        : { qtyProposal: signal.qtyProposal }),
+    });
+
+    if (sized.blockedReason !== null) {
+      return block(
+        sized.blockedReason,
+        `risk≤${String(sized.byRisk)} cap≤${String(sized.byCapital)} ` +
+          `avail≤${String(sized.byAvailable)} expo≤${String(sized.byExposure)}`,
       );
     }
 
@@ -311,15 +319,68 @@ export class RiskEngine {
     return {
       blocked: false,
       reason: "",
-      cappedQty: qty,
+      cappedQty: sized.quantity,
       result: {
         check: "positionSize",
         passed: true,
         detail:
-          `qty ${String(qty)} (${String(qty / lotSize)} lot(s) of ${String(lotSize)}) — ` +
-          `risk ₹${riskBudget.toFixed(0)} ÷ ₹${riskPerUnit.toFixed(2)}/unit = ${String(byRisk)}` +
-          (qty < byRisk ? `, capped to ${String(qty)}` : ""),
+          `qty ${String(sized.quantity)} shares — risk ₹${sized.riskBudget.toFixed(0)} ÷ ` +
+          `₹${sized.riskPerUnit.toFixed(2)}/share = ${String(sized.byRisk)}` +
+          (sized.quantity < sized.byRisk
+            ? `, capped to ${String(sized.quantity)}`
+            : ""),
       },
+    };
+  }
+
+  /**
+   * Size a derivative in whole lots (plan/14 §4.4).
+   *
+   * The lot is the smallest tradable unit, so every capacity is computed in
+   * lots and the smallest wins — never a share capacity that a lot is then
+   * floored out of. The full derivation is attached to the decision so a block
+   * can name the binding constraint instead of a bare arithmetic remainder.
+   */
+  private sizeDerivative(input: {
+    signal: Signal;
+    instrument: NonNullable<ReturnType<RiskPorts["readInstrument"]>>;
+    price: number;
+    stopLoss: number;
+    portfolio: Awaited<ReturnType<RiskPorts["readPortfolio"]>>;
+    limits: RiskLimits;
+    openCount: number;
+    opensNewPosition: boolean;
+  }): SizingOutcome {
+    const result = sizeFno({
+      symbol: input.signal.symbol,
+      instrument: input.instrument,
+      entryPrice: input.price,
+      stopPrice: input.stopLoss,
+      portfolio: input.portfolio,
+      limits: resolveFnoLimits(input.limits),
+      openPositionCount: input.openCount,
+      opensNewPosition: input.opensNewPosition,
+      ...(input.signal.qtyProposal === undefined
+        ? {}
+        : { qtyProposal: input.signal.qtyProposal }),
+    });
+    const fnoSizing = toFnoSizingLog(result);
+    const detail = describeFnoSizing(result);
+
+    if (result.blockedReason !== null) {
+      return {
+        blocked: true,
+        reason: `F&O sizing: ${result.blockedReason}`,
+        result: { check: "positionSize", passed: false, detail },
+        fnoSizing,
+      };
+    }
+    return {
+      blocked: false,
+      reason: "",
+      cappedQty: result.quantity,
+      result: { check: "positionSize", passed: true, detail },
+      fnoSizing,
     };
   }
 
@@ -328,6 +389,7 @@ export class RiskEngine {
     signal: Signal,
     checks: RiskCheckResult[],
     decision: RiskDecision,
+    fnoSizing?: FnoSizingLog,
   ): Promise<RiskDecision> {
     const blocked = decision.decision === "blocked";
     await this.ports.persistRiskLog({
@@ -341,6 +403,7 @@ export class RiskEngine {
         ? { cappedQty: decision.cappedQty }
         : {}),
       checks,
+      ...(fnoSizing === undefined ? {} : { fnoSizing }),
       ts: signal.ts,
     });
     if (blocked) {

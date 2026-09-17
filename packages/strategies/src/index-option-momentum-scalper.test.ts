@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { MarketContext, OptionChainSnapshot } from "@neelkanth/core";
+import type {
+  MarketContext,
+  OptionChainRow,
+  OptionChainSnapshot,
+} from "@neelkanth/core";
 import {
   indexOptionMomentumScalper,
   IndexOptionMomentumScalperParamsSchema,
@@ -13,6 +17,22 @@ const params = IndexOptionMomentumScalperParamsSchema.parse({
   skipOpenMinutes: 0,
   minOptionPriceChangePct: 0.005,
 });
+
+/**
+ * The chain row the fixture builds, narrowed once.
+ *
+ * The alternative — `ctx.optionChain!.rows[0]!.callBid = 90` — asserts twice
+ * that something exists and says nothing useful if it ever stops existing. A
+ * fixture that has silently lost its chain should fail by name, not by
+ * `TypeError: Cannot set property of undefined`.
+ */
+function chainRow(ctx: MarketContext): OptionChainRow {
+  const row = ctx.optionChain?.rows[0];
+  if (row === undefined) {
+    throw new Error("fixture built no option-chain row to configure");
+  }
+  return row;
+}
 
 function context(
   ts: number,
@@ -115,8 +135,9 @@ describe("Option Momentum + OI Confirmation Scalper", () => {
       callOI: 200,
       callChangeOI: 20,
     });
-    first.optionChain!.rows[0]!.callBid = 90;
-    first.optionChain!.rows[0]!.callAsk = 110;
+    const firstQuote = chainRow(first);
+    firstQuote.callBid = 90;
+    firstQuote.callAsk = 110;
     expect(indexOptionMomentumScalper.analyze(first, state).side).toBe("HOLD");
 
     const second = context(120_000, 111, {
@@ -125,8 +146,9 @@ describe("Option Momentum + OI Confirmation Scalper", () => {
       callOI: 230,
       callChangeOI: 30,
     });
-    second.optionChain!.rows[0]!.callBid = 90;
-    second.optionChain!.rows[0]!.callAsk = 110;
+    const secondQuote = chainRow(second);
+    secondQuote.callBid = 90;
+    secondQuote.callAsk = 110;
     expect(indexOptionMomentumScalper.analyze(second, state).side).toBe("HOLD");
   });
 });

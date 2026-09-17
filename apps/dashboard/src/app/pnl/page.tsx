@@ -79,7 +79,7 @@ export default function PnlPage() {
     unrealizedByStrategy.set(
       position.strategyId,
       (unrealizedByStrategy.get(position.strategyId) ?? 0) +
-      position.unrealizedPnl,
+        position.unrealizedPnl,
     );
   }
 

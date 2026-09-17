@@ -18,7 +18,7 @@ import {
   StrategiesRepository,
   type GlobalSettings,
 } from "@neelkanth/db";
-import { startOfDayIST } from "@neelkanth/engines";
+import { resolveFnoLimits, startOfDayIST } from "@neelkanth/engines";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import type { ApiServer } from "../server.js";
 import { NotFoundError, ValidationError } from "../errors.js";
@@ -136,7 +136,7 @@ const StepUpBody = z.object({ stepUpPassword: z.string().optional() });
  * a hurry must never be gated behind a password prompt.
  */
 function loosensLimits(current: RiskLimits, next: RiskLimits): boolean {
-  return (
+  if (
     next.maxDailyLoss > current.maxDailyLoss ||
     next.maxPositionSize > current.maxPositionSize ||
     next.maxCapitalPerTrade > current.maxCapitalPerTrade ||
@@ -145,6 +145,30 @@ function loosensLimits(current: RiskLimits, next: RiskLimits): boolean {
     // Raising risk-per-trade enlarges every future position. It loosens the
     // envelope as surely as raising a cap does, so it takes the same step-up.
     next.riskPerTrade > current.riskPerTrade
+  ) {
+    return true;
+  }
+
+  // The F&O limits are optional and fall back to their equity counterparts, so
+  // comparing the raw fields would miss two real loosenings: setting a
+  // previously-absent F&O limit above the equity value it was inheriting, and
+  // clearing one back to an inherited value that is higher than what it held.
+  // Both are compared through the same resolution the Risk Engine uses, so the
+  // question asked is "does the EFFECTIVE budget grow?" rather than "did a
+  // field change?".
+  const from = resolveFnoLimits(current);
+  const to = resolveFnoLimits(next);
+  return (
+    to.riskPerTrade > from.riskPerTrade ||
+    to.maxCapitalPerTrade > from.maxCapitalPerTrade ||
+    to.maxExposure > from.maxExposure ||
+    to.maxOpenPositions > from.maxOpenPositions ||
+    // null means "no lot ceiling", which is the loosest possible value —
+    // removing a ceiling is a loosening even though no number went up.
+    (to.maxLotsPerTrade === null && from.maxLotsPerTrade !== null) ||
+    (to.maxLotsPerTrade !== null &&
+      from.maxLotsPerTrade !== null &&
+      to.maxLotsPerTrade > from.maxLotsPerTrade)
   );
 }
 
@@ -294,7 +318,9 @@ export function registerControlPlane(
 
   app.get("/positions", () => runtime.getOpenPositions());
   app.get("/orders", async (request) => {
-    const query = request.query as unknown;
+    // `request.query` is already `unknown` here — no route generic narrows it —
+    // so the narrowing below is the only thing that gives it a shape.
+    const query: unknown = request.query;
     if (
       query &&
       typeof query === "object" &&

@@ -73,8 +73,71 @@ export const RiskLimitsSchema = z.object({
    * parse. 1% is the conventional starting point.
    */
   riskPerTrade: z.number().min(0).max(1).default(0.01),
+
+  // --- F&O limits (plan/14 §4.4, derivatives) ---
+  //
+  // Derivatives are sized in LOTS, not shares, so they get their own budget
+  // knobs rather than borrowing the equity ones. Every field is OPTIONAL and
+  // falls back to its equity counterpart (`resolveFnoLimits`): an operator who
+  // has not configured F&O separately gets today's limits, never looser ones.
+  //
+  // In particular `fnoRiskPerTrade` does NOT default to some larger number.
+  // A single lot of a ₹65-multiplier contract can easily risk more than 1% of
+  // a small account, and the honest answer to that is "this trade does not
+  // fit", not a budget quietly widened until it does.
+
+  /** Fraction of allocated capital risked on one F&O trade. Falls back to `riskPerTrade`. */
+  fnoRiskPerTrade: z.number().min(0).max(1).optional(),
+  /** Hard ceiling on lots in a single F&O trade. Unbounded when absent — the risk, capital and exposure capacities still bind. */
+  fnoMaxLotsPerTrade: z.number().int().positive().optional(),
+  /** Max capital committed to one F&O trade. Falls back to `maxCapitalPerTrade`. */
+  fnoMaxCapitalPerTrade: z.number().positive().optional(),
+  /** Max portfolio exposure for F&O as a fraction of allocated capital. Falls back to `maxExposure`. */
+  fnoMaxExposure: z.number().min(0).max(1).optional(),
+  /** Max concurrently open F&O positions. Falls back to `maxOpenPositions`. */
+  fnoMaxOpenPositions: z.number().int().positive().optional(),
 });
 export type RiskLimits = z.infer<typeof RiskLimitsSchema>;
+
+/**
+ * The F&O sizing arithmetic, recorded whole (plan/14 §7).
+ *
+ * Stored as structured fields rather than folded into a sentence because the
+ * question a blocked F&O trade raises is always "which capacity bound, and by
+ * how much?" — and "one lot of 60 does not fit in 44" cannot answer it. Every
+ * capacity is in LOTS, so they are directly comparable; `allowedLots` is their
+ * minimum and `finalQuantity` is `allowedLots × lotSize`.
+ */
+export const FnoSizingLogSchema = z.object({
+  symbol: SymbolSchema,
+  instrumentType: z.enum(["OPTION", "FUTURE"]),
+  /**
+   * What `capitalPerLot` measures. `PREMIUM` is an option buyer's exact cash
+   * outlay; `NOTIONAL` is a future's contract value, which is NOT the margin
+   * posted — it stands in for margin, conservatively, until broker margin data
+   * exists. Recorded so a stored decision can never be misread as margin-based.
+   */
+  capitalBasis: z.enum(["PREMIUM", "NOTIONAL"]),
+  lotSize: z.number().int().positive(),
+  entryPrice: z.number().positive(),
+  stopPrice: z.number().positive(),
+  stopDistance: z.number().nonnegative(),
+  riskPerLot: z.number().nonnegative(),
+  capitalPerLot: z.number().nonnegative(),
+  riskBudget: z.number().nonnegative(),
+  riskCapacityLots: z.number().int().nonnegative(),
+  capitalCapacityLots: z.number().int().nonnegative(),
+  exposureCapacityLots: z.number().int().nonnegative(),
+  /** The configured per-trade lot ceiling, or null when unbounded. */
+  maxLotsPerTrade: z.number().int().positive().nullable(),
+  /** Lots permitted by the open-position cap: 0 when at the cap, else unbounded (null). */
+  openPositionCapacityLots: z.number().int().nonnegative().nullable(),
+  allowedLots: z.number().int().nonnegative(),
+  finalQuantity: z.number().int().nonnegative(),
+  /** Null on approval; otherwise which capacity bound to zero, and why. */
+  blockedReason: z.string().nullable(),
+});
+export type FnoSizingLog = z.infer<typeof FnoSizingLogSchema>;
 
 /** One check's outcome, recorded for the audit trail (plan/14 §7). */
 export const RiskCheckResultSchema = z.object({
@@ -100,6 +163,8 @@ export const RiskLogSchema = z.object({
   reason: z.string().optional(),
   cappedQty: QuantitySchema.optional(),
   checks: z.array(RiskCheckResultSchema),
+  /** Present on every F&O decision that reached sizing — the lot arithmetic in full. */
+  fnoSizing: FnoSizingLogSchema.optional(),
   ts: TimestampSchema,
 });
 export type RiskLog = z.infer<typeof RiskLogSchema>;
