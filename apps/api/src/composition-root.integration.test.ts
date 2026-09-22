@@ -21,9 +21,64 @@ import { bootstrap, type AppContext } from "./composition-root.js";
  * skips when either is unreachable (local dev without Docker). CI's service
  * containers always provide both.
  */
-const MONGO_URI =
-  process.env["MONGO_URI"] ?? "mongodb://localhost:27017/neelkanth_ctx_test";
+/** The one database this suite is ever allowed to touch. */
+const IT_DB = "neelkanth_it_ctx";
+
+/**
+ * Point a Mongo URI at an isolated test database, whatever it originally named.
+ *
+ * This suite drops its database to get a clean slate, and `connectMongo` falls
+ * back to the database named IN THE URI when no name is passed — as does
+ * `bootstrap` itself (composition-root.ts). So an operator exporting the real
+ * `MONGO_URI` and running the tests would have dropped production. Rewriting
+ * the URI rather than passing a `dbName` is what makes the isolation hold for
+ * BOTH connections: the one below and the one `bootstrap` opens from the config.
+ *
+ * Only the database segment is replaced. Credentials, `+srv`, replica-set seed
+ * lists and query parameters are all preserved, so an Atlas URI still connects.
+ */
+function isolate(uri: string, dbName: string): string {
+  const queryAt = uri.indexOf("?");
+  const base = queryAt === -1 ? uri : uri.slice(0, queryAt);
+  const query = queryAt === -1 ? "" : uri.slice(queryAt);
+  const schemeEnd = base.indexOf("://");
+  const authorityStart = schemeEnd === -1 ? 0 : schemeEnd + 3;
+  const pathStart = base.indexOf("/", authorityStart);
+  const authority = pathStart === -1 ? base : base.slice(0, pathStart);
+  return `${authority}/${dbName}${query}`;
+}
+
+/** The database segment a URI resolves to — what `connectMongo` would open. */
+function databaseOf(uri: string): string {
+  const queryAt = uri.indexOf("?");
+  const base = queryAt === -1 ? uri : uri.slice(0, queryAt);
+  const schemeEnd = base.indexOf("://");
+  const authorityStart = schemeEnd === -1 ? 0 : schemeEnd + 3;
+  const pathStart = base.indexOf("/", authorityStart);
+  return pathStart === -1 ? "" : base.slice(pathStart + 1);
+}
+
+const MONGO_URI = isolate(
+  process.env["MONGO_URI"] ?? "mongodb://localhost:27017/placeholder",
+  IT_DB,
+);
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
+
+/**
+ * Refuse to load at all unless the URI resolves to an isolated database.
+ *
+ * Deliberately at module scope, not inside `beforeAll`: the probe there catches
+ * everything in order to skip when infrastructure is absent, so a guard placed
+ * inside it would be swallowed into a silent skip. A refusal to drop somebody's
+ * production data must be the loudest thing in the run, not the quietest.
+ */
+if (!/^neelkanth_(it|ci)_/.test(databaseOf(MONGO_URI))) {
+  throw new Error(
+    `refusing to run: MONGO_URI resolves to database "${databaseOf(MONGO_URI)}" — ` +
+      "this suite drops its database and may only ever target " +
+      "neelkanth_it_* or neelkanth_ci_*",
+  );
+}
 
 function silentLogger() {
   return createLogger({
@@ -65,7 +120,7 @@ let infraAvailable = false;
 beforeAll(async () => {
   let mongoOk = false;
   try {
-    const mongo = await connectMongo(MONGO_URI);
+    const mongo = await connectMongo(MONGO_URI, IT_DB);
     await mongo.db.dropDatabase(); // clean slate → getGlobal seeds fresh
     // Seed an enabled strategy + capital so boot exercises the enable path.
     await new StrategiesRepository(mongo.db).create(enabledStrategy);
