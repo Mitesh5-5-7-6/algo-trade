@@ -5,7 +5,7 @@ import type {
   StrategyVerdict,
 } from "@neelkanth/core";
 import type { IndicatorSpec } from "@neelkanth/indicators";
-import type { StrategyDefinition } from "./contract.js";
+import type { SignalResolution, StrategyDefinition } from "./contract.js";
 
 /**
  * A strategy instance with its generic Params/State boxed away, so the runner
@@ -22,6 +22,26 @@ export interface RunnableStrategy {
   /** The derivative contract shape to trade, or null for "trade what I analyse". */
   derivative(): DerivativeTarget | null;
   analyze(context: MarketContext): StrategyVerdict;
+  /**
+   * Hand this instance the fate of a signal it emitted (§0.5.5).
+   *
+   * A no-op for strategies that do not implement it, so the runner can call it
+   * unconditionally rather than asking first.
+   */
+  onSignalOutcome(resolution: SignalResolution): void;
+  /**
+   * This instance's persistable state (§0.5.6).
+   *
+   * `null` means the strategy does not implement snapshotting — a fact the
+   * runner acts on rather than a value it stores. It is not spelled in the
+   * type, because `unknown` already admits null and saying so twice reads as
+   * though the two were distinguishable.
+   */
+  snapshot(): unknown;
+  /** Rebuild from a snapshot. Returns false when this strategy cannot. */
+  restore(snapshot: unknown): boolean;
+  /** The state shape's version, or null when the strategy is not persisted. */
+  readonly stateVersion: string | null;
 }
 
 function instantiate<P, S>(
@@ -40,6 +60,16 @@ function instantiate<P, S>(
     warmupBars: () => def.warmupBars(params),
     derivative: () => def.derivative?.(params) ?? null,
     analyze: (context) => def.analyze(context, state),
+    onSignalOutcome: (resolution) => {
+      def.onSignalOutcome?.(state, resolution);
+    },
+    stateVersion: def.stateVersion ?? null,
+    snapshot: () => (def.snapshot === undefined ? null : def.snapshot(state)),
+    restore: (snapshot) => {
+      if (def.restore === undefined) return false;
+      def.restore(state, snapshot);
+      return true;
+    },
   };
 }
 

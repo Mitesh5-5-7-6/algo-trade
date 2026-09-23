@@ -86,6 +86,23 @@ export class PositionEngine {
     return this.tradeCount;
   }
 
+  /**
+   * Restore the day's realized P&L after a mid-session restart (§0.5.4).
+   *
+   * Only the GLOBAL counter, because that is what the daily-loss gate reads
+   * and the only figure the ledger persists. Per-strategy realized P&L is not
+   * restored and is not claimed to be — it is a separately recorded gap
+   * (CURRENT_STATE §5.3), and seeding it with a fabricated split would hide
+   * that rather than close it.
+   *
+   * `tradeCount` is likewise left alone: it counts fills this process applied,
+   * and inventing a prior count would make the PnL snapshot lie about how many
+   * trades it saw.
+   */
+  seedDailyRealized(realizedPnl: number): void {
+    this.globalRealizedPnl = realizedPnl;
+  }
+
   /** Zero the daily realized counters at session start (plan/13 §5, plan/14 §6). */
   resetDaily(): void {
     this.globalRealizedPnl = 0;

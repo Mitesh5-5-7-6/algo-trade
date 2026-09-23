@@ -41,15 +41,46 @@ export const OrbParamsSchema = z.object({
 
 export type OrbParams = z.infer<typeof OrbParamsSchema>;
 
+/**
+ * A one-shot entry, in three states rather than two (§0.5.5).
+ *
+ * `proposed` is the state that was missing. A boolean forced the strategy to
+ * choose between proposing twice while an order was in flight, and spending
+ * the day's only entry on a signal that risk was about to block. ORB lost
+ * whole days to the second: blocked at 09:20 by a stale market view, and
+ * silent until the close.
+ *
+ * A `proposed` that never resolves stays `proposed` for the session, so the
+ * failure mode is a missed entry rather than a duplicate one. That is the
+ * right direction to fail in: a trade not taken costs an opportunity, a trade
+ * taken twice costs money.
+ */
+export type OrbEntryLatch = "none" | "proposed" | "entered";
+
 export interface OrbState {
   params: OrbParams;
   /** The `sessionOpenTs` this state belongs to; a change means a new session. */
   sessionMarker: number | null;
   orHigh: number | null;
   orLow: number | null;
-  enteredUp: boolean;
-  enteredDown: boolean;
+  upEntry: OrbEntryLatch;
+  downEntry: OrbEntryLatch;
 }
+
+/**
+ * What survives a restart (§0.5.6).
+ *
+ * Every field `analyze` reads back and none it does not: `params` are the
+ * operator's stored config, and a second copy here could disagree with the
+ * one the strategy was enabled with.
+ */
+const OrbSnapshotSchema = z.object({
+  sessionMarker: z.number().nullable(),
+  orHigh: z.number().nullable(),
+  orLow: z.number().nullable(),
+  upEntry: z.enum(["none", "proposed", "entered"]),
+  downEntry: z.enum(["none", "proposed", "entered"]),
+});
 
 export const orb: StrategyDefinition<OrbParams, OrbState> = {
   type: "ORB",
@@ -65,8 +96,8 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
     sessionMarker: null,
     orHigh: null,
     orLow: null,
-    enteredUp: false,
-    enteredDown: false,
+    upEntry: "none",
+    downEntry: "none",
   }),
   analyze(context, state): StrategyVerdict {
     const p = state.params;
@@ -79,8 +110,8 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
     if (state.sessionMarker !== sessionOpenTs) {
       state.orHigh = null;
       state.orLow = null;
-      state.enteredUp = false;
-      state.enteredDown = false;
+      state.upEntry = "none";
+      state.downEntry = "none";
     }
     state.sessionMarker = sessionOpenTs;
 
@@ -128,8 +159,9 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
 
     const midpoint = (state.orHigh + state.orLow) / 2; // default stop (plan/16 §5)
 
-    if (!state.enteredUp && candle.close > state.orHigh) {
-      state.enteredUp = true;
+    if (state.upEntry === "none" && candle.close > state.orHigh) {
+      // Proposed, not taken. What it becomes is decided by onSignalOutcome.
+      state.upEntry = "proposed";
       const margin = (candle.close - state.orHigh) / range;
       return {
         side: "BUY",
@@ -141,8 +173,12 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
       };
     }
 
-    if (p.allowShort && !state.enteredDown && candle.close < state.orLow) {
-      state.enteredDown = true;
+    if (
+      p.allowShort &&
+      state.downEntry === "none" &&
+      candle.close < state.orLow
+    ) {
+      state.downEntry = "proposed";
       const margin = (state.orLow - candle.close) / range;
       return {
         side: "SELL",
@@ -155,5 +191,45 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
     }
 
     return hold("no breakout");
+  },
+
+  /**
+   * Confirm or release the one-shot latch (§0.5.5).
+   *
+   * A fill makes the entry real and spends the day's attempt. Anything else
+   * — risk blocked it, the broker rejected it, the runner never forwarded it —
+   * releases the latch, so the next bar that still qualifies may try again.
+   *
+   * Only a `proposed` latch moves. A late or duplicate resolution for an
+   * entry already confirmed must not reopen it.
+   */
+  onSignalOutcome(state, resolution) {
+    const latch = resolution.side === "BUY" ? "upEntry" : "downEntry";
+    if (state[latch] !== "proposed") return;
+    state[latch] = resolution.status === "FILLED" ? "entered" : "none";
+  },
+
+  /**
+   * ORB is the strategy that most needs to survive a restart (§0.5.6): the
+   * opening range is built once, in the first fifteen minutes, and a process
+   * that starts at 11:00 can never rebuild it — the bars are in Mongo, but the
+   * range they define is not. Without this it spent every afternoon holding
+   * for a level it no longer knew.
+   */
+  stateVersion: "1.0.0",
+  snapshot: (state) => ({
+    sessionMarker: state.sessionMarker,
+    orHigh: state.orHigh,
+    orLow: state.orLow,
+    upEntry: state.upEntry,
+    downEntry: state.downEntry,
+  }),
+  restore: (state, snapshot) => {
+    const parsed = OrbSnapshotSchema.parse(snapshot);
+    state.sessionMarker = parsed.sessionMarker;
+    state.orHigh = parsed.orHigh;
+    state.orLow = parsed.orLow;
+    state.upEntry = parsed.upEntry;
+    state.downEntry = parsed.downEntry;
   },
 };

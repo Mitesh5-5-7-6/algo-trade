@@ -25,6 +25,22 @@ import type { IndicatorSpec } from "@neelkanth/indicators";
  *   (plan/15 §2, plan/18 §4).
  * - `paramsSchema` validates operator config at enable time (plan/15 §4).
  */
+/**
+ * What became of a signal a strategy emitted (§0.5.5).
+ *
+ * `FILLED` means the broker confirmed an execution. Everything else — risk
+ * blocked it, the broker rejected it, the runner declined to forward it — is
+ * `REJECTED`. The distinction a strategy actually needs is "did this become a
+ * position?", and from that question there are only two answers.
+ */
+export interface SignalResolution {
+  readonly signalId: string;
+  readonly side: "BUY" | "SELL";
+  readonly status: "FILLED" | "REJECTED";
+  /** Why, in the words of whichever component decided. */
+  readonly reason: string;
+}
+
 export interface StrategyDefinition<Params, State> {
   /** Registry key mapping stored config → code (plan/15 §4), e.g. "EMA_CROSSOVER". */
   readonly type: string;
@@ -57,4 +73,55 @@ export interface StrategyDefinition<Params, State> {
   init(params: Params, symbol: string): State;
   /** The decision function (plan/15 §2). May mutate `state`; performs no I/O. */
   analyze(context: MarketContext, state: State): StrategyVerdict;
+  /**
+   * Told what became of a signal this instance emitted (§0.5.5). Optional.
+   *
+   * It exists because `analyze()` cannot know. A one-shot strategy has to
+   * mark that it proposed an entry — otherwise it proposes again on the very
+   * next bar, while the first order is still in flight — but marking it as
+   * TAKEN at that moment spends the day's only entry on a signal the Risk
+   * Engine may be about to block. ORB lost whole days that way: blocked at
+   * 09:20 by a stale market view, silent until the close.
+   *
+   * So a one-shot latch has three states, not two: nothing, proposed, and
+   * confirmed. `analyze` moves it to proposed; this moves it to confirmed or
+   * back to nothing. Synchronous and I/O-free, like `analyze`.
+   */
+  onSignalOutcome?(state: State, resolution: SignalResolution): void;
+  /**
+   * The state SHAPE's version (§0.5.6). Required alongside `snapshot`.
+   *
+   * Bumped whenever the stored fields change meaning. A snapshot written by an
+   * older build is then REFUSED rather than misread — restoring one field into
+   * another is the kind of corruption that produces plausible trades and no
+   * error message.
+   */
+  readonly stateVersion?: string;
+  /**
+   * A JSON-safe picture of everything worth surviving a restart (§0.5.6).
+   *
+   * Strategies accumulate state across bars — an opening range, the previous
+   * bar's EMAs, a one-shot latch — and a process that restarts at 11:00 built
+   * none of it. ORB came back not knowing where the morning's range was; a
+   * crossover came back unable to see the cross it was halfway through.
+   *
+   * It returns what matters, not the whole object: `params` come from stored
+   * config and re-serializing them would create a second, divergent copy of
+   * the operator's settings.
+   *
+   * Omit both this and `restore` and the strategy simply is not persisted —
+   * which the runner reports rather than assumes.
+   */
+  snapshot?(state: State): unknown;
+  /**
+   * Rebuild from a snapshot this same strategy produced.
+   *
+   * Mutates the freshly initialised state rather than returning a new one, so
+   * `init` stays the single place a state is constructed and the params it
+   * holds are never overwritten by a stored copy.
+   *
+   * May throw on a snapshot it does not recognise; the runner treats that as
+   * "start cold" and says so.
+   */
+  restore?(state: State, snapshot: unknown): void;
 }

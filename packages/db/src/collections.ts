@@ -1,7 +1,7 @@
 import type { Db } from "mongodb";
 
 /**
- * The 14-collection registry (plan/07 §4) and every index it specifies —
+ * The collection registry (plan/07 §4) and every index it specifies —
  * database design as code, applied idempotently at boot. Collection names
  * are used ONLY through this constant (plan/25 §3).
  */
@@ -19,6 +19,11 @@ export const COLLECTIONS = {
   notifications: "notifications",
   news: "news",
   brokerTokens: "broker_tokens",
+  /**
+   * Per-instance strategy state, so a restart resumes rather than restarts
+   * (§0.5.6). One row per (strategy, symbol), overwritten on change.
+   */
+  strategyState: "strategy_state",
   settings: "settings",
 } as const;
 
@@ -89,6 +94,11 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.candles)
       .createIndex({ symbol: 1, interval: 1, ts: 1 }, { unique: true }),
+
+    // strategy_state — one row per instance; the key IS the identity.
+    db
+      .collection(COLLECTIONS.strategyState)
+      .createIndex({ strategyId: 1, symbol: 1 }, { unique: true }),
 
     // trade_logs
     db.collection(COLLECTIONS.tradeLogs).createIndex({ ts: -1 }),

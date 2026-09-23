@@ -38,6 +38,10 @@ export interface RsiReversionState {
   prevRsi: number | null;
 }
 
+const RsiReversionSnapshotSchema = z.object({
+  prevRsi: z.number().nullable(),
+});
+
 export const rsiReversion: StrategyDefinition<
   RsiReversionParams,
   RsiReversionState
@@ -105,5 +109,16 @@ export const rsiReversion: StrategyDefinition<
     }
 
     return hold("no re-cross");
+  },
+
+  /**
+   * The re-cross out of an extreme needs the previous bar's RSI to be
+   * visible (§0.5.6). Without it a restarted process cannot tell a reversion
+   * from a reading that was already there when it woke up.
+   */
+  stateVersion: "1.0.0",
+  snapshot: (state) => ({ prevRsi: state.prevRsi }),
+  restore: (state, snapshot) => {
+    state.prevRsi = RsiReversionSnapshotSchema.parse(snapshot).prevRsi;
   },
 };
