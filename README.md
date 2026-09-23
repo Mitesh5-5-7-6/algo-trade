@@ -2,10 +2,11 @@
 
 Autonomous algorithmic trading platform (NSE/BSE via FYERS — paper first, live later, same pipeline).
 
-**All documentation lives in [`docs/`](docs/).** Start with [`docs/README.md`](docs/README.md), which indexes the three architecture documents and explains how they are written.
+**All documentation lives in [`docs/`](docs/).** Start with [`docs/README.md`](docs/README.md), which indexes them and explains how they are written.
 
 | Document                                                                                             | What it is                                                                     |
 | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| [`docs/PLAN.md`](docs/PLAN.md)                                                                       | **The execution authority** — the current phase and the next task              |
 | [`docs/architecture/ARCHITECTURE_DECISION.md`](docs/architecture/ARCHITECTURE_DECISION.md)           | The architectural authority — what was chosen, why, and what must never happen |
 | [`docs/architecture/RND_RESEARCH_SPECIFICATION.md`](docs/architecture/RND_RESEARCH_SPECIFICATION.md) | The Market R&D system and its phased build                                     |
 | [`docs/architecture/CURRENT_STATE.md`](docs/architecture/CURRENT_STATE.md)                           | What the repository actually contains today, and every known gap               |

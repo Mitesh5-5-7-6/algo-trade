@@ -8,3 +8,8 @@ pnpm-lock.yaml
 plan/
 .env.example
 golden-record.json
+
+# Staging area for source planning documents, pending reconciliation of the
+# newer ARCHITECTURE_DECISION / RND_RESEARCH_SPECIFICATION sections into docs/.
+# Not formatted: these are inputs, not repository documentation.
+AI_Plan/

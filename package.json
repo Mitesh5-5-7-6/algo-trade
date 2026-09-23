@@ -2,7 +2,7 @@
   "name": "neelkanth-trader",
   "version": "0.0.0",
   "private": true,
-  "description": "Autonomous algorithmic trading platform — see plan/ for the specification book",
+  "description": "Autonomous algorithmic trading platform — see docs/ for the architecture; docs/PLAN.md is the execution plan",
   "engines": {
     "node": ">=22"
   },

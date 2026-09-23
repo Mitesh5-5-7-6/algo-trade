@@ -1,12 +1,13 @@
 # Current State — Neelkanth Trader
 
-**Status:** Audit baseline — Phase 0 re-verification applied
-**Audited against:** branch `docs/architecture-baseline`, working tree, 2026-09-14
+**Status:** Audit baseline — Phase 0 durability work applied
+**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23
+**Execution order:** [PLAN.md](../PLAN.md) — this document says what exists, never what to build next
 **Governed by:** [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md)
 
 This document records what the repository actually contains, as opposed to what the architecture describes. It exists because the two architecture documents are forward-looking by design, and a plan that quietly assumes unbuilt infrastructure is worse than no plan.
 
-Every gap below is recorded, not fixed, **except** the one Phase 0 owns: the session flush (§5.1), which is repaired and marked so. Everything else remains an entry, not a task.
+Every gap below is recorded, not fixed, **except** the three Phase 0 owns — the session flush (§5.1), the daily-loss counter (§5.2) and strategy state across a restart (§5.7, §5.8) — which are repaired and marked so. Everything else remains an entry, not a task.
 
 ### Component status vocabulary
 
@@ -17,7 +18,7 @@ Every gap below is recorded, not fixed, **except** the one Phase 0 owns: the ses
 | `BROKEN`           | Present and wired, but does not do what it appears to do                    |
 | `MISSING`          | Not present in any form                                                     |
 
-`BROKEN` is a distinct category on purpose. The components in §5 were each constructed, referenced and covered by tests, and still did not work in production. One of them — the session flush — is now repaired; four remain.
+`BROKEN` is a distinct category on purpose. The components in §5 were each constructed, referenced and covered by tests, and still did not work in production. Three are now repaired (§5.1, §5.2, §5.7); three remain (§5.3, §5.4, §5.5).
 
 ### Audit rule
 
@@ -27,28 +28,32 @@ Every claim here is verified against the **working branch** at the time of writi
 
 ## 1. Summary
 
-| Gap                                     | Status             | Phase |
-| --------------------------------------- | ------------------ | ----- |
-| Historical 5m ingestion                 | `MISSING`          | 1     |
-| Date-range candle query                 | `MISSING`          | 1     |
-| Candle provenance                       | `MISSING`          | 1–2   |
-| Completed Trade entity                  | `MISSING`          | 2     |
-| Entry ↔ exit linkage                    | `MISSING`          | 2     |
-| Exit lifecycle completeness             | `PARTIALLY EXISTS` | 3     |
-| Session flush / `pollSession`           | `EXISTS` ✅        | 0     |
-| Flush depends on a correct holiday list | `MISSING` guard    | —     |
-| Daily-loss restart persistence          | `BROKEN`           | 0–3   |
-| Deterministic replay coverage           | `PARTIALLY EXISTS` | 4     |
-| Pattern vocabulary                      | `MISSING`          | 5     |
-| Statistical gate                        | `MISSING`          | 7     |
-| Daily R&D                               | `MISSING`          | 8     |
-| AI research agent                       | `MISSING`          | 11    |
-| Environment separation (R&D/Paper/Live) | `PARTIALLY EXISTS` | —     |
-| Per-strategy PnL snapshots              | `BROKEN`           | —     |
-| Signal outcome recording                | `BROKEN`           | —     |
-| Daily PnL snapshot durability           | `BROKEN`           | —     |
+| Gap                                     | Status             |
+| --------------------------------------- | ------------------ |
+| Historical 5m ingestion                 | `MISSING`          |
+| Date-range candle query                 | `MISSING`          |
+| Candle provenance                       | `MISSING`          |
+| Completed Trade entity                  | `MISSING`          |
+| Entry ↔ exit linkage                    | `MISSING`          |
+| Exit lifecycle completeness             | `PARTIALLY EXISTS` |
+| Session flush / `pollSession`           | `EXISTS` ✅        |
+| Flush depends on a correct holiday list | `MISSING` guard    |
+| Daily-loss restart persistence          | `EXISTS` ✅        |
+| Strategy one-shot latch vs risk blocks  | `EXISTS` ✅        |
+| Strategy state survives restart         | `EXISTS` ✅        |
+| Deterministic replay coverage           | `PARTIALLY EXISTS` |
+| Pattern vocabulary                      | `MISSING`          |
+| Statistical gate                        | `MISSING`          |
+| Daily R&D                               | `MISSING`          |
+| AI research agent                       | `MISSING`          |
+| Environment separation (R&D/Paper/Live) | `PARTIALLY EXISTS` |
+| Per-strategy PnL snapshots              | `BROKEN`           |
+| Signal outcome recording                | `BROKEN`           |
+| Daily PnL snapshot durability           | `BROKEN`           |
 
-Phase numbers refer to [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFICATION.md). Entries with no phase are trading-platform defects rather than research dependencies; they are recorded here because they distort the very evidence the research system is meant to consume.
+**There is deliberately no phase column.** Which phase closes a gap is an ordering decision, and ordering has exactly one home: [PLAN.md](../PLAN.md). A second copy here is how a document whose job is "what exists" quietly becomes a third roadmap.
+
+Entries are trading-platform defects as well as research dependencies; both are recorded here because a defect in the trading path distorts the very evidence the research system is meant to consume.
 
 **✅ The session flush is repaired** — Phase 0, see §5.1. It was a hard prerequisite for Phase 1: backfilling historical candles over a still-broken aggregator creates two data-quality problems in one collection, each masking the other ([../design/PHASE_1_HISTORICAL_DATA.md §1](../design/PHASE_1_HISTORICAL_DATA.md)). That prerequisite is now met. §5.6 records the one residual case the repair deliberately does not cover.
 
@@ -63,8 +68,8 @@ Phase numbers refer to [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFIC
 | Candle storage                     | `PARTIALLY EXISTS` | Idempotent upsert; no range query, no provenance                     |
 | Historical data                    | `MISSING`          | —                                                                    |
 | Indicator engine                   | `EXISTS`           | Deterministic, warm-up from stored candles                           |
-| Strategy engine                    | `PARTIALLY EXISTS` | 4 of a planned 9 strategies                                          |
-| Risk engine                        | `EXISTS`           | Five checks, fail-closed, risk-reducing exemption                    |
+| Strategy engine                    | `PARTIALLY EXISTS` | 8 of a planned 9; state + one-shot latch survive a restart (§5.7)    |
+| Risk engine                        | `EXISTS`           | Five checks, fail-closed; daily loss is durable per IST day (§5.2)   |
 | Order manager                      | `EXISTS`           | Unique `signalId` index as the duplicate-execution backstop          |
 | Position engine                    | `EXISTS`           | Fill projection, idempotent, reversal-aware                          |
 | Exit engine                        | `PARTIALLY EXISTS` | Three triggers                                                       |
@@ -178,12 +183,14 @@ Each of these was constructed, referenced, and did not do what its presence impl
 - **Fix:** `MarketDataEngine.flushOpenBars()` persists and publishes every open bar and holds no session state. The runtime calls it inside the `marketClosed` branch of `syncSession`, before publishing `MARKET_CLOSE` and before the PnL snapshot. The dead `pollSession`, and the now-unused `session` and `exchange` dependencies, are removed — one session driver, no shared stateful manager. See [market-data-engine.ts](../../packages/engines/src/market-data/market-data-engine.ts) and [runtime.ts](../../apps/api/src/engines/runtime.ts).
 - **Status:** `EXISTS`. Six tests cover flush, multi-symbol/multi-interval flush, idempotency, the empty case, error routing, and the absence of a second session driver.
 
-### 5.2 Daily-loss counter resets on restart
+### 5.2 Daily-loss counter resets on restart — FIXED in Phase 0
 
-- **Evidence:** `readDailyRealizedLoss` reads in-memory state — `Math.max(0, -positionEngine.realizedPnl())` ([apps/api/src/engines/runtime.ts:440](../../apps/api/src/engines/runtime.ts#L440)) — and that counter is zeroed on market open.
-- **Consequence:** A mid-session process restart makes the daily-loss gate forget the day's losses entirely.
-- **Why it matters:** This is a live risk control, not a reporting detail.
-- **Planned phase:** 0–3.
+- **Original evidence:** `readDailyRealizedLoss` read in-memory state — `Math.max(0, -positionEngine.realizedPnl())` — and that counter is zeroed on market open.
+- **Consequence:** a mid-session restart made the daily-loss gate forget the day's losses entirely, so the machine started the afternoon believing it was flat. The limit that exists to stop a bad day compounding was the one thing a crash reset.
+- **Fix:** [`DailyLossLedger`](../../packages/engines/src/risk/daily-loss-ledger.ts) persists the realized figure to `risk:dailyLoss:<istDate>` — the key the namespace table had reserved and nothing used — and boot restores it through `PositionEngine.seedDailyRealized`. `PositionEngine` remains the single authority for the number; the ledger owns only its durability.
+- **The decision worth knowing:** an unknown day **throws** rather than reporting zero, and the Risk Engine turns that into a fail-closed block. Zero and "unknown" are opposite facts, and a gate that cannot tell them apart waves through exactly the trades it exists to stop. The write side is asymmetric for the same reason: a failed write is reported and swallowed, because the in-memory counter is still correct for this process, while a failed read is fatal.
+- **Deliberately partial:** only the GLOBAL counter is restored. Per-strategy realized P&L stays §5.3's gap rather than being seeded with a fabricated split.
+- **Status:** `EXISTS`. 13 tests in [daily-loss-ledger.test.ts](../../packages/engines/src/risk/daily-loss-ledger.test.ts), including the end-to-end restart and the refusal to report a loss for a different IST day than the ledger holds.
 
 ### 5.3 Per-strategy PnL snapshots are structurally empty
 
@@ -213,6 +220,24 @@ Found while repairing §5.1, and deliberately **not** fixed with it.
 - **Status:** `MISSING` guard, recorded not fixed. Widening the Phase 0 repair to cover it would mean adding a session gate to the tick path — a behaviour change to live ingestion, which is outside the scope fence in [RND_RESEARCH_SPECIFICATION.md Phase 0](RND_RESEARCH_SPECIFICATION.md).
 - **Planned phase:** unscheduled. Candidates when it is taken up: gate `ingestRaw` on session phase, or make the flush time-driven rather than edge-driven.
 
+### 5.7 The one-shot latch was spent by emission, not by a fill — FIXED in Phase 0
+
+- **Original evidence:** `orb.analyze()` set `state.enteredUp = true` on the bar it proposed the entry, before anything downstream had seen the signal.
+- **Consequence:** the Risk Engine blocking that signal — a stale market view at 09:20, say — consumed ORB's single daily entry. The strategy then held for the rest of the session, indistinguishable from the outside from a day on which no breakout ever happened.
+- **Why `analyze` could not fix it alone:** it is pure and synchronous by contract, so it cannot know whether an order filled. But it also cannot simply omit the mark, or it re-proposes on every bar while the first order is still in flight.
+- **Fix:** the latch has three states, not two — `none → proposed → entered`. `analyze` moves it to `proposed`; the new `onSignalOutcome` hook on [the strategy contract](../../packages/strategies/src/contract.ts) moves it to `entered` on a confirmed fill or back to `none` on anything else. The runner routes `RISK_BLOCKED`, `ORDER_REJECTED`, `ORDER_FILLED` and its own below-threshold drops back to the emitting instance. Because `ORDER_FILLED` carries no `signalId`, the link is two hops through `ORDER_PLACED`.
+- **The direction it fails in:** a proposal whose verdict never arrives stays `proposed` for the session. A trade not taken costs an opportunity; a trade taken twice costs money.
+- **Status:** `EXISTS`. 9 tests in [orb-latch.test.ts](../../packages/strategies/src/orb-latch.test.ts) and 10 in [signal-outcome.test.ts](../../packages/engines/src/strategy/signal-outcome.test.ts).
+
+### 5.8 Strategy state did not survive a restart — FIXED in Phase 0
+
+- **Original evidence:** `StrategyDefinition` had no snapshot or restore hook, and `registry.instantiate` closed over a state built fresh by `init()` on every boot. Nothing read or wrote it.
+- **Consequence:** a restarted process came back believing nothing had happened yet — including that today's one-shot entry had not been taken.
+- **Fix:** optional `snapshot`/`restore` on the contract, stored in the `strategy_state` collection by [`StrategyStateRepository`](../../packages/db/src/strategy-state-repository.ts), keyed `(strategyId, symbol)` and written only when the serialized snapshot changes.
+- **What it refuses:** a snapshot whose `type` or `stateVersion` does not match is declined loudly and the instance starts cold. A snapshot is an opaque blob whose meaning lives entirely in the code that wrote it; reading one into a later build whose fields mean something else produces a running strategy with plausible state and no error anywhere.
+- **Deliberately partial, and this is the interesting part:** anything DERIVABLE from the candle window is recomputed, not stored. ORB already reads its opening range out of the window rather than accumulating it, precisely so a process starting at 11:20 is not left holding null all day. Only what cannot be derived is persisted — whether today's entry was taken, and the previous bar's indicator values mid-cross.
+- **Status:** `EXISTS`. 7 tests in [strategy-state.test.ts](../../packages/engines/src/strategy/strategy-state.test.ts), covering the restart, both refusals, and the no-op write.
+
 ---
 
 ## 6. Missing R&D subsystems
@@ -237,36 +262,13 @@ Recorded for completeness. None of these exist in any form, and each is gated on
 ## 7. Documentation debt
 
 - **The `plan/` documentation spine was deleted** in commit `c158458`, removing 29 markdown files. Roughly 900 `plan/NN §X` citations remain in source comments, across configuration, broker, Redis keyspace, settings, CI and the root package manifest. These are resolved through the bridge table in [../README.md](../README.md) rather than by editing the comments. The originals remain recoverable from `c158458^`.
-- **`task.md`** at the repository root tracks phases derived from the deleted `plan/28_ROADMAP.md` and is now partly orphaned.
-- **`ImproveRedis.md`** at the repository root is a live work order on Redis command consumption and remains valid.
-
----
-
-## 8. Next engineering sequence
-
-```
- 0. Verify repo + aggregator integrity
- 1. Historical 5m ingestion
- 2. Trade entity + lifecycle
- 3. Exit lifecycle
- 4. Deterministic replay
- 5. Pattern vocabulary
- 6. Counterfactual strategy evaluation
- 7. Statistical validation
- 8. Daily R&D
- 9. Weekly / monthly / quarterly R&D
-10. Research knowledge base
-11. AI research agent
-```
-
-These are the canonical phase numbers from [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFICATION.md); Phases 12–15 continue past the end of this chain. Everything from Phase 7 onward is downstream of having trustworthy evidence — which is the entire reason this document exists.
-
-The first two steps are not independent. Phase 0 includes repairing the session flush (§5.1), and Phase 1 does not begin until it is repaired.
+- **`task.md`, `ImproveRedis.md` and the root architecture drafts** were removed in `250e279`; their content is recoverable from `7d63bdc`. Execution order now lives in [PLAN.md](../PLAN.md) alone.
 
 ---
 
 ## Related documents
 
+- [PLAN.md](../PLAN.md) — **the single execution authority**: what to build now, and in what order
 - [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) — architectural authority
 - [RND_RESEARCH_SPECIFICATION.md](RND_RESEARCH_SPECIFICATION.md) — the research system and its phases
 - [../README.md](../README.md) — documentation index and the `plan/NN` citation bridge

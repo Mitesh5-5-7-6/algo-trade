@@ -134,7 +134,9 @@ Deployment starts as `neelkanth-rnd` (API + worker in one project) and splits in
 
 ## 4. Phases — `DECIDED` (ordering) / `PROPOSED` (content)
 
-Sixteen phases in strict dependency order. **This numbering is canonical.** Phases 0–4 contain no research at all — they are plumbing, and that is the point.
+Sixteen phases in strict dependency order. Phases 0–4 contain no research at all — they are plumbing, and that is the point.
+
+**Ordering authority lives in [PLAN.md](../PLAN.md), not here.** This section describes what each phase _contains_ and why the dependencies run the way they do; PLAN.md decides which one is current and what may start. An earlier draft of this section claimed its own numbering was canonical, which put it in direct conflict with PLAN.md §28 — and a reader hitting two documents that each declare themselves authoritative has no way to proceed. Where the two disagree on content, this document wins; where they disagree on order, PLAN.md wins.
 
 ### Phase 0 — Verify repository state and aggregator integrity
 
