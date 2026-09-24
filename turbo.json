@@ -11,7 +11,8 @@
     },
     "lint": {},
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "env": ["MONGO_URI", "REDIS_URL", "REQUIRE_INTEGRATION"]
     }
   }
 }

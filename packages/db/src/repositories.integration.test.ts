@@ -1,4 +1,9 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  closeProbe,
+  probeMongo,
+  type MongoProbe,
+} from "./test-support/infra.js";
 import type {
   Candle,
   Order,
@@ -11,7 +16,6 @@ import type {
 import {
   CandlesRepository,
   COLLECTIONS,
-  connectMongo,
   ensureIndexes,
   OrdersRepository,
   PnlSnapshotsRepository,
@@ -26,17 +30,35 @@ import {
 const MONGO_URI =
   process.env["MONGO_URI"] ?? "mongodb://localhost:27017/neelkanth_repos_test";
 
+let probe: MongoProbe | undefined;
 let connection: MongoConnection;
 
 beforeAll(async () => {
   // A per-file database so parallel integration test files never share one.
-  connection = await connectMongo(MONGO_URI, "neelkanth_it_repos");
+  probe = await probeMongo(
+    MONGO_URI,
+    "neelkanth_it_repos",
+    "packages/db/src/repositories.integration.test.ts",
+  );
+  if (!probe.reachable) return;
+  connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 });
 
 afterAll(async () => {
-  await connection.close();
+  await closeProbe(probe);
+});
+
+/**
+ * Skip every test in this file when the database is unreachable (§0.4).
+ *
+ * A `beforeEach` rather than a guard inside each test: reachability is only
+ * known after `beforeAll` has run, so `describe.skipIf` — which is evaluated
+ * at collection time — cannot see it.
+ */
+beforeEach((ctx) => {
+  if (probe?.reachable !== true) ctx.skip();
 });
 
 const order = (overrides: Partial<Order> = {}): Order => ({

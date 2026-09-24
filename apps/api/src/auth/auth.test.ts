@@ -7,9 +7,13 @@ import {
   expect,
   it,
 } from "vitest";
+import {
+  closeProbe,
+  probeMongo,
+  type MongoProbe,
+} from "../test-support/infra.js";
 import type { Position, RiskLimits, SessionContext } from "@neelkanth/core";
 import {
-  connectMongo,
   ensureIndexes,
   UsersRepository,
   type MongoConnection,
@@ -115,18 +119,36 @@ function silentLogger() {
   });
 }
 
+let probe: MongoProbe | undefined;
 let connection: MongoConnection;
 let app: ApiServer;
 let users: UsersRepository;
 
 beforeAll(async () => {
-  connection = await connectMongo(MONGO_URI, "neelkanth_it_auth");
+  probe = await probeMongo(
+    MONGO_URI,
+    "neelkanth_it_auth",
+    "apps/api/src/auth/auth.test.ts",
+  );
+  if (!probe.reachable) return;
+  connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 });
 
 afterAll(async () => {
-  await connection.close();
+  await closeProbe(probe);
+});
+
+/**
+ * Skip every test in this file when the database is unreachable (§0.4).
+ *
+ * A `beforeEach` rather than a guard inside each test: reachability is only
+ * known after `beforeAll` has run, so `describe.skipIf` — which is evaluated
+ * at collection time — cannot see it.
+ */
+beforeEach((ctx) => {
+  if (probe?.reachable !== true) ctx.skip();
 });
 
 beforeEach(async () => {

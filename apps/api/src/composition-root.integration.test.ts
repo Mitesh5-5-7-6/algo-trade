@@ -9,6 +9,7 @@ import {
 } from "@neelkanth/db";
 import { createRedisConnections } from "@neelkanth/redis";
 import { bootstrap, type AppContext } from "./composition-root.js";
+import { STRICT } from "./test-support/infra.js";
 
 /**
  * Integration test for the composition root (plan/05 §3) against REAL Redis +
@@ -146,6 +147,31 @@ beforeAll(async () => {
   }
 
   infraAvailable = mongoOk && redisOk;
+  if (infraAvailable) return;
+
+  // This suite already skipped when infrastructure was absent — silently, which
+  // is the half of the problem §0.4 exists to fix. A skipped suite and a
+  // passing one produced the same `0 failed`.
+  const missing = [mongoOk ? null : "MongoDB", redisOk ? null : "Redis"]
+    .filter((name) => name !== null)
+    .join(" and ");
+  if (STRICT) {
+    throw new Error(
+      `composition-root.integration.test.ts: ${missing} unreachable and ` +
+        "REQUIRE_INTEGRATION=1",
+    );
+  }
+  const line = "#".repeat(74);
+  process.stderr.write(
+    `\n${line}\n` +
+      `INTEGRATION SUITE NOT RUN — apps/api/src/composition-root.integration.test.ts\n` +
+      `  These tests were NOT EXECUTED. Skipped is not passed.\n` +
+      `  reason : ${missing} unreachable\n` +
+      `  target : database "${IT_DB}", ${REDIS_URL}\n` +
+      `  fix    : docker compose -f docker-compose.test.yml up -d\n` +
+      `  strict : run \`pnpm test:integration\` to make this a hard failure\n` +
+      `${line}\n\n`,
+  );
 });
 
 function requireInfra(ctx: { skip: () => void }): void {

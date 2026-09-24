@@ -50,9 +50,31 @@ beforeAll(async () => {
     bus = createEventBus(conn.publisher, conn.subscriber, (error) => {
       busErrors.push(error);
     });
-  } catch {
+  } catch (error) {
     redisAvailable = false;
     await conn.quit().catch(() => undefined);
+
+    // Previously this skipped in silence, which is the half of the problem
+    // §0.4 exists to fix: a suite that never ran and a suite that passed both
+    // reported `0 failed`.
+    const reason = error instanceof Error ? error.message : String(error);
+    if (process.env["REQUIRE_INTEGRATION"] === "1") {
+      throw new Error(
+        `redis.integration.test.ts: Redis unreachable and ` +
+          `REQUIRE_INTEGRATION=1 — ${reason}`,
+      );
+    }
+    const line = "#".repeat(74);
+    process.stderr.write(
+      `\n${line}\n` +
+        `INTEGRATION SUITE NOT RUN — packages/redis/src/redis.integration.test.ts\n` +
+        `  These tests were NOT EXECUTED. Skipped is not passed.\n` +
+        `  reason : ${reason}\n` +
+        `  target : ${REDIS_URL.replace(/\/\/[^@/]*@/, "//<credentials>@")}\n` +
+        `  fix    : docker compose -f docker-compose.test.yml up -d\n` +
+        `  strict : run \`pnpm test:integration\` to make this a hard failure\n` +
+        `${line}\n\n`,
+    );
   }
 });
 

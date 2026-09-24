@@ -1,6 +1,19 @@
 import { createServer, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  closeProbe,
+  probeMongo,
+  type MongoProbe,
+} from "../test-support/infra.js";
 import {
   buildEvent,
   type EventName,
@@ -9,7 +22,6 @@ import {
 } from "@neelkanth/contracts";
 import type { EventBus } from "@neelkanth/redis";
 import {
-  connectMongo,
   ensureIndexes,
   UsersRepository,
   type MongoConnection,
@@ -102,16 +114,23 @@ function silentLogger() {
 
 const THROTTLE_MS = 40;
 
+let probe: MongoProbe | undefined;
 let connection: MongoConnection;
 let httpServer: HttpServer;
-let bridge: RealtimeBridge;
+let bridge: RealtimeBridge | undefined;
 let emit: ReturnType<typeof fakeBus>["emit"];
 let url: string;
 let cookie: string;
 const clients: Socket[] = [];
 
 beforeAll(async () => {
-  connection = await connectMongo(MONGO_URI, "neelkanth_it_rt");
+  probe = await probeMongo(
+    MONGO_URI,
+    "neelkanth_it_rt",
+    "apps/api/src/realtime/bridge.test.ts",
+  );
+  if (!probe.reachable) return;
+  connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 
@@ -145,8 +164,20 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await bridge.close(); // io.close() also closes httpServer
-  await connection.close();
+  // Both optional: when the probe failed, neither was ever constructed.
+  if (bridge !== undefined) await bridge.close(); // io.close() closes httpServer
+  await closeProbe(probe);
+});
+
+/**
+ * Skip every test in this file when the database is unreachable (§0.4).
+ *
+ * A `beforeEach` rather than a guard inside each test: reachability is only
+ * known after `beforeAll` has run, so `describe.skipIf` — evaluated at
+ * collection time — cannot see it.
+ */
+beforeEach((ctx) => {
+  if (probe?.reachable !== true) ctx.skip();
 });
 
 afterEach(() => {

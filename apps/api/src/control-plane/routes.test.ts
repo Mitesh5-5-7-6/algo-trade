@@ -1,4 +1,17 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
+import {
+  closeProbe,
+  probeMongo,
+  type MongoProbe,
+} from "../test-support/infra.js";
 import type {
   Position,
   RiskLimits,
@@ -6,7 +19,6 @@ import type {
   StrategyConfig,
 } from "@neelkanth/core";
 import {
-  connectMongo,
   ensureIndexes,
   PositionsRepository,
   SignalsRepository,
@@ -21,16 +33,34 @@ import type { RuntimeControls, StepUpVerifier } from "./controls.js";
 const MONGO_URI =
   process.env["MONGO_URI"] ?? "mongodb://localhost:27017/neelkanth_cp_test";
 
+let probe: MongoProbe | undefined;
 let connection: MongoConnection;
 
 beforeAll(async () => {
-  connection = await connectMongo(MONGO_URI, "neelkanth_it_cp");
+  probe = await probeMongo(
+    MONGO_URI,
+    "neelkanth_it_cp",
+    "apps/api/src/control-plane/routes.test.ts",
+  );
+  if (!probe.reachable) return;
+  connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 });
 
 afterAll(async () => {
-  await connection.close();
+  await closeProbe(probe);
+});
+
+/**
+ * Skip every test in this file when the database is unreachable (§0.4).
+ *
+ * A `beforeEach` rather than a guard inside each test: reachability is only
+ * known after `beforeAll` has run, so `describe.skipIf` — which is evaluated
+ * at collection time — cannot see it.
+ */
+beforeEach((ctx) => {
+  if (probe?.reachable !== true) ctx.skip();
 });
 
 /** Records what the routes drive into the live runtime (plan/05 §2 seam). */

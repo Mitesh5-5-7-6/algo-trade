@@ -11,6 +11,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:integration": "node scripts/test-integration.mjs",
     "lint": "eslint .",
     "typecheck": "turbo run typecheck",
     "format": "prettier --write .",
