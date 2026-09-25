@@ -200,6 +200,109 @@ describe("MarketDataEngine end-of-session flush (plan/17 §5 EOD)", () => {
   });
 });
 
+describe("MarketDataEngine cross-session contamination (Task 0.6)", () => {
+  const istDate = (day: number, h: number, mi: number): number =>
+    Date.UTC(2026, 0, day, h, mi) - IST_OFFSET_MS;
+
+  it("prevents yesterday's open bar from carrying over into today's session", async () => {
+    const h = harness();
+    const engine = new MarketDataEngine({
+      ports: h.ports,
+      normalizer: fixtureNormalizer,
+      intervals: ["1m", "5m"],
+      onError: (error, context) => h.errors.push({ error, context }),
+    });
+
+    // --- Session 1: Monday (2026-01-05) ---
+    // Ingest tick at 15:28 IST (within the 15:25 - 15:30 5m bar, and 15:28 1m bar)
+    const monTs = istDate(5, 15, 28);
+    await engine.ingestRaw(raw(monTs, 100, 50));
+    expect(h.candles).toHaveLength(0); // open, not closed yet
+
+    // Session 1 closes at 15:30 IST.
+    await engine.flushOpenBars();
+
+    // Both 1m and 5m bars for Monday must be persisted and published
+    expect(h.candles).toHaveLength(2);
+    const mon1m = h.candles.find((c) => c.interval === "1m");
+    const mon5m = h.candles.find((c) => c.interval === "5m");
+    expect(mon1m).toBeDefined();
+    expect(mon5m).toBeDefined();
+    expect(mon1m?.close).toBe(100);
+    expect(mon1m?.volume).toBe(50);
+    expect(mon1m?.ts).toBe(istDate(5, 15, 28)); // 1m bucket
+    expect(mon5m?.ts).toBe(istDate(5, 15, 25)); // 5m bucket
+
+    const monEvents = h.events.filter((e) => e.name === "CANDLE_CLOSED");
+    expect(monEvents).toHaveLength(2);
+
+    // --- Session 2: Tuesday (2026-01-06) next morning ---
+    // At 09:15 IST, the first tick of the new session arrives
+    const tueTs1 = istDate(6, 9, 15);
+    await engine.ingestRaw(raw(tueTs1, 200, 10));
+
+    // Tuesday's first tick should NOT emit any new closed candle
+    // (no boundary crossed, and Monday's bars were already flushed)
+    expect(h.candles).toHaveLength(2);
+    expect(h.events.filter((e) => e.name === "CANDLE_CLOSED")).toHaveLength(2);
+
+    // At 09:16 IST, a tick crosses the 1m boundary
+    const tueTs2 = istDate(6, 9, 16);
+    await engine.ingestRaw(raw(tueTs2, 205, 5));
+
+    // Only Tuesday's 09:15 1m bar closes. 5m bar is still open.
+    expect(h.candles).toHaveLength(3);
+    const tue1m = h.candles.find((c) => c.interval === "1m" && c.ts === tueTs1);
+    expect(tue1m).toBeDefined();
+    expect(tue1m?.open).toBe(200);
+    expect(tue1m?.high).toBe(200);
+    expect(tue1m?.low).toBe(200);
+    expect(tue1m?.close).toBe(200);
+    expect(tue1m?.volume).toBe(10); // NOT 50 + 10!
+    expect(tue1m?.ts).toBe(tueTs1); // Tuesday's timestamp, NOT Monday's
+
+    // At 09:20 IST, a tick crosses the 5m boundary
+    const tueTs3 = istDate(6, 9, 20);
+    await engine.ingestRaw(raw(tueTs3, 210, 8));
+
+    // Now Tuesday's 5m bar closes (ts: 09:15)
+    const tue5m = h.candles.find((c) => c.interval === "5m" && c.ts === tueTs1);
+    expect(tue5m).toBeDefined();
+    expect(tue5m?.open).toBe(200);
+    expect(tue5m?.close).toBe(205);
+    expect(tue5m?.volume).toBe(15); // 10 + 5 (Tuesday only, NOT Monday's 50)
+    expect(tue5m?.ts).toBe(tueTs1); // Tuesday, NOT Monday
+  });
+
+  it("proves that without flush, the overnight carry-over manifests as a delayed stale bar", async () => {
+    const h = harness();
+    const engine = new MarketDataEngine({
+      ports: h.ports,
+      normalizer: fixtureNormalizer,
+      intervals: ["1m"],
+      onError: (error, context) => h.errors.push({ error, context }),
+    });
+
+    // Monday 15:28 tick
+    const monTs = istDate(5, 15, 28);
+    await engine.ingestRaw(raw(monTs, 100, 50));
+    expect(h.candles).toHaveLength(0);
+
+    // FLUSH IS OMITTED (the bug that §5.1 described)
+
+    // Tuesday 09:15 tick arrives
+    const tueTs = istDate(6, 9, 15);
+    await engine.ingestRaw(raw(tueTs, 200, 10));
+
+    // Without flush, Tuesday's first tick pushes Monday's bar forward,
+    // closing Monday's bar roughly 17 hours late into Tuesday's session!
+    expect(h.candles).toHaveLength(1);
+    expect(h.candles[0]?.ts).toBe(monTs); // yesterday's timestamp
+    expect(h.events.filter((e) => e.name === "CANDLE_CLOSED")).toHaveLength(1);
+    expect((h.events[0]?.payload as Candle).ts).toBe(monTs);
+  });
+});
+
 describe("MarketDataEngine broker attach (plan/17 §7-8)", () => {
   it("ingests raw data delivered by the broker feed", async () => {
     const h = harness();
