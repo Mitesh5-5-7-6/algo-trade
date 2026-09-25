@@ -15,9 +15,6 @@ coverage/
 
 # environment — secrets never enter the repo (plan/22 §5, plan/24 §5)
 .env
-.env.*
-!.env.example
-!.env.test.local.example
 
 # logs & OS noise
 logs/
