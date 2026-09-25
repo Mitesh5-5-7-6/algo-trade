@@ -59,6 +59,14 @@ const MONGO_URI = isolate(
 );
 const REDIS_URL = process.env["REDIS_URL"] ?? "redis://localhost:6379";
 
+/**
+ * Each restart test boots TWO complete runtimes, and every boot opens Mongo
+ * and Redis connections, hydrates positions and reconciles orders. Against
+ * hosted instances across a region that does not fit in vitest's 5s default,
+ * and the failure looked exactly like a wrong answer rather than a slow one.
+ */
+const RESTART_TIMEOUT_MS = 60_000;
+
 const SYMBOL = "NSE:RESTART-EQ";
 const STRATEGY = "str_restart";
 
@@ -190,8 +198,25 @@ afterAll(async () => {
   await redis?.quit();
 });
 
-beforeEach((ctx) => {
-  if (!reachable) ctx.skip();
+/**
+ * Reset the two pieces of state a restart is supposed to carry.
+ *
+ * Both outlive a test by design — that is the whole point of the feature — so
+ * without this each test inherits the previous one's position history and the
+ * previous one's ledger entry, and asserts against an accumulated figure. The
+ * first version of this file did exactly that and reported a "profitable day"
+ * as −51.27: four round trips summed, not the one the test performed.
+ *
+ * Deleting the ledger key is what makes each test a genuine first boot of the
+ * day, which is the state the restart claim is actually about.
+ */
+beforeEach(async (ctx) => {
+  if (!reachable) {
+    ctx.skip();
+    return;
+  }
+  await redis?.client.del(riskDailyLossKey(istDateKey(Date.now())));
+  await mongo?.db.collection("positions").deleteMany({});
 });
 
 describe("the day's risk state survives a restart (§0.8)", () => {
@@ -200,22 +225,26 @@ describe("the day's risk state survives a restart (§0.8)", () => {
    * back. Before §0.5.4 the second process saw a flat day and would have
    * allowed the afternoon to lose the same amount again against one limit.
    */
-  it("restores the morning's realized loss into a second process", async () => {
-    const first = await boot();
-    try {
-      await roundTrip(first, 100, 90, 10); // −100 realized
-      expect(first.realizedPnl()).toBeCloseTo(-100, 4);
-    } finally {
-      await first.shutdown();
-    }
+  it(
+    "restores the morning's realized loss into a second process",
+    async () => {
+      const first = await boot();
+      try {
+        await roundTrip(first, 100, 90, 10); // −100 realized
+        expect(first.realizedPnl()).toBeCloseTo(-100, 4);
+      } finally {
+        await first.shutdown();
+      }
 
-    const second = await boot();
-    try {
-      expect(second.realizedPnl()).toBeCloseTo(-100, 4);
-    } finally {
-      await second.shutdown();
-    }
-  });
+      const second = await boot();
+      try {
+        expect(second.realizedPnl()).toBeCloseTo(-100, 4);
+      } finally {
+        await second.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
 
   /**
    * The adapter itself: the key builder, the serialization, and the fact that
@@ -258,20 +287,24 @@ describe("the day's risk state survives a restart (§0.8)", () => {
    * compares a positive number against a positive limit — a negative loss
    * would make the comparison meaningless rather than merely wrong.
    */
-  it("restores a profitable day as a profit, not a negative loss", async () => {
-    const first = await boot();
-    try {
-      await roundTrip(first, 100, 120, 5); // +100 realized
-      expect(first.realizedPnl()).toBeCloseTo(100, 4);
-    } finally {
-      await first.shutdown();
-    }
+  it(
+    "restores a profitable day as a profit, not a negative loss",
+    async () => {
+      const first = await boot();
+      try {
+        await roundTrip(first, 100, 120, 5); // +100 realized
+        expect(first.realizedPnl()).toBeCloseTo(100, 4);
+      } finally {
+        await first.shutdown();
+      }
 
-    const second = await boot();
-    try {
-      expect(second.realizedPnl()).toBeCloseTo(100, 4);
-    } finally {
-      await second.shutdown();
-    }
-  });
+      const second = await boot();
+      try {
+        expect(second.realizedPnl()).toBeCloseTo(100, 4);
+      } finally {
+        await second.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
 });

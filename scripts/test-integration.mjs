@@ -16,6 +16,12 @@
  *      reachable — exporting the real `MONGO_URI` — pointed them at production.
  *   2. `--force`, because turbo caches `test` and a replayed green log is the
  *      purest form of "not run" wearing "passed" as a costume.
+ *   3. `--concurrency=1`. Every package running at once opens dozens of
+ *      simultaneous TLS handshakes to one hosted Mongo and one hosted Redis,
+ *      and shared free-tier instances do not survive it — the observed failure
+ *      was "unable to verify the first certificate" from suites that connect
+ *      fine on their own. Serial is slower and it is the only honest way to
+ *      get a reproducible answer out of shared infrastructure.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -103,10 +109,25 @@ process.stderr.write(
     `  REDIS_URL : ${redact(process.env.REDIS_URL) ?? "unset (defaults to localhost)"}\n\n`,
 );
 
-const result = spawnSync("pnpm", ["exec", "turbo", "run", "test", "--force"], {
-  stdio: "inherit",
-  shell: process.platform === "win32",
-  env: { ...process.env, REQUIRE_INTEGRATION: "1" },
-});
+const result = spawnSync(
+  "pnpm",
+  ["exec", "turbo", "run", "test", "--force", "--concurrency=1"],
+  {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    env: {
+      ...process.env,
+      REQUIRE_INTEGRATION: "1",
+      // Some outbound TLS on this machine is intercepted by a proxy whose root
+      // CA lives in the Windows certificate store, not in the CA list Node
+      // bundles. The symptom is an INTERMITTENT "unable to verify the first
+      // certificate" from Atlas — the same URI connecting fine seconds earlier.
+      // Node names the fix in the error text.
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, "--use-system-ca"]
+        .filter(Boolean)
+        .join(" "),
+    },
+  },
+);
 
 process.exit(result.status ?? 1);

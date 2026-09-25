@@ -7,7 +7,8 @@ import {
   SettingsRepository,
   StrategiesRepository,
 } from "@neelkanth/db";
-import { createRedisConnections } from "@neelkanth/redis";
+import { createRedisConnections, riskDailyLossKey } from "@neelkanth/redis";
+import { istDateKey } from "@neelkanth/engines";
 import { bootstrap, type AppContext } from "./composition-root.js";
 import { STRICT } from "./test-support/infra.js";
 
@@ -103,6 +104,14 @@ function testConfig(): Config {
   });
 }
 
+/**
+ * `bootstrap()` opens Mongo and Redis, wires every engine, hydrates positions,
+ * reconciles orders and warms indicators. Against hosted instances across a
+ * region that does not fit vitest's 5s default — and the failure reads as a
+ * broken boot rather than a slow one.
+ */
+const BOOT_TIMEOUT_MS = 60_000;
+
 const enabledStrategy: StrategyConfig = {
   strategyId: "str_boot",
   ownerId: "usr_boot",
@@ -112,11 +121,15 @@ const enabledStrategy: StrategyConfig = {
   symbols: ["NSE:BOOT-EQ"],
   enabled: true,
   status: "active",
-  createdAt: 0,
-  updatedAt: 0,
+  // `TimestampSchema` is `.positive()`, so 0 fails validation — and for two
+  // and a half years the only symptom was this suite reporting "MongoDB
+  // unreachable", because the probe's `catch` threw the Zod error away.
+  createdAt: 1,
+  updatedAt: 1,
 };
 
 let infraAvailable = false;
+let failure = "";
 
 beforeAll(async () => {
   let mongoOk = false;
@@ -130,8 +143,11 @@ beforeAll(async () => {
     });
     await mongo.close();
     mongoOk = true;
-  } catch {
+  } catch (error) {
+    // Keep the reason. Discarding it made "no database" and "the seed threw"
+    // report identically, which is the ambiguity this suite exists to avoid.
     mongoOk = false;
+    failure = error instanceof Error ? error.message : String(error);
   }
 
   let redisOk = false;
@@ -140,10 +156,21 @@ beforeAll(async () => {
       /* swallow probe-time connection errors */
     });
     await redis.client.ping();
+    // Every suite drops its Mongo database for a clean slate; nothing did the
+    // same for Redis, so this one inherited whatever the last suite left in
+    // `risk:dailyLoss:<date>` and booted with a restored P&L. That is the
+    // feature working exactly as designed — and it made this suite fail for a
+    // reason that had nothing to do with it.
+    await redis.client.del(riskDailyLossKey(istDateKey(Date.now())));
     await redis.quit();
     redisOk = true;
-  } catch {
+  } catch (error) {
     redisOk = false;
+    // Keep the FIRST reason: Mongo is probed first, and if both are down its
+    // failure is the more useful one to report.
+    if (failure === "") {
+      failure = error instanceof Error ? error.message : String(error);
+    }
   }
 
   infraAvailable = mongoOk && redisOk;
@@ -158,7 +185,7 @@ beforeAll(async () => {
   if (STRICT) {
     throw new Error(
       `composition-root.integration.test.ts: ${missing} unreachable and ` +
-        "REQUIRE_INTEGRATION=1",
+        `REQUIRE_INTEGRATION=1 — ${failure}`,
     );
   }
   const line = "#".repeat(74);
@@ -166,8 +193,10 @@ beforeAll(async () => {
     `\n${line}\n` +
       `INTEGRATION SUITE NOT RUN — apps/api/src/composition-root.integration.test.ts\n` +
       `  These tests were NOT EXECUTED. Skipped is not passed.\n` +
-      `  reason : ${missing} unreachable\n` +
-      `  target : database "${IT_DB}", ${REDIS_URL}\n` +
+      `  reason : ${missing} unreachable${failure === "" ? "" : ` — ${failure}`}\n` +
+      // Redacted: a hosted REDIS_URL carries its password, and a banner is
+      // exactly the thing that ends up pasted into an issue or a chat.
+      `  target : database "${IT_DB}", ${REDIS_URL.replace(/\/\/[^@/]*@/, "//<credentials>@")}\n` +
       `  fix    : docker compose -f docker-compose.test.yml up -d\n` +
       `  strict : run \`pnpm test:integration\` to make this a hard failure\n` +
       `${line}\n\n`,
@@ -185,40 +214,48 @@ describe("bootstrap (plan/05 §3 composition root)", () => {
     if (context) await context.shutdown();
   });
 
-  it("wires the engines, boots a ready server, and enables strategies", async (ctx) => {
-    requireInfra(ctx);
-    context = await bootstrap(testConfig(), silentLogger());
+  it(
+    "wires the engines, boots a ready server, and enables strategies",
+    async (ctx) => {
+      requireInfra(ctx);
+      context = await bootstrap(testConfig(), silentLogger());
 
-    const live = await context.server.inject({
-      method: "GET",
-      url: "/health/live",
-    });
-    expect(live.statusCode).toBe(200);
+      const live = await context.server.inject({
+        method: "GET",
+        url: "/health/live",
+      });
+      expect(live.statusCode).toBe(200);
 
-    const ready = await context.server.inject({
-      method: "GET",
-      url: "/health/ready",
-    });
-    expect(ready.statusCode).toBe(200); // both deps up in CI
-    const body = ready.json<{ dependencies: Record<string, string> }>();
-    expect(body.dependencies["mongo"]).toBe("up");
-    expect(body.dependencies["redis"]).toBe("up");
+      const ready = await context.server.inject({
+        method: "GET",
+        url: "/health/ready",
+      });
+      expect(ready.statusCode).toBe(200); // both deps up in CI
+      const body = ready.json<{ dependencies: Record<string, string> }>();
+      expect(body.dependencies["mongo"]).toBe("up");
+      expect(body.dependencies["redis"]).toBe("up");
 
-    // Equity sampler: a crafted open-market instant (Mon 2026-01-05 10:00 IST)
-    // records a point regardless of when CI runs; a closed instant does not.
-    const istOffset = (5 * 60 + 30) * 60_000;
-    const openInstant = Date.UTC(2026, 0, 5, 10, 0) - istOffset;
-    const closedSameDay = Date.UTC(2026, 0, 5, 16, 0) - istOffset; // post-close
-    context.runtime.sampleEquity(openInstant);
-    context.runtime.sampleEquity(closedSameDay); // same IST day → not recorded
-    expect(context.runtime.equityCurve()).toEqual([
-      { ts: openInstant, realizedPnl: 0, unrealizedPnl: 0 },
-    ]);
-  });
+      // Equity sampler: a crafted open-market instant (Mon 2026-01-05 10:00 IST)
+      // records a point regardless of when CI runs; a closed instant does not.
+      const istOffset = (5 * 60 + 30) * 60_000;
+      const openInstant = Date.UTC(2026, 0, 5, 10, 0) - istOffset;
+      const closedSameDay = Date.UTC(2026, 0, 5, 16, 0) - istOffset; // post-close
+      context.runtime.sampleEquity(openInstant);
+      context.runtime.sampleEquity(closedSameDay); // same IST day → not recorded
+      expect(context.runtime.equityCurve()).toEqual([
+        { ts: openInstant, realizedPnl: 0, unrealizedPnl: 0 },
+      ]);
+    },
+    BOOT_TIMEOUT_MS,
+  );
 
-  it("shuts down cleanly without throwing (plan/22 §4)", async (ctx) => {
-    requireInfra(ctx);
-    const local = await bootstrap(testConfig(), silentLogger());
-    await expect(local.shutdown()).resolves.toBeUndefined();
-  });
+  it(
+    "shuts down cleanly without throwing (plan/22 §4)",
+    async (ctx) => {
+      requireInfra(ctx);
+      const local = await bootstrap(testConfig(), silentLogger());
+      await expect(local.shutdown()).resolves.toBeUndefined();
+    },
+    BOOT_TIMEOUT_MS,
+  );
 });

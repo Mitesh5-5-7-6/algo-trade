@@ -12,7 +12,7 @@
     "lint": {},
     "test": {
       "dependsOn": ["^build"],
-      "env": ["MONGO_URI", "REDIS_URL", "REQUIRE_INTEGRATION"]
+      "env": ["MONGO_URI", "REDIS_URL", "REQUIRE_INTEGRATION", "NODE_OPTIONS"]
     }
   }
 }
