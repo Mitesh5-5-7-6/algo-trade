@@ -162,24 +162,27 @@ Verify the real working branch and repair the runtime foundation.
 
 ### Tasks
 
-| ID    | Task                                                                                        | STATUS      | Evidence                                                                                                                                                          |
-| ----- | ------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1   | Inspect repository; verify market data, aggregation and reconciliation                      | COMPLETE    | [CURRENT_STATE.md](architecture/CURRENT_STATE.md) §2, §5                                                                                                          |
-| 0.2   | Fix aggregator session flush; persist the final partial candle; no cross-session carry-over | COMPLETE    | `packages/engines/src/market-data/market-data-engine.ts` (`flushOpenBars`), wired in `apps/api/src/engines/runtime.ts`; CURRENT_STATE §5.1                        |
-| 0.3   | Defuse the integration-test database landmine                                               | COMPLETE    | `apps/api/src/composition-root.integration.test.ts` — `isolate()` plus a module-scope refusal                                                                     |
-| 0.5.4 | Daily P&L survives restart                                                                  | COMPLETE    | `packages/engines/src/risk/daily-loss-ledger.ts` + `.test.ts`; `PositionEngine.seedDailyRealized`; CURRENT_STATE §5.2                                             |
-| 0.5.5 | One-shot latch spent by a fill, not an emission                                             | COMPLETE    | `packages/strategies/src/orb.ts`; `packages/engines/src/strategy/signal-outcome.test.ts`; CURRENT_STATE §5.7                                                      |
-| 0.5.6 | Strategy state survives restart                                                             | COMPLETE    | `packages/db/src/strategy-state-repository.ts`; `packages/engines/src/strategy/strategy-state.test.ts`; CURRENT_STATE §5.8                                        |
-| 0.4   | Make "existing tests remain green" a provable claim                                         | COMPLETE    | `packages/db/src/test-support/infra.ts`, `apps/api/src/test-support/infra.ts`, `scripts/test-integration.mjs`, `docker-compose.test.yml`, `turbo.json` `test.env` |
-| 0.6   | Cross-session contamination test                                                            | COMPLETE    | `packages/engines/src/market-data/market-data-engine.test.ts` (`MarketDataEngine cross-session contamination (Task 0.6)`)                                         |
-| 0.7   | Risk gate fail-closed on an unknown day                                                     | COMPLETE    | `packages/engines/src/risk/risk-engine.test.ts` (`RiskEngine — fail-closed (plan/14 §9)`)                                                                         |
-| 0.8   | Infra-backed end-to-end verification                                                        | IN PROGRESS | `apps/api/src/engines/runtime.restart.integration.test.ts` — 4 tests written, **never executed**; BLOCKED on provisioning a reachable Mongo + Redis               |
+| ID    | Task                                                                                        | STATUS      | Commit    | Evidence                                                                                                                                                          |
+| ----- | ------------------------------------------------------------------------------------------- | ----------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1   | Inspect repository; verify market data, aggregation and reconciliation                      | COMPLETE    | —         | [CURRENT_STATE.md](architecture/CURRENT_STATE.md) §2, §5                                                                                                          |
+| 0.2   | Fix aggregator session flush; persist the final partial candle; no cross-session carry-over | COMPLETE    | `6132cec` | `packages/engines/src/market-data/market-data-engine.ts` (`flushOpenBars`), wired in `apps/api/src/engines/runtime.ts`; CURRENT_STATE §5.1                        |
+| 0.3   | Defuse the integration-test database landmine                                               | COMPLETE    | `781331a` | `apps/api/src/composition-root.integration.test.ts` — `isolate()` plus a module-scope refusal                                                                     |
+| 0.4   | Make "existing tests remain green" a provable claim                                         | COMPLETE    | `c2525f2` | `packages/db/src/test-support/infra.ts`, `apps/api/src/test-support/infra.ts`, `scripts/test-integration.mjs`, `docker-compose.test.yml`, `turbo.json` `test.env` |
+| 0.5.4 | Daily P&L survives restart                                                                  | COMPLETE    | `9c1a9bc` | `packages/engines/src/risk/daily-loss-ledger.ts` + `.test.ts`; `PositionEngine.seedDailyRealized`; CURRENT_STATE §5.2                                             |
+| 0.5.5 | One-shot latch spent by a fill, not an emission                                             | COMPLETE    | `9c1a9bc` | `packages/strategies/src/orb.ts`; `packages/engines/src/strategy/signal-outcome.test.ts`; CURRENT_STATE §5.7                                                      |
+| 0.5.6 | Strategy state survives restart                                                             | COMPLETE    | `9c1a9bc` | `packages/db/src/strategy-state-repository.ts`; `packages/engines/src/strategy/strategy-state.test.ts`; CURRENT_STATE §5.8                                        |
+| 0.6   | Cross-session contamination test                                                            | COMPLETE    | `74801b8` | `packages/engines/src/market-data/market-data-engine.test.ts` — mutation-checked: emptying `flush()` fails it                                                     |
+| 0.7   | Risk gate fail-closed on an unknown day                                                     | COMPLETE    | `74801b8` | `packages/engines/src/risk/risk-engine.test.ts` — mutation-checked: `.catch(() => 0)` on the port fails it                                                        |
+| 0.8   | Infra-backed end-to-end verification                                                        | IN PROGRESS | `4f0fdf0` | `apps/api/src/engines/runtime.restart.integration.test.ts` — 4 tests written, **never executed**; blocked on provisioning a reachable Mongo + Redis               |
 
-**Why the numbering jumps.** `0.5.4`–`0.5.6` are retained from an earlier task
-board because **51 comments across 12 source files cite them by name**.
-Renumbering would orphan every one of those citations — the same failure as the
-deleted `plan/NN` spine, in code written this month. The IDs are cheap to keep
-and expensive to change.
+**Task IDs are allocated once and never renumbered.** They are cited within
+hours of being created — **64 references across source comments today**
+(`§0.4` ×9, `§0.5.4` ×10, `§0.5.5` ×17, `§0.5.6` ×26, `§0.8` ×2), plus the
+commit messages that closed them. Renumbering orphans every one, which is the
+`plan/NN` failure reproduced in code written this month. So the sequence has
+gaps and a stray `0.5.x` branch, and that is the cheaper problem: **an ID is an
+identifier, not a position.** Rows sort numerically; the `Commit` column carries
+the order the work actually happened in.
 
 ### Done when
 
