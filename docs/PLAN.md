@@ -175,6 +175,13 @@ Verify the real working branch and repair the runtime foundation.
 | 0.7   | Risk gate fail-closed on an unknown day                                                     | COMPLETE    | `74801b8` | `packages/engines/src/risk/risk-engine.test.ts` — mutation-checked: `.catch(() => 0)` on the port fails it                                                        |
 | 0.8   | Infra-backed end-to-end verification                                                        | IN PROGRESS | `4f0fdf0` | `apps/api/src/engines/runtime.restart.integration.test.ts` — 4 tests written, **never executed**; blocked on provisioning a reachable Mongo + Redis               |
 
+**This table is checked by CI.** `pnpm check:plan` asserts that every
+COMPLETE row names evidence, that every path and commit it cites resolves, that
+every BLOCKED row gives a reason, and that each phase STATUS matches the
+derivation below. It cannot catch the reverse — code landing without the board
+being updated — so §25's `TASK STATUS SET TO:` line remains the human half of
+the same job.
+
 **Task IDs are allocated once and never renumbered.** They are cited within
 hours of being created — **64 references across source comments today**
 (`§0.4` ×9, `§0.5.4` ×10, `§0.5.5` ×17, `§0.5.6` ×26, `§0.8` ×2), plus the
