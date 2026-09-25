@@ -441,6 +441,25 @@ Live Market Data → Trading System → Normalised 5m Candle → R&D ingestion
 
 Tick-level research is added only on proven need.
 
+### 10.3b News is a second ingestion stream — `PROPOSED`
+
+Market data and news are **two streams into one research engine**, not one stream with a text field.
+
+```
+FYERS feed ──▶ candles ──┐
+                         ├──▶ research: pattern × strategy × news context
+news sources ──▶ news ───┘
+```
+
+They are separate because they differ in every operational respect: cadence (bars are regular, news is bursty), latency, provenance, and failure mode. A news outage must degrade research, never stop trading — the same isolation rule §18 applies to R&D.
+
+Two decisions bind now, before any of it is built:
+
+- **Condition on `publishedAt`, never `fetchedAt`.** When the market _knew_ something is the research question; when we happened to fetch it is an artefact of our infrastructure. Joining on fetch time leaks the future into the past, which is the lookahead rule applied to text.
+- **A scheduled event and a surprise are different objects.** An expected CPI print is priced in advance; an unexpected one is not. Pooling them produces a "news effect" that is an average of two opposite phenomena.
+
+The `news` collection exists with indexes and a 30-day TTL and has never been written to — the same empty shell as `trade_logs`. Track N in [RND_RESEARCH_SPECIFICATION §4A](RND_RESEARCH_SPECIFICATION.md) fills it.
+
 ### 10.4 Retention — `DECIDED`
 
 Temporary operational state and historical research evidence have different lifetimes. Short Redis TTLs suit the former. Research evidence must never vanish because an operational TTL expired. Research retention is explicit and separate.
@@ -612,14 +631,34 @@ execute()   cancel()   status()   onOrderUpdate()
 connect()   disconnect()   subscribe()   onData()   onConnectionChange()
 ```
 
+Plus one **optional capability**, feature-detected at the call site:
+
+```
+readOptionChain?(underlying) → OptionChainSnapshot | null
+```
+
+Implemented by `FyersBroker` against the vendor's `/data/optionchain`. Optional because a broker that cannot answer must be able to say so structurally rather than by throwing, and because `PaperBroker` has no chain of its own to offer. Strategies opt in with `requiresOptionChain()`; the runtime caches per underlying and de-duplicates concurrent fetches.
+
 Proposed additions, each with a named consumer:
 
 | Method                                         | Needed by                                   |
 | ---------------------------------------------- | ------------------------------------------- |
-| `getHistory()`                                 | Historical candle ingestion — Phase 1       |
 | `getPositions()`, `getOrders()`, `getTrades()` | Startup reconciliation against broker truth |
-| `getMargin()`                                  | Authoritative margin checks for F&O         |
+| `getMargin()`                                  | Authoritative margin checks for F&O (§20.4) |
 | `getInstruments()`                             | Instrument master refresh                   |
+
+### 15.1 Capability vs port — `CURRENT GAP`
+
+Two patterns now express "this broker can also do X", and they disagree:
+
+| Concern            | Pattern                         | Where                                                            |
+| ------------------ | ------------------------------- | ---------------------------------------------------------------- |
+| Option chain       | Optional method on `Broker`     | Implemented                                                      |
+| Historical candles | Separate `HistoryProvider` port | [Design D1](../design/PHASE_1_HISTORICAL_DATA.md), not yet built |
+
+The argument for the separate port is that `Broker`'s two duties — execution and the realtime feed — each have a named consumer, while historical fetch has neither; adding it forces every implementation to carry a method it cannot meaningfully answer. That argument applies equally to the option chain.
+
+**One should win before a third arrives.** Recommended resolution: keep `Broker` to execution and the feed, and move both chain and history to capability ports the composition root supplies where a real implementation exists. Until that is decided, new capabilities follow the optional-method pattern rather than inventing a third.
 
 ---
 
@@ -682,19 +721,104 @@ Live additionally monitors broker connection, market-data connection, order-upda
 
 The Risk Engine must understand instrument, contract, expiry, strike, option type, lot size and tick size.
 
-```
-Capital Risk → Risk Quantity → Lot Quantity → Valid Broker Quantity
-```
-
 A calculated quantity of 4 is invalid for a 65-lot instrument. Rounding is always **down**. An unknown lot size is a refusal, never an assumption of 1.
 
 For derivative strategies, the analysis instrument and the traded instrument differ: analyse the index, trade the contract.
 
-For Live, authoritative broker margin is preferred where available.
+### 20.2 Sizing is split by instrument class
 
-### 20.2 Volume quality
+> **The lot is the unit.** Equity is sized in shares; derivatives are sized in whole lots, and every capacity is expressed in lots from the start.
+
+```
+                    RISK ENGINE
+                         │
+            ┌────────────┴────────────┐
+            ▼                         ▼
+        EQUITY                       F&O
+        shares                       lots
+            │                         │
+            │                  ┌──────┴──────┐
+            ▼                  ▼             ▼
+   risk budget ÷           OPTIONS       FUTURES
+   stop distance           premium       notional
+            │              capital       (conservative)
+            └────────────┬──────────────┘
+                         ▼
+                  GLOBAL LIMITS
+            daily loss · exposure · kill switch
+```
+
+The two paths are **not** the same arithmetic with a different rounding step. The original implementation computed a share capacity and floored a lot out of it, which produced refusals of the form "one lot of 60 does not fit in 44": true, and useless. It named neither the binding budget nor the shortfall, and implied the problem was rounding when the problem was the budget.
+
+For F&O the engine computes, independently and all in lots:
+
+```
+riskPerLot     = |entry − stop| × lotSize
+capitalPerLot  = entry × lotSize
+
+lotsByRisk     = riskBudget      ÷ riskPerLot
+lotsByCapital  = capital ceiling ÷ capitalPerLot
+lotsByExposure = exposure left   ÷ capitalPerLot
+lotsByMaxLots, lotsByOpenPositions, lotsByProposal
+
+allowedLots = floor(min(all of the above))
+quantity    = allowedLots × lotSize
+```
+
+`allowedLots < 1` blocks. A partial lot is not rejected — it is unrepresentable.
+
+**Changing the unit is not a loophole.** One lot that risks ₹1,200 against a ₹1,000 budget still blocks; lots do not make a ₹1,200 trade cost ₹1,000. What changes is that the refusal now names both numbers, so the next action is a configuration decision rather than a mystery.
+
+### 20.3 F&O carries its own budget — `DECIDED`
+
+Five limits are configured separately from equity: `fnoRiskPerTrade`, `fnoMaxLotsPerTrade`, `fnoMaxCapitalPerTrade`, `fnoMaxExposure`, `fnoMaxOpenPositions`.
+
+Each is **optional and falls back to its equity counterpart**. An operator who has not configured derivatives separately is held to the limits already in force, never to looser ones. In particular `fnoRiskPerTrade` has no widened default: a lot of a 65-multiplier contract can easily risk more than 1% of a small account, and the honest answer is "this trade does not fit", not a budget quietly grown until it does.
+
+Global controls remain global: `maxDailyLoss`, the kill switch, and pause apply to both classes. The daily-loss gate blocks new entries and never blocks exits (§5, the entry/exit asymmetry).
+
+**One resolution, two consumers.** `resolveFnoLimits` produces the effective budget, and both the Risk Engine and the step-up authorisation check read it:
+
+```
+        raw configuration
+               ↓
+        resolveLimits()
+               ↓
+       resolveFnoLimits()
+               ↓
+      effective configuration
+        ├── Risk Engine        "how much may this trade?"
+        └── step-up check      "may this change be saved?"
+```
+
+Authorisation compares **effective** budgets, not raw fields — otherwise setting a previously-absent limit above the value it was inheriting, or clearing a tight limit back to a looser inherited one, would both loosen the envelope without a password. An absent `fnoMaxLotsPerTrade` is the loosest value, so removing a ceiling is a loosening even though no number went up.
+
+### 20.4 Futures capital is notional, not margin — `DECIDED`
+
+| Class           | `capitalPerLot`     | Basis      | Accuracy                                   |
+| --------------- | ------------------- | ---------- | ------------------------------------------ |
+| Option (bought) | `premium × lotSize` | `PREMIUM`  | Exact — the whole amount at risk           |
+| Future          | `price × lotSize`   | `NOTIONAL` | Conservative — far above the margin posted |
+
+**No margin percentage is invented.** A hardcoded "futures margin = 15%" would be fabricated precision that reads as fact everywhere downstream. Until broker or exchange margin data exists, futures are sized against the full notional, which can only make a position smaller than reality requires — never larger.
+
+The basis is recorded on every stored decision, so a log can never be misread as margin-based. `capitalPerLotFor` is the seam a real margin provider plugs into:
+
+```
+Broker margin API → futures margin provider → F&O sizing
+```
+
+### 20.5 Every F&O decision is legible — `DECIDED`
+
+A blocked F&O trade persists the full derivation: lot size, entry, stop, stop distance, risk per lot, capital per lot, risk budget, each capacity in lots, the configured ceilings, allowed lots, final quantity, and which constraint bound.
+
+This exists because the operator's question is always "which budget ran out, and by how much?" — and a bare arithmetic remainder cannot answer it. Naming the constraint is the difference between a configuration decision and a guess.
+
+### 20.6 Volume quality
 
 Volume is not meaningful for every instrument. Store `volumeAvailable`, `volumeSource` and `volumeQuality`. Where reliable volume is unavailable, volume-based conclusions are not drawn — this matters most for index-level research.
+
+For Live, authoritative broker margin is preferred where available — see §20.4 for why none is assumed until it is.
 
 ---
 
