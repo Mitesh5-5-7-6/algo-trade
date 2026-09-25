@@ -210,7 +210,7 @@ Build historical ingestion. Build AI. Add strategies. Refactor architecture.
 
 ## 6. Phase 1 — Historical 5m data
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -223,6 +223,36 @@ Normalize broker candles. Validate OHLC and timestamps. Add provenance. Add
 trading-calendar handling. Choose initial symbols and history depth. Implement
 operator-triggered backfill. Verify that historical and `LIVE_TICK` data coexist
 and that no duplicate candles are produced.
+
+### Tasks
+
+Structured around the decisions in
+[PHASE_1_HISTORICAL_DATA.md](design/PHASE_1_HISTORICAL_DATA.md), which is the
+detailed design for this phase.
+
+| ID   | Task                                                            | STATUS   | Commit    | Evidence                                                                                                              |
+| ---- | --------------------------------------------------------------- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| 1.1  | Candle provenance — `source`, `sourceRank` (D2)                 | COMPLETE | `e5d32cd` | `packages/core/src/market.ts` — `CandleSourceSchema`, `CANDLE_SOURCE_RANK`; `packages/core/src/core.test.ts`          |
+| 1.2  | Source-precedence upsert (D3)                                   | COMPLETE | `e5d32cd` | `packages/db/src/candles-repository.ts` — rank-conditional upsert; `packages/db/src/repositories.integration.test.ts` |
+| 1.3  | Date-range candle query (D4)                                    | COMPLETE | `e5d32cd` | `packages/db/src/candles-repository.ts` — `findRange`, half-open                                                      |
+| 1.4  | Trading calendar — `tradingDaysBetween` (D5)                    | COMPLETE | `e5d32cd` | `packages/engines/src/market-data/session-manager.ts`; `packages/engines/src/market-data/session-manager.test.ts`     |
+| 1.5  | Decide symbols and history depth (Q6, Q7)                       | READY    | —         | —                                                                                                                     |
+| 1.6  | `HistoryProvider` port + FYERS adapter, with paging (D1)        | READY    | —         | —                                                                                                                     |
+| 1.7  | Generic bar validation — timestamps, OHLC, ordering, duplicates | READY    | —         | —                                                                                                                     |
+| 1.8  | Run the FYERS probe; answer Q1–Q5                               | BLOCKED  | —         | reason: needs a live FYERS token and one real call per question                                                       |
+| 1.9  | Vendor-specific validation — holiday / no-data behaviour        | BLOCKED  | —         | reason: needs Q5 from task 1.8                                                                                        |
+| 1.10 | Backfill job + operator CLI (D6)                                | BLOCKED  | —         | reason: needs 1.6, 1.7 and the page size from Q1                                                                      |
+| 1.11 | Historical and `LIVE_TICK` bars coexist; no duplicates          | BLOCKED  | —         | reason: needs 1.10                                                                                                    |
+
+**The vendor questions are not guessable.** Design §3.1 and §10.1 list five —
+maximum range per request, retention depth, rate limits, whether index volume
+is real, and what a holiday returns. Each needs one real call. A plausible
+guess produces a dataset that is quietly wrong, and every later phase inherits
+it, so 1.8 gates 1.9 and the page size in 1.10 rather than being worked around.
+
+**Tasks 1.1–1.4 exist, tested, on `docs/architecture-baseline` (`b07fae4`).**
+They are Phase 1 work that was written before the phase opened; the honest
+move is to port them now rather than rewrite them.
 
 ### Initial scope
 
