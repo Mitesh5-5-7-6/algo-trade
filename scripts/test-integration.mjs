@@ -18,6 +18,45 @@
  *      purest form of "not run" wearing "passed" as a costume.
  */
 import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+
+/**
+ * Credentials come from `.env.test.local` when it exists — gitignored by the
+ * `.env.*` rule.
+ *
+ * There is no dotenv in this repository, so without this the only way to supply
+ * a hosted URI is to export it in the shell, where it lands in shell history
+ * and in the environment of every other process. A file read by exactly one
+ * script is the narrower blast radius, and it keeps a live credential out of
+ * any transcript.
+ *
+ * An explicit shell variable always wins, so CI — which sets them directly —
+ * is never overridden by a stray file.
+ */
+function loadEnvFile(path) {
+  if (!existsSync(path)) return [];
+  const loaded = [];
+  for (const raw of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq < 1) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    const quoted =
+      value.length >= 2 &&
+      (value.at(0) === '"' || value.at(0) === "'") &&
+      value.at(-1) === value.at(0);
+    if (quoted) value = value.slice(1, -1);
+    if (process.env[key] === undefined || process.env[key] === "") {
+      process.env[key] = value;
+      loaded.push(key);
+    }
+  }
+  return loaded;
+}
+
+const loaded = loadEnvFile(".env.test.local");
 
 const ISOLATED = /^neelkanth_(it|ci)/;
 
@@ -29,6 +68,13 @@ function databaseOf(uri) {
   const authorityStart = schemeEnd === -1 ? 0 : schemeEnd + 3;
   const pathStart = base.indexOf("/", authorityStart);
   return pathStart === -1 ? "" : base.slice(pathStart + 1);
+}
+
+/** Never print credentials, even to a local terminal — logs outlive sessions. */
+function redact(url) {
+  return url === undefined || url === ""
+    ? undefined
+    : url.replace(/\/\/[^@/]*@/, "//<credentials>@");
 }
 
 function die(message) {
@@ -50,8 +96,11 @@ if (mongoUri !== undefined && mongoUri !== "") {
 
 process.stderr.write(
   "\ntest:integration — strict mode. Unreachable infrastructure is a FAILURE.\n" +
+    (loaded.length > 0
+      ? `  loaded    : ${loaded.join(", ")} from .env.test.local\n`
+      : "") +
     `  MONGO_URI : ${mongoUri === undefined || mongoUri === "" ? "unset (defaults to localhost)" : `database "${databaseOf(mongoUri)}"`}\n` +
-    `  REDIS_URL : ${process.env.REDIS_URL ?? "unset (defaults to localhost)"}\n\n`,
+    `  REDIS_URL : ${redact(process.env.REDIS_URL) ?? "unset (defaults to localhost)"}\n\n`,
 );
 
 const result = spawnSync("pnpm", ["exec", "turbo", "run", "test", "--force"], {

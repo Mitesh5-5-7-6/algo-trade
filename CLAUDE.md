@@ -53,6 +53,15 @@ use `pnpm test:integration`, which makes unreachable infrastructure a hard
 failure. `docker compose -f docker-compose.test.yml up -d` provides both
 locally.
 
+Credentials go in `.env.test.local` (gitignored; see
+`.env.test.local.example`), read by the runner and nothing else. There is no
+dotenv here, so a shell export is the only alternative — and that puts a live
+credential into shell history and every child process.
+
+Use **scratch** instances, never the deployed ones. Integration suites drop
+their database, and the Redis suites write real keys including
+`risk:dailyLoss:<date>`, the live daily-loss counter.
+
 Integration suites drop their database. They may only ever target
 `neelkanth_it_*` or `neelkanth_ci_*`, and refuse to start otherwise.
 
