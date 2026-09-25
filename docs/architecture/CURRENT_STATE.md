@@ -31,8 +31,8 @@ Every claim here is verified against the **working branch** at the time of writi
 | Gap                                     | Status             |
 | --------------------------------------- | ------------------ |
 | Historical 5m ingestion                 | `MISSING`          |
-| Date-range candle query                 | `MISSING`          |
-| Candle provenance                       | `MISSING`          |
+| Date-range candle query                 | `EXISTS` ✅        |
+| Candle provenance                       | `EXISTS` ✅        |
 | Completed Trade entity                  | `MISSING`          |
 | Entry ↔ exit linkage                    | `MISSING`          |
 | Exit lifecycle completeness             | `PARTIALLY EXISTS` |
@@ -87,6 +87,8 @@ Entries are trading-platform defects as well as research dependencies; both are 
 
 These five gaps are strictly sequential. Nothing in the R&D specification can begin before the first is closed.
 
+**Progress:** §3.2 and §3.3 are closed — the storage and provenance foundation, which depends on nothing the broker has to tell us. §3.1 remains open and is blocked on the vendor questions in [../design/PHASE_1_HISTORICAL_DATA.md §10.1](../design/PHASE_1_HISTORICAL_DATA.md), not on engineering.
+
 ### 3.1 Historical 5-minute ingestion
 
 - **Current state:** `MISSING`. Candles can only ever originate from live ticks.
@@ -96,23 +98,18 @@ These five gaps are strictly sequential. Nothing in the R&D specification can be
 - **Planned phase:** 1.
 - **Out of scope for the documentation task.**
 
-### 3.2 Date-range candle query
+### 3.2 Date-range candle query — CLOSED
 
-- **Current state:** `MISSING`.
-- **Evidence:** [packages/db/src/candles-repository.ts](../../packages/db/src/candles-repository.ts) exposes exactly two methods: `upsert(candle)` and `loadRecent(symbol, interval, limit)`. There is no `findRange(from, to)`.
-- **Why it matters:** A replay harness cannot ask for "a trading day". `loadRecent` answers "the last N bars", which is the wrong question for research.
-- **Dependencies:** Pairs with 3.1; the storage side is independent of the fetch side.
-- **Planned phase:** 1.
-- **Out of scope for the documentation task.**
+- **Original state:** `MISSING`. The repository exposed only `upsert` and `loadRecent(limit)`, so a replay harness could not ask for "a trading day" — `loadRecent` answers "the last N bars", which is the wrong question for research.
+- **Fix:** `CandlesRepository.findRange(symbol, interval, fromTs, toTs)` ([candles-repository.ts](../../packages/db/src/candles-repository.ts)), half-open `[from, to)` so consecutive day requests tile exactly. Served by the existing unique index `{symbol, interval, ts}` — equality prefix plus range — so no new index.
+- **Status:** `EXISTS`. Design D4.
 
-### 3.3 Candle provenance
+### 3.3 Candle provenance — CLOSED
 
-- **Current state:** `MISSING`.
-- **Evidence:** `CandleSchema` ([packages/core/src/market.ts](../../packages/core/src/market.ts)) is `{symbol, interval, open, high, low, close, volume, ts}`. No `source`, no ingestion version. The unique index is `(symbol, interval, ts)` ([packages/db/src/collections.ts](../../packages/db/src/collections.ts)).
-- **Why it matters:** A broker-fetched bar and a tick-aggregated bar are indistinguishable, and the idempotent upsert means one silently overwrites the other. The moment historical ingestion lands, the candle collection becomes a mixture of sources with no way to tell them apart — and [ARCHITECTURE_DECISION.md §7](ARCHITECTURE_DECISION.md) requires that data sources are never silently mixed. Closing 3.1 before 3.3 actively creates this problem.
-- **Dependencies:** Must land with or before 3.1.
-- **Planned phase:** 1–2.
-- **Out of scope for the documentation task.**
+- **Original state:** `MISSING`. `CandleSchema` was `{symbol, interval, open, high, low, close, volume, ts}` — no `source`, no ingestion version — so a broker-fetched bar and a tick-aggregated bar were indistinguishable, and the idempotent upsert meant one silently overwrote the other. Closing 3.1 first would have actively created that problem, against [ARCHITECTURE_DECISION.md §7](ARCHITECTURE_DECISION.md)'s rule that data sources are never silently mixed.
+- **Fix:** `CandleSourceSchema` (`LIVE_TICK` / `BROKER_HISTORICAL` / `REPLAY` / `IMPORTED_DATA`) plus `ingestedAt` and `ingestionVersion` ([market.ts](../../packages/core/src/market.ts)). `source` is **defaulted**, not required, so every bar already in Mongo still parses — a required field would have thrown on the first indicator warm-up after deploy. On the TypeScript output type it is required, so every producer must declare provenance; the aggregator stamps `LIVE_TICK`, the only thing it can produce.
+- **Precedence:** `CANDLE_SOURCE_RANK` plus a conditional upsert means a write can never demote the stored bar — the broker's record overwrites ours, ours never overwrites the broker's ([candles-repository.ts](../../packages/db/src/candles-repository.ts)). Legacy bars carry no `sourceRank`, and in Mongo a missing field does not match `$lte`, so absence is treated as `LIVE_TICK` rather than falling through to an insert the unique index would refuse.
+- **Status:** `EXISTS`. Design D2 and D3.
 
 ### 3.4 Completed Trade entity
 

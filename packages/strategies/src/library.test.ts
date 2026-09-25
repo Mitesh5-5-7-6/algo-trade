@@ -51,6 +51,7 @@ function context(opts: BarOpts): MarketContext {
   const candle: Candle = {
     symbol: SYM,
     interval,
+    source: "LIVE_TICK",
     open: opts.close,
     high: opts.high ?? opts.close,
     low: opts.low ?? opts.close,

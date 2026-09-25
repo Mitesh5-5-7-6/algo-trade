@@ -25,6 +25,7 @@ const BAR_MS = 300_000;
 const bar = (index: number, fields: Partial<Candle> = {}): Candle => ({
   symbol: SYMBOL,
   interval: "5m",
+  source: "LIVE_TICK",
   open: 100,
   high: 101,
   low: 99,

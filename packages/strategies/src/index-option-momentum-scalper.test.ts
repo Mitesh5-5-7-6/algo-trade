@@ -47,6 +47,7 @@ function context(
   const candles = Array.from({ length: 5 }, (_, index) => ({
     symbol: "NSE:NIFTY50-INDEX",
     interval: "1m" as const,
+    source: "LIVE_TICK" as const,
     open: 100 + index,
     high: 105 + index,
     low: 99 + index,
@@ -57,6 +58,7 @@ function context(
   const candle = {
     symbol: "NSE:NIFTY50-INDEX",
     interval: "1m" as const,
+    source: "LIVE_TICK" as const,
     open: close - 1,
     high: close + 1,
     low: close - 2,

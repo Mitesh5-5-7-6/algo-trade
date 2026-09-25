@@ -27,6 +27,7 @@ function buildCandles(): Candle[] {
     candles.push({
       symbol: SYMBOL,
       interval: INTERVAL,
+      source: "LIVE_TICK",
       open,
       high: round2(Math.max(open, close) + 0.5),
       low: round2(Math.min(open, close) - 0.5),

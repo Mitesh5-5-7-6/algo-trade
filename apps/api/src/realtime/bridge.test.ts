@@ -276,6 +276,7 @@ describe("realtime bridge (plan/10)", () => {
     emit("CANDLE_CLOSED", {
       symbol: "NSE:INFY-EQ",
       interval: "1m",
+      source: "LIVE_TICK",
       open: 1,
       high: 2,
       low: 1,

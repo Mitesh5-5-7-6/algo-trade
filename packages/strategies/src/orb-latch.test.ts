@@ -21,6 +21,7 @@ const params = (overrides: Partial<OrbParams> = {}): OrbParams =>
 const bar = (index: number, fields: Partial<Candle> = {}): Candle => ({
   symbol: "NSE:ORB-EQ",
   interval: "5m",
+  source: "LIVE_TICK",
   open: 100,
   high: 101,
   low: 99,

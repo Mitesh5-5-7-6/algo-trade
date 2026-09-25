@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BrokerOrderRequestSchema,
   CandleSchema,
+  CANDLE_SOURCE_RANK,
   ConfidenceSchema,
   ExecutionOutcomeSchema,
   OrderSchema,
@@ -73,6 +74,63 @@ describe("market shapes", () => {
     expect(CandleSchema.safeParse(candle).success).toBe(false);
     expect(CandleSchema.safeParse({ ...candle, interval: "5m" }).success).toBe(
       true,
+    );
+  });
+
+  /**
+   * Every candle already in Mongo predates provenance, and all of them came
+   * from tick aggregation. `CandlesRepository.loadRecent` parses every document
+   * it reads and indicator warm-up reads on every boot — so a required `source`
+   * would have thrown on the first read after deploy.
+   */
+  it("defaults a stored candle with no provenance to LIVE_TICK", () => {
+    const legacy = {
+      symbol: "NSE:INFY-EQ",
+      interval: "5m",
+      open: 1,
+      high: 2,
+      low: 0.5,
+      close: 1.5,
+      volume: 10,
+      ts,
+    };
+    const parsed = CandleSchema.parse(legacy);
+    expect(parsed.source).toBe("LIVE_TICK");
+    expect(parsed.ingestedAt).toBeUndefined();
+  });
+
+  it("keeps an explicit provenance and rejects an unknown one", () => {
+    const bar = {
+      symbol: "NSE:INFY-EQ",
+      interval: "5m",
+      open: 1,
+      high: 2,
+      low: 0.5,
+      close: 1.5,
+      volume: 10,
+      ts,
+    };
+    expect(
+      CandleSchema.parse({ ...bar, source: "BROKER_HISTORICAL" }).source,
+    ).toBe("BROKER_HISTORICAL");
+    expect(
+      CandleSchema.safeParse({ ...bar, source: "GUESSWORK" }).success,
+    ).toBe(false);
+  });
+
+  /**
+   * Precedence, not alphabetical order: a backfill may overwrite our
+   * aggregation, never the reverse. One (symbol, interval, ts) is one candle.
+   */
+  it("ranks the broker's record above ours, and replay below everything", () => {
+    expect(CANDLE_SOURCE_RANK.BROKER_HISTORICAL).toBeGreaterThan(
+      CANDLE_SOURCE_RANK.IMPORTED_DATA,
+    );
+    expect(CANDLE_SOURCE_RANK.IMPORTED_DATA).toBeGreaterThan(
+      CANDLE_SOURCE_RANK.LIVE_TICK,
+    );
+    expect(CANDLE_SOURCE_RANK.LIVE_TICK).toBeGreaterThan(
+      CANDLE_SOURCE_RANK.REPLAY,
     );
   });
 });

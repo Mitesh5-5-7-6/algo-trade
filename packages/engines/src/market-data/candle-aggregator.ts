@@ -123,6 +123,10 @@ export class CandleAggregator {
       close: state.close,
       volume: state.volume,
       ts: state.bucketStart,
+      // This aggregator has exactly one input: the live tick feed. Stamping it
+      // here rather than defaulting it downstream means a bar can never reach
+      // storage without saying which producer made it.
+      source: "LIVE_TICK",
     };
   }
 }

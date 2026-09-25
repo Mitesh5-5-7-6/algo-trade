@@ -29,6 +29,48 @@ function parseHHMM(value: string): number {
   return hours * 60 + minutes;
 }
 
+/** True when an IST date key falls on a Saturday or Sunday. */
+function isWeekendIST(dateKey: string): boolean {
+  const weekday = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
+  return weekday === 0 || weekday === 6;
+}
+
+/**
+ * The IST trading dates in `[fromTs, toTs]`, weekends and exchange holidays
+ * removed (docs/design/PHASE_1_HISTORICAL_DATA.md D5).
+ *
+ * Research windows are counted in trading days, never calendar days
+ * (RND_RESEARCH_SPECIFICATION §5.5) — a week containing a holiday is four
+ * sessions, and an aggregation that assumes five is wrong in a way that is
+ * very hard to see afterwards.
+ *
+ * It also makes a backfill able to tell two indistinguishable things apart: a
+ * day the exchange was shut and a day the fetch failed. Both return zero
+ * candles; only one is a problem. Without this, every Diwali would log as a
+ * gap and a genuinely missing session would be lost in the noise.
+ *
+ * `holidays` comes from the same global settings the live `SessionManager`
+ * reads, so ingestion and trading cannot disagree about whether a day existed.
+ * Inclusive of both ends; an inverted range yields nothing.
+ */
+export function tradingDaysBetween(
+  fromTs: number,
+  toTs: number,
+  holidays: ReadonlySet<string>,
+): string[] {
+  const days: string[] = [];
+  if (toTs < fromTs) return days;
+  // Step over IST midnights rather than adding 24h to `fromTs`, so the result
+  // does not drift with the time of day the range happens to start at.
+  const lastDay = startOfDayIST(toTs);
+  for (let day = startOfDayIST(fromTs); day <= lastDay; day += DAY_MS) {
+    const dateKey = istDateKey(day);
+    if (isWeekendIST(dateKey) || holidays.has(dateKey)) continue;
+    days.push(dateKey);
+  }
+  return days;
+}
+
 export interface SessionConfig {
   /** Pre-open auction start, IST "HH:MM" (NSE default 09:00). */
   preOpen: string;

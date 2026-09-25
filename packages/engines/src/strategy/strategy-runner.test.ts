@@ -190,6 +190,7 @@ function config(type: string, symbols = ["NSE:X-EQ"]): StrategyConfig {
 const candle = (close: number, ts = 1000) => ({
   symbol: "NSE:X-EQ",
   interval: "5m" as const,
+  source: "LIVE_TICK" as const,
   open: close,
   high: close,
   low: close,
