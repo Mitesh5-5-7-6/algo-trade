@@ -331,9 +331,24 @@ describe("read-model routes", () => {
     const rows = res
       .json<{ strategyId: string }[]>()
       .sort((a, b) => a.strategyId.localeCompare(b.strategyId));
+    // `evaluationsToday` counts every bar the strategy judged, signal or not.
+    // It is asserted rather than ignored because it is the field that tells an
+    // operator "this strategy is running and choosing not to trade" apart from
+    // "this strategy is not running" — and a `toEqual` that omitted it would
+    // pass just as happily if the route stopped returning it.
     expect(rows).toEqual([
-      { strategyId: "str_stats_a", dayRealizedPnl: 320, signalsToday: 1 },
-      { strategyId: "str_stats_idle", dayRealizedPnl: 0, signalsToday: 0 },
+      {
+        strategyId: "str_stats_a",
+        dayRealizedPnl: 320,
+        signalsToday: 1,
+        evaluationsToday: 1,
+      },
+      {
+        strategyId: "str_stats_idle",
+        dayRealizedPnl: 0,
+        signalsToday: 0,
+        evaluationsToday: 0,
+      },
     ]);
   });
 });
