@@ -21,11 +21,22 @@
  *     opt-in, because hammering a real broker account is how an account gets
  *     throttled or flagged.
  *
- * Run from apps/api:
+ * Run from apps/api. Two ways to supply the token:
+ *
+ *   # 1. A token you already hold. Touches no database at all.
+ *   FYERS_APP_ID=... FYERS_ACCESS_TOKEN=... node scripts/probe-fyers-history.mts
+ *
+ *   # 2. The token the app stored, decrypted the way the app does.
  *   node --env-file=../../.env.local scripts/probe-fyers-history.mts
- *   node --env-file=../../.env.local scripts/probe-fyers-history.mts --rate-limits
+ *
+ * Prefer (1). It needs no Mongo, so it never points at a deployed
+ * database to read a credential — and the holiday list it would have
+ * fetched only affects which recent weekday Q1/Q2 sample, which
+ * --holidays covers.
  *
  * Optional: --symbol=NSE:NIFTY50-INDEX  --equity=NSE:SBIN-EQ
+ *           --holidays=2026-01-26,2026-03-04  (only with FYERS_ACCESS_TOKEN)
+ *           --rate-limits                     (opt-in Q3 burst)
  */
 
 import { MongoClient } from "mongodb";
@@ -142,8 +153,21 @@ async function loadAuth(): Promise<{
 
   const envToken = process.env.FYERS_ACCESS_TOKEN;
 
+  // A supplied token needs nothing else. Connecting to Mongo anyway would
+  // mean reaching for a deployed database to read a credential this
+  // process was already handed, which is both unnecessary and the kind of
+  // thing that is hard to notice in a script.
+  if (envToken) {
+    const holidays = args.get("holidays")?.split(",").filter(Boolean) ?? [];
+    return { appId, token: envToken, holidays };
+  }
+
   const uri = process.env.MONGO_URI;
-  if (!uri) throw new Error("MONGO_URI is not set");
+  if (!uri)
+    throw new Error(
+      "set FYERS_ACCESS_TOKEN to probe with a token you hold, or MONGO_URI " +
+        "to read the one the app stored",
+    );
   const keyHex = process.env.TOKEN_ENCRYPTION_KEY;
 
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000 });
@@ -154,8 +178,6 @@ async function loadAuth(): Promise<{
       scope: "global",
     });
     const holidays = (settings?.marketHolidays as string[] | undefined) ?? [];
-
-    if (envToken) return { appId, token: envToken, holidays };
 
     if (!keyHex) {
       throw new Error(
