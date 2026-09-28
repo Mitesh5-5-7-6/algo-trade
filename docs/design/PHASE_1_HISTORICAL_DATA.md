@@ -106,17 +106,74 @@ Response:
 
 `ts` is **epoch seconds** and marks the **start** of the interval — the same convention as the internal aggregator, which buckets by `floor(ts / intervalMs) * intervalMs`. Internal storage is epoch **milliseconds**, so ingestion multiplies by 1000.
 
-### 3.1 What must be verified against the live API before coding
+### 3.1 Measured against the live API — **Q1, Q2, Q4, Q5 RESOLVED**
 
-These are not guessable and must not be assumed. They are Q1–Q5 in §10; §10.0 says which of them actually block what, and §10.1 states the probe that answers them.
+Measured 2026-09-28 by [probe-fyers-history.mts](../../apps/api/scripts/probe-fyers-history.mts) against account `YM14932`, resolution `5`, symbol `NSE:NIFTY50-INDEX` (task 1.8). Q3 remains open — see below.
 
-1. **Maximum range per request.** Community sources report ~100 days per call; the exact cap per resolution is unconfirmed. The implementation pages regardless (§7.2) — confirm the real window and set the page size from it.
-2. **How far back 5-minute history is retained.**
-3. **Data-API rate limits** (per second / minute / day), which set the delay in §7.2.
-4. **Index volume.** NSE index symbols are widely reported to return zero or meaningless volume. Confirm empirically, because [ARCHITECTURE_DECISION §20.2](../architecture/ARCHITECTURE_DECISION.md) forbids volume-based conclusions where volume is not real, and D2's deferred `volumeAvailable` / `volumeSource` / `volumeQuality` fields depend on the answer.
-5. **Behaviour on a holiday or non-trading range** — empty `candles`, an error, or `s: "no_data"`.
+| #   | Question                    | Answer                                                                         |
+| --- | --------------------------- | ------------------------------------------------------------------------------ |
+| Q1  | Max range per request       | **100 days.** 30/60/100-day spans return in full; 150 days returns HTTP 422    |
+| Q2  | 5-minute retention          | **At least 8 years.** A full 75-bar session returned for 2018-10-01            |
+| Q3  | Rate limits                 | **OPEN.** No rate-limit headers on a normal response; the burst is opt-in      |
+| Q4  | Index volume                | **Real and non-zero**, contradicting the common assumption                     |
+| Q5  | Non-trading range behaviour | **HTTP 200 with `s: "no_data"`** and an empty `candles` array — never an error |
 
-Record the answers in this document when they are established.
+#### Q1 — maximum range per request: 100 days
+
+| Requested | Result                                  |
+| --------- | --------------------------------------- |
+| 30 days   | HTTP 200, full span returned            |
+| 60 days   | HTTP 200, full span returned            |
+| 100 days  | HTTP 200, full span returned            |
+| 150 days  | **HTTP 422** — refused, no partial data |
+
+The cap sits somewhere in `(100, 150]`; 100 is confirmed good and is what the page size is set to. **The refusal is loud, not silent** — 422 with no body, rather than a truncated `s: "ok"`. That is the better of the two failure modes the coverage check in §7.2 was built for, but the check stays: it costs nothing and a vendor can change this without telling anyone.
+
+#### Q2 — retention: at least 8 years
+
+A full 75-bar session came back for every probe point: 1, 2, 3, 5 and 8 years back (the oldest tested was 2018-10-01). Retention was never reached, so the real floor is further out still.
+
+**This clears Q7 completely.** The one-year decision in §10.2 was explicitly floored by this answer; a year is comfortably inside 8+, so the ceiling is the decision, not the vendor.
+
+#### Q4 — index volume is real
+
+| Symbol              | Bars | Bars with non-zero volume |
+| ------------------- | ---- | ------------------------- |
+| `NSE:NIFTY50-INDEX` | 75   | 74                        |
+| `NSE:SBIN-EQ`       | 75   | 74                        |
+
+The index profile is indistinguishable from the equity's — 10,817,533 on the opening bar. **This contradicts the widely-repeated claim that NSE index symbols return zero volume**, which is exactly why §3.1 required measuring rather than assuming: the assumption would have discarded a usable column for the entire research dataset.
+
+One caveat that measurement cannot settle: an index has no volume _of its own_, so this number is necessarily an aggregate over constituents. It is **present and non-zero**, which is what [ARCHITECTURE_DECISION §20](../architecture/ARCHITECTURE_DECISION.md) asks about; whether a given strategy should reason from it is a research question, not an ingestion one. `zeroVolumeIsUnavailable` therefore stays **false**.
+
+#### Q5 — a non-trading day is not an error
+
+```json
+{ "s": "no_data", "code": ..., "message": "", "candles": [], "nextTime": 1790330100 }
+```
+
+Returned with **HTTP 200** for a Saturday, a Sunday, and a two-day weekend range alike. Never a 4xx, never an exception.
+
+This is the answer the whole `MARKET_CLOSED` / `DATA_MISSING` / `API_FAILURE` distinction depends on: because a closed day is a _successful_ response, a transport failure genuinely is a different thing and the two can be told apart without heuristics. The provider already maps `s: "no_data"` to `empty: true`, which is now confirmed correct rather than assumed.
+
+`nextTime` is undocumented and not relied upon.
+
+#### Q3 — rate limits: still open
+
+A normal response carries **no rate-limit headers at all**, so the limits cannot be read passively. The only way to measure them is the opt-in burst (`--rate-limits`, 20 back-to-back calls), which is deliberately not the default: hammering a live broker account is how one gets throttled or flagged.
+
+Until it is measured, `RateLimiter.minIntervalMs` stays without a default and the operator sets it deliberately. The §7.2 override means an over-generous value costs the backfill throughput and not the live order path — but the account-wide ceiling is shared regardless, so the number still matters.
+
+**Q3 does not block the initial backfill, and the reason is arithmetic rather than optimism.** Q1 settled the page at 100 days, so the scope agreed in §10.2 — index-only, one year — is:
+
+```
+ceil(365 / 100) = 4 requests per symbol
+4 × 2 symbols    = 8 requests for the entire first ingestion
+```
+
+Eight requests cannot threaten any plausible rate limit. A conservative interval is safe **by construction** here, which is the important difference from Q1: guessing a page size too large corrupts the dataset silently, whereas setting an interval too generous costs seconds of wall-clock and nothing else. The two unmeasured numbers are not the same kind of risk, and treating them alike would have stalled the phase on a question that does not bind.
+
+Q3 becomes load-bearing when the universe widens beyond the index pair — which §10.2 already defers until the pipeline is proven. **Measure it before that, not before this.**
 
 ---
 
