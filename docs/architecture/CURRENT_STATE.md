@@ -30,7 +30,7 @@ Every claim here is verified against the **working branch** at the time of writi
 
 | Gap                                     | Status             |
 | --------------------------------------- | ------------------ |
-| Historical 5m ingestion                 | `MISSING`          |
+| Historical 5m ingestion                 | `PARTIALLY EXISTS` |
 | Date-range candle query                 | `EXISTS` ✅        |
 | Candle provenance                       | `EXISTS` ✅        |
 | Completed Trade entity                  | `MISSING`          |
@@ -65,8 +65,8 @@ Entries are trading-platform defects as well as research dependencies; both are 
 | ---------------------------------- | ------------------ | -------------------------------------------------------------------- |
 | Market data ingestion (live ticks) | `EXISTS`           | Monotonic guard, per-symbol; ticks deliberately not written to Redis |
 | Candle aggregation                 | `PARTIALLY EXISTS` | 2 of 5 supported intervals built at runtime; flushed at close (§5.1) |
-| Candle storage                     | `PARTIALLY EXISTS` | Idempotent upsert; no range query, no provenance                     |
-| Historical data                    | `MISSING`          | —                                                                    |
+| Candle storage                     | `EXISTS`           | Rank-conditional upsert, range query, provenance                     |
+| Historical data                    | `PARTIALLY EXISTS` | Provider + validation built; no backfill job (needs §3.1 Q1)         |
 | Indicator engine                   | `EXISTS`           | Deterministic, warm-up from stored candles                           |
 | Strategy engine                    | `PARTIALLY EXISTS` | 8 of a planned 9; state + one-shot latch survive a restart (§5.7)    |
 | Risk engine                        | `EXISTS`           | Five checks, fail-closed; daily loss is durable per IST day (§5.2)   |
@@ -87,14 +87,14 @@ Entries are trading-platform defects as well as research dependencies; both are 
 
 These five gaps are strictly sequential. Nothing in the R&D specification can begin before the first is closed.
 
-**Progress:** §3.2 and §3.3 are closed — the storage and provenance foundation, which depends on nothing the broker has to tell us. §3.1 remains open and is blocked on the vendor questions in [../design/PHASE_1_HISTORICAL_DATA.md §10.1](../design/PHASE_1_HISTORICAL_DATA.md), not on engineering.
+**Progress:** §3.2 and §3.3 are closed — the storage and provenance foundation, which depends on nothing the broker has to tell us. §3.1 is now partially closed: the fetch path and its validation exist and are tested offline. What remains is the backfill job, and it is blocked on the vendor questions in [../design/PHASE_1_HISTORICAL_DATA.md §10.1](../design/PHASE_1_HISTORICAL_DATA.md) — specifically Q1, the page size — not on engineering.
 
 ### 3.1 Historical 5-minute ingestion
 
-- **Current state:** `MISSING`. Candles can only ever originate from live ticks.
-- **Evidence:** The `Broker` interface ([packages/broker/src/broker.ts](../../packages/broker/src/broker.ts)) declares nine methods — `execute`, `cancel`, `status`, `onOrderUpdate`, `connect`, `disconnect`, `subscribe`, `onData`, `onConnectionChange` — and no history method. [packages/broker/src/fyers-broker.ts](../../packages/broker/src/fyers-broker.ts) makes three REST calls, all order-related; there is no `/data/history` call anywhere in the repository.
+- **Current state:** `PARTIALLY EXISTS`. A bar can now be fetched, normalized and validated; nothing yet drives that over a date range and writes the result.
+- **Evidence:** `HistoryProvider` ([packages/broker/src/history-provider.ts](../../packages/broker/src/history-provider.ts)) is a capability interface — `Broker` was deliberately not widened — implemented by `FyersHistoryProvider` ([packages/broker/src/fyers-history.ts](../../packages/broker/src/fyers-history.ts)), which calls `/data/history` with day-granular paging, sequential requests through the shared rate-limit seam, and bounded retry that skips 401/400. Bars are validated by [packages/core/src/bar-validation.ts](../../packages/core/src/bar-validation.ts) and stamped `BROKER_HISTORICAL`. **What is still missing is the backfill job** ([../design/PHASE_1_HISTORICAL_DATA.md](../design/PHASE_1_HISTORICAL_DATA.md) D6, task 1.10): no operator command exists, and `maxDaysPerRequest` has no default because it is an unmeasured vendor fact (Q1), so nothing can be run end to end yet.
 - **Why it matters:** Every phase from 1 onward consumes historical candles. Without this, the research system has no input at all, and "analyse one historical trading day" is not an executable instruction.
-- **Dependencies:** None. This is the root of the chain.
+- **Dependencies:** The remaining work depends on task 1.8 — one real FYERS call to answer Q1–Q5.
 - **Planned phase:** 1.
 - **Out of scope for the documentation task.**
 
