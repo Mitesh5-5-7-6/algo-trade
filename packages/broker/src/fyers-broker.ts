@@ -10,6 +10,16 @@ import type {
 import { OptionChainSnapshotSchema } from "@neelkanth/core";
 import type { Broker } from "./broker.js";
 import {
+  FyersHistoryProvider,
+  type FyersHistoryDeps,
+} from "./fyers-history.js";
+import {
+  HistoryFetchError,
+  type HistoryProvider,
+  type HistoryRequest,
+  type HistoryResult,
+} from "./history-provider.js";
+import {
   fyersDataSocket,
   fyersOrderSocket,
   type FyersDataSocketInstance,
@@ -22,6 +32,17 @@ export interface FyersBrokerDeps {
   getToken: () => Promise<string | null>;
   /** Redis rate limiter or similar can be injected here */
   checkRateLimit?: () => Promise<void>;
+  /**
+   * Historical-fetch configuration (design D1).
+   *
+   * Optional, and its absence is meaningful: a broker built without it has
+   * no history capability, so `supportsHistory` is false and the
+   * composition root hands the backfill job null rather than a provider
+   * that would return nothing. It cannot be defaulted —
+   * `maxDaysPerRequest` is a measured vendor fact (§3.1 Q1), and a guess
+   * silently truncates history.
+   */
+  history?: Omit<FyersHistoryDeps, "appId" | "getToken" | "checkRateLimit">;
 }
 
 /** Loose shape for FYERS API JSON responses. */
@@ -403,8 +424,10 @@ function toEpochMs(value: number | string | undefined): number {
  * broker client in the process, and the `Broker` port keeps it out of the
  * engines, strategies and risk layer entirely.
  */
-export class FyersBroker implements Broker {
+export class FyersBroker implements Broker, HistoryProvider {
   private readonly deps: FyersBrokerDeps;
+  /** Non-null only when `deps.history` was supplied. */
+  private readonly historyProvider: FyersHistoryProvider | null;
   /** The vendor SDK's feed client. Null until `connect` succeeds. */
   private socket: FyersDataSocketInstance | null = null;
   /** The order-update feed. Null until `connect` succeeds. */
@@ -418,6 +441,40 @@ export class FyersBroker implements Broker {
 
   constructor(deps: FyersBrokerDeps) {
     this.deps = deps;
+    this.historyProvider =
+      deps.history === undefined
+        ? null
+        : new FyersHistoryProvider({
+            ...deps.history,
+            appId: deps.appId,
+            getToken: deps.getToken,
+            ...(deps.checkRateLimit === undefined
+              ? {}
+              : { checkRateLimit: deps.checkRateLimit }),
+          });
+  }
+
+  // --- Historical data (REST) ---
+
+  /**
+   * Whether this broker was configured to fetch history (design D1).
+   *
+   * The backfill job takes a `HistoryProvider` and refuses to start on null.
+   * This is what the composition root checks to decide which it has, so an
+   * unconfigured deployment fails at startup with a reason rather than
+   * running a backfill that quietly stores nothing.
+   */
+  get supportsHistory(): boolean {
+    return this.historyProvider !== null;
+  }
+
+  async getHistory(req: HistoryRequest): Promise<HistoryResult> {
+    if (this.historyProvider === null)
+      throw new HistoryFetchError(
+        "history is not configured on this broker: FyersBrokerDeps.history was not supplied, and its page size (§3.1 Q1) has no safe default",
+        { retryable: false },
+      );
+    return this.historyProvider.getHistory(req);
   }
 
   // --- Execution (REST) ---

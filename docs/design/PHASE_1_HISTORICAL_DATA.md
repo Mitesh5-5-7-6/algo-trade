@@ -376,7 +376,7 @@ Point 5 is the one that only works in the right order. Run against an unflushed 
 
 ## 10. Blockers and next actions
 
-Seven questions remain open. **Do not invent answers.** Each must be settled before implementation, not discovered during it. A plausible-looking guess here produces a dataset that is quietly wrong, and every phase downstream inherits it.
+Seven questions were opened here. **Q6 and Q7 are now settled — §10.2.** Five remain, and every one of them is a vendor fact. **Do not invent answers.** Each must be settled before implementation, not discovered during it. A plausible-looking guess here produces a dataset that is quietly wrong, and every phase downstream inherits it.
 
 ### 10.0 What blocks what
 
@@ -399,11 +399,11 @@ Q1 · Q2 · Q3 · Q5   +   Q6 · Q7
 
 **Next actions, in order:**
 
-| Blocker | Next action                                | Owner                 |
-| ------- | ------------------------------------------ | --------------------- |
-| Q1–Q5   | Run a real FYERS History API probe (§10.1) | Requires a live token |
-| Q6      | Decide the initial symbol universe         | Project decision      |
-| Q7      | Decide the historical range, subject to Q2 | Project decision      |
+| Blocker | Next action                                   | Owner                 |
+| ------- | --------------------------------------------- | --------------------- |
+| Q1–Q5   | Run a real FYERS History API probe (§10.1)    | Requires a live token |
+| Q6      | **Settled — §10.2.** Index-only.              | Project decision      |
+| Q7      | **Settled — §10.2.** One year, floored by Q2. | Project decision      |
 
 ### 10.1 Vendor verification — one probe against the live API
 
@@ -443,16 +443,27 @@ Record the answers in §3 when established, and mark §3.1 resolved.
 
 Question 3 carries a decision with it: §7.2 accepts a shared rate-limit budget only if the live order path is provably unaffected. If the measured limits cannot guarantee that, the backfill moves to its own process before it runs against a full symbol list.
 
-### 10.2 Project decisions — settle before Phase 1 implementation
+### 10.2 Project decisions — SETTLED (task 1.5)
 
-Two decisions that are nobody's default.
+Two decisions that are nobody's default. Both are now made.
 
-**Recommended:**
+| #   | Question       | Decision       | Binds to                                                                                                                                       |
+| --- | -------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 6   | Which symbols? | **Index-only** | `indexSymbols` in [settings-repository.ts](../../packages/db/src/settings-repository.ts) — today `NSE:NIFTY50-INDEX` and `NSE:NIFTYBANK-INDEX` |
+| 7   | How far back?  | **1 year**     | The backfill `fromDate`, **floored by Q2** — if retention is shorter, retention wins and the shortfall is reported, never padded               |
 
-| #   | Question       | Recommendation |
-| --- | -------------- | -------------- |
-| 6   | Which symbols? | **Index-only** |
-| 7   | How far back?  | **1 year**     |
+Q6 reads the symbol list from global settings rather than introducing a new
+constant, so ingestion and the live feed cannot drift into disagreeing about
+which indices matter. Adding a symbol is then a settings change, not a deploy.
+
+Q7 is a ceiling, not a promise. Q2 — retention depth — stays unmeasured until
+the probe in §10.1 runs. If FYERS retains less than a year of 5-minute data,
+the backfill stores what exists and the report says how far back it actually
+reached. The one thing it must never do is present a short history as a
+complete one.
+
+**This decision does not widen on its own.** Expanding the universe or the
+depth is a later, deliberate change, for the reasons below.
 
 That is the smallest dataset that proves the whole chain end to end:
 

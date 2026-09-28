@@ -4,4 +4,6 @@ export * from "./slippage.js";
 export * from "./charges.js";
 export * from "./paper-broker.js";
 export * from "./fyers-broker.js";
+export * from "./history-provider.js";
+export * from "./fyers-history.js";
 export * from "./fyers-instruments.js";

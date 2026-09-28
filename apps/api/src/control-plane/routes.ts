@@ -18,7 +18,8 @@ import {
   StrategiesRepository,
   type GlobalSettings,
 } from "@neelkanth/db";
-import { resolveFnoLimits, startOfDayIST } from "@neelkanth/engines";
+import { resolveFnoLimits } from "@neelkanth/engines";
+import { startOfDayIST } from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import type { ApiServer } from "../server.js";
 import { NotFoundError, ValidationError } from "../errors.js";

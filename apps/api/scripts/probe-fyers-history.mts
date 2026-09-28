@@ -29,7 +29,7 @@
  */
 
 import { MongoClient } from "mongodb";
-import { tradingDaysBetween } from "@neelkanth/engines";
+import { tradingDaysBetween } from "@neelkanth/core";
 
 const HISTORY_URL = "https://api-t1.fyers.in/data/history";
 const RESOLUTION = "5";

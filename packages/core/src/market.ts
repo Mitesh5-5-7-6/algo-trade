@@ -4,6 +4,7 @@ import {
   PriceSchema,
   SymbolSchema,
   TimestampSchema,
+  type CandleInterval,
 } from "./primitives.js";
 
 /**
@@ -57,6 +58,27 @@ export const CANDLE_SOURCE_RANK: Readonly<Record<CandleSource, number>> = {
   LIVE_TICK: 1, // our aggregation of a feed that can drop ticks
   REPLAY: 0, // never reaches the trading collection at all
 };
+
+/** Interval durations in ms. */
+const INTERVAL_MS: Record<CandleInterval, number> = {
+  "1m": 60_000,
+  "5m": 300_000,
+  "15m": 900_000,
+  "30m": 1_800_000,
+  "60m": 3_600_000,
+};
+
+/**
+ * Bucket width for an interval.
+ *
+ * This is the aggregator bucketing unit (`floor(ts / intervalMs) *
+ * intervalMs`) and therefore also the alignment historical bars are validated
+ * against. The two must use the same number, or a backfilled bar can land in a
+ * bucket live aggregation would never produce.
+ */
+export function intervalMs(interval: CandleInterval): number {
+  return INTERVAL_MS[interval];
+}
 
 export const CandleSchema = z.object({
   symbol: SymbolSchema,

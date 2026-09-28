@@ -11,7 +11,7 @@ import {
   riskDailyLossKey,
   type RedisConnections,
 } from "@neelkanth/redis";
-import { istDateKey } from "@neelkanth/engines";
+import { istDateKey } from "@neelkanth/core";
 import { startEngineRuntime, type EngineRuntime } from "./runtime.js";
 import { createLiveMarketState } from "./live-market-state.js";
 import { STRICT } from "../test-support/infra.js";

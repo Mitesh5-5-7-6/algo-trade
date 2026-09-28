@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Candle, Tick } from "@neelkanth/core";
-import { CandleAggregator, intervalMs } from "./candle-aggregator.js";
+import { intervalMs } from "@neelkanth/core";
+import { CandleAggregator } from "./candle-aggregator.js";
 
 const tick = (ts: number, ltp: number, volume = 1): Tick => ({
   symbol: "NSE:RELIANCE-EQ",

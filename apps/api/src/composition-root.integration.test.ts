@@ -8,7 +8,7 @@ import {
   StrategiesRepository,
 } from "@neelkanth/db";
 import { createRedisConnections, riskDailyLossKey } from "@neelkanth/redis";
-import { istDateKey } from "@neelkanth/engines";
+import { istDateKey } from "@neelkanth/core";
 import { bootstrap, type AppContext } from "./composition-root.js";
 import { STRICT } from "./test-support/infra.js";
 

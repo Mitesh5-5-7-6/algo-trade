@@ -1,95 +1,20 @@
-import type { SessionPhase } from "@neelkanth/core";
-
-/** IST is UTC+5:30, no DST — a fixed offset (plan/17 §6, NSE/BSE clock). */
-const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
-
-/** The IST trading date ("YYYY-MM-DD") for an instant — the session label. */
-export function istDateKey(now: number): string {
-  const ist = new Date(now + IST_OFFSET_MS);
-  const month = String(ist.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(ist.getUTCDate()).padStart(2, "0");
-  return `${String(ist.getUTCFullYear())}-${month}-${day}`;
-}
-
-const DAY_MS = 86_400_000;
+import {
+  IST_OFFSET_MS,
+  NSE_DEFAULT_SESSION,
+  istDateKey,
+  parseHHMM,
+  type SessionConfig,
+  type SessionPhase,
+} from "@neelkanth/core";
 
 /**
- * Epoch ms of IST midnight for the instant's trading date — the "today"
- * boundary day-scoped read models filter on (same clock as istDateKey).
+ * The clock and calendar primitives this file used to own — `istDateKey`,
+ * `startOfDayIST`, `tradingDaysBetween`, `SessionConfig`, `NSE_DEFAULT_SESSION`
+ * — now live in `@neelkanth/core`. Historical ingestion has to agree with the
+ * live session about what a trading day is, and it runs in `broker`, which
+ * cannot import this package. Import them from `@neelkanth/core` directly;
+ * they are deliberately not re-exported here, so there is one address for each.
  */
-export function startOfDayIST(now: number): number {
-  return Math.floor((now + IST_OFFSET_MS) / DAY_MS) * DAY_MS - IST_OFFSET_MS;
-}
-
-function parseHHMM(value: string): number {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  if (!match) throw new Error(`invalid HH:MM time: ${value}`);
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  return hours * 60 + minutes;
-}
-
-/** True when an IST date key falls on a Saturday or Sunday. */
-function isWeekendIST(dateKey: string): boolean {
-  const weekday = new Date(`${dateKey}T00:00:00Z`).getUTCDay();
-  return weekday === 0 || weekday === 6;
-}
-
-/**
- * The IST trading dates in `[fromTs, toTs]`, weekends and exchange holidays
- * removed (docs/design/PHASE_1_HISTORICAL_DATA.md D5).
- *
- * Research windows are counted in trading days, never calendar days
- * (RND_RESEARCH_SPECIFICATION §5.5) — a week containing a holiday is four
- * sessions, and an aggregation that assumes five is wrong in a way that is
- * very hard to see afterwards.
- *
- * It also makes a backfill able to tell two indistinguishable things apart: a
- * day the exchange was shut and a day the fetch failed. Both return zero
- * candles; only one is a problem. Without this, every Diwali would log as a
- * gap and a genuinely missing session would be lost in the noise.
- *
- * `holidays` comes from the same global settings the live `SessionManager`
- * reads, so ingestion and trading cannot disagree about whether a day existed.
- * Inclusive of both ends; an inverted range yields nothing.
- */
-export function tradingDaysBetween(
-  fromTs: number,
-  toTs: number,
-  holidays: ReadonlySet<string>,
-): string[] {
-  const days: string[] = [];
-  if (toTs < fromTs) return days;
-  // Step over IST midnights rather than adding 24h to `fromTs`, so the result
-  // does not drift with the time of day the range happens to start at.
-  const lastDay = startOfDayIST(toTs);
-  for (let day = startOfDayIST(fromTs); day <= lastDay; day += DAY_MS) {
-    const dateKey = istDateKey(day);
-    if (isWeekendIST(dateKey) || holidays.has(dateKey)) continue;
-    days.push(dateKey);
-  }
-  return days;
-}
-
-export interface SessionConfig {
-  /** Pre-open auction start, IST "HH:MM" (NSE default 09:00). */
-  preOpen: string;
-  /** Regular session open, IST "HH:MM" (NSE default 09:15). */
-  open: string;
-  /** Regular session close, IST "HH:MM" (NSE default 15:30). */
-  close: string;
-  /** Exchange holidays as "YYYY-MM-DD" IST dates. */
-  holidays: readonly string[];
-  exchange: string;
-}
-
-export const NSE_DEFAULT_SESSION: SessionConfig = {
-  preOpen: "09:00",
-  open: "09:15",
-  close: "15:30",
-  holidays: [],
-  exchange: "NSE",
-};
 
 export interface SessionEvaluation {
   phase: SessionPhase;

@@ -4,11 +4,8 @@ import type {
   SessionContext,
   StrategyConfig,
 } from "@neelkanth/core";
-import {
-  SessionManager,
-  startOfDayIST,
-  type EquityPoint,
-} from "@neelkanth/engines";
+import { SessionManager, type EquityPoint } from "@neelkanth/engines";
+import { startOfDayIST } from "@neelkanth/core";
 import { PositionsRepository, SettingsRepository } from "@neelkanth/db";
 import { controlChannel } from "@neelkanth/redis";
 import type { Db } from "mongodb";

@@ -1,5 +1,7 @@
 export * from "./primitives.js";
 export * from "./market.js";
+export * from "./calendar.js";
+export * from "./bar-validation.js";
 export * from "./signal.js";
 export * from "./order.js";
 export * from "./broker.js";

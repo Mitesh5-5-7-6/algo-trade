@@ -1,17 +1,9 @@
-import type { Candle, CandleInterval, Tick } from "@neelkanth/core";
-
-/** Interval durations in ms. */
-const INTERVAL_MS: Record<CandleInterval, number> = {
-  "1m": 60_000,
-  "5m": 300_000,
-  "15m": 900_000,
-  "30m": 1_800_000,
-  "60m": 3_600_000,
-};
-
-export function intervalMs(interval: CandleInterval): number {
-  return INTERVAL_MS[interval];
-}
+import {
+  intervalMs,
+  type Candle,
+  type CandleInterval,
+  type Tick,
+} from "@neelkanth/core";
 
 interface BarState {
   bucketStart: number;
