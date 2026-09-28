@@ -12,6 +12,18 @@ import {
  * ever sees a broker wire format (plan/17 §2).
  */
 
+/**
+ * How far a bar's volume can be trusted (ARCHITECTURE_DECISION §20).
+ *
+ * Volume is not meaningful for every instrument. An NSE index has no
+ * tradeable volume of its own, so a number in that column is either a
+ * derived total or a filler — and the two are indistinguishable once
+ * stored. Where reliable volume is unavailable, volume-based conclusions
+ * are not drawn, which requires the bar to say so rather than the reader
+ * to guess from a zero.
+ */
+export const VolumeQualitySchema = z.enum(["REAL", "SUSPECT", "UNAVAILABLE"]);
+export type VolumeQuality = z.infer<typeof VolumeQualitySchema>;
 export const TickSchema = z.object({
   symbol: SymbolSchema,
   ltp: PriceSchema,
@@ -87,7 +99,31 @@ export const CandleSchema = z.object({
   high: PriceSchema,
   low: PriceSchema,
   close: PriceSchema,
+  /**
+   * Traded quantity in the bucket.
+   *
+   * Still required and still non-negative: a bar always has a number here
+   * so every existing reader keeps working. What changed is that the
+   * number is no longer self-describing — read `volumeAvailable` before
+   * drawing a conclusion from it. A source that supplied no volume stores
+   * 0 with `volumeAvailable: false`, which is not the same fact as a real
+   * zero and must never be treated as one.
+   */
   volume: z.number().nonnegative(),
+  /**
+   * False when the source did not supply usable volume for this bar
+   * (ARCHITECTURE_DECISION §20).
+   *
+   * Optional, and absence means available: every bar written before this
+   * field existed came from tick aggregation, where the volume is real.
+   * Making it required would throw on the first read after deploy, the
+   * same trap `source` avoided with its default.
+   */
+  volumeAvailable: z.boolean().optional(),
+  /** Where the volume came from, when that differs from the bar's own source. */
+  volumeSource: z.string().min(1).optional(),
+  /** How far the number can be trusted. Absent means REAL. */
+  volumeQuality: VolumeQualitySchema.optional(),
   /** Bucket start time (plan/17 §5). */
   ts: TimestampSchema,
   /**

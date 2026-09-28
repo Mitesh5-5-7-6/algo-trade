@@ -34,6 +34,41 @@ export interface BackfillRequest {
   toDate: string;
 }
 
+/**
+ * Why a requested day holds no bars. Three causes, never merged.
+ *
+ * They look identical from the data — zero candles — and mean completely
+ * different things. MARKET_CLOSED is correct and expected. DATA_MISSING
+ * is a hole in the dataset that research must know about. API_FAILURE is
+ * an operational problem that may fix itself on a re-run. Collapsing any
+ * two of them either buries a real gap in holiday noise or raises an
+ * alert every Diwali until someone stops reading the alerts.
+ */
+export type DayStatus = "MARKET_CLOSED" | "DATA_MISSING" | "API_FAILURE";
+
+export interface MissingPeriod {
+  /** Inclusive IST date keys. */
+  fromDate: string;
+  toDate: string;
+  cause: DayStatus;
+  /** Trading days in the period. Never counts closed days. */
+  tradingDays: number;
+  /** Present for API_FAILURE. */
+  reason?: string;
+}
+
+/**
+ * Whether this symbol's history can be described as the range that was
+ * asked for.
+ *
+ * PARTIAL_HISTORY is not a warning to be tidied away later. A dataset
+ * labelled "1 year" that holds eight months will be used as a year by
+ * every backtest that touches it, and the error surfaces as a strategy
+ * that behaves oddly in a period nobody can explain. The label travels
+ * with the data so no reader has to remember.
+ */
+export type HistoryStatus = "COMPLETE" | "PARTIAL_HISTORY" | "EMPTY";
+
 export interface SymbolReport {
   /** Bars the storage layer accepted. */
   stored: number;
@@ -51,6 +86,24 @@ export interface SymbolReport {
   /** Trading days the provider reported no data for. */
   daysWithNoData: readonly string[];
   pagesFetched: number;
+  /**
+   * COMPLETE only when every requested trading day produced bars.
+   *
+   * Anything less is PARTIAL_HISTORY, and the caller must not describe
+   * the result by the range it asked for.
+   */
+  status: HistoryStatus;
+  /** First IST trading date actually stored, or null. */
+  availableFrom: string | null;
+  /** Last IST trading date actually stored, or null. */
+  availableTo: string | null;
+  /** Every gap, grouped into runs, each naming its cause. */
+  missingPeriods: readonly MissingPeriod[];
+  /**
+   * True when a provider returned a contiguous prefix and stopped — the
+   * signature of a silent range cap (§3.1 Q1).
+   */
+  truncatedResponses: number;
   /**
    * Ranges that failed outright, with the reason.
    *
@@ -182,8 +235,13 @@ async function backfillSymbol(
   let superseded = 0;
   let rejected = 0;
   let pagesFetched = 0;
+  let truncatedResponses = 0;
   const daysWithNoData: string[] = [];
   const failures: { fromDate: string; toDate: string; reason: string }[] = [];
+  /** Every day the run touched, with why it holds nothing (if it does). */
+  const dayStatus = new Map<string, DayStatus>();
+  const failureReason = new Map<string, string>();
+  const storedDays = new Set<string>();
 
   const tradingDaySet = new Set(span.tradingDays);
 
@@ -211,11 +269,15 @@ async function backfillSymbol(
 
       pagesFetched += result.pagesFetched;
       rejected += result.rejected.length;
+      if (result.coverage.truncated) truncatedResponses += 1;
 
       for (const candle of result.candles) {
         const applied = await deps.saveCandle(candle);
         if (applied) stored += 1;
         else superseded += 1;
+        // A superseded bar still means the day is covered: a better
+        // record is already stored, which is the opposite of a gap.
+        storedDays.add(istDateKey(candle.ts));
       }
 
       // Which days the exchange was open for but nothing arrived. Derived from
@@ -224,8 +286,10 @@ async function backfillSymbol(
       // reporting the whole range as fine.
       const covered = new Set(result.candles.map((c) => istDateKey(c.ts)));
       for (const day of daysInRange)
-        if (!covered.has(day) && tradingDaySet.has(day))
+        if (!covered.has(day) && tradingDaySet.has(day)) {
           daysWithNoData.push(day);
+          dayStatus.set(day, "DATA_MISSING");
+        }
 
       deps.onProgress?.({
         symbol,
@@ -237,11 +301,19 @@ async function backfillSymbol(
       });
     } catch (error) {
       // §7.3 — a failed range fails its range, not the run.
+      const reason = (error as Error).message;
       failures.push({
         fromDate: range.fromDate,
         toDate: range.toDate,
-        reason: (error as Error).message,
+        reason,
       });
+      // Distinct from DATA_MISSING: nobody knows what was in these days,
+      // so a re-run is warranted. A missing day that was genuinely fetched
+      // needs a different conversation.
+      for (const day of daysInRange) {
+        dayStatus.set(day, "API_FAILURE");
+        failureReason.set(day, reason);
+      }
       deps.onProgress?.({
         symbol,
         fromDate: range.fromDate,
@@ -253,14 +325,78 @@ async function backfillSymbol(
     }
   }
 
+  const covered = [...storedDays].sort();
+  const missingPeriods = groupIntoPeriods(
+    span.tradingDays,
+    dayStatus,
+    failureReason,
+  );
+
   return {
     stored,
     superseded,
     rejected,
     daysWithNoData,
     pagesFetched,
+    truncatedResponses,
+    status:
+      covered.length === 0
+        ? "EMPTY"
+        : missingPeriods.length === 0
+          ? "COMPLETE"
+          : "PARTIAL_HISTORY",
+    availableFrom: covered[0] ?? null,
+    availableTo: covered[covered.length - 1] ?? null,
+    missingPeriods,
     failures,
   };
+}
+
+/**
+ * Collapse per-day gaps into contiguous runs sharing one cause.
+ *
+ * A report naming 187 individual dates is one nobody reads. Three periods
+ * with a cause each is one somebody acts on.
+ *
+ * Only TRADING days appear. A weekend inside a gap does not split it and
+ * is never listed — the exchange being shut on Sunday is not a hole in
+ * the dataset, and MARKET_CLOSED days are excluded from the requested set
+ * before this point.
+ */
+function groupIntoPeriods(
+  tradingDays: readonly string[],
+  dayStatus: ReadonlyMap<string, DayStatus>,
+  failureReason: ReadonlyMap<string, string>,
+): MissingPeriod[] {
+  const periods: MissingPeriod[] = [];
+  let current: MissingPeriod | null = null;
+
+  for (const day of tradingDays) {
+    const cause = dayStatus.get(day);
+    if (cause === undefined) {
+      current = null;
+      continue;
+    }
+    const reason = failureReason.get(day);
+    if (
+      current !== null &&
+      current.cause === cause &&
+      current.reason === reason
+    ) {
+      current.toDate = day;
+      current.tradingDays += 1;
+      continue;
+    }
+    current = {
+      fromDate: day,
+      toDate: day,
+      cause,
+      tradingDays: 1,
+      ...(reason === undefined ? {} : { reason }),
+    };
+    periods.push(current);
+  }
+  return periods;
 }
 
 interface DateRange {
@@ -312,9 +448,29 @@ export function formatBackfillReport(report: BackfillReport): string {
 
   for (const [symbol, row] of report.perSymbol) {
     lines.push(
-      `  ${symbol}: stored ${String(row.stored)}, superseded ${String(row.superseded)}, ` +
-        `rejected ${String(row.rejected)}, pages ${String(row.pagesFetched)}`,
+      `  ${symbol} [${row.status}]: stored ${String(row.stored)}, ` +
+        `superseded ${String(row.superseded)}, rejected ${String(row.rejected)}, ` +
+        `pages ${String(row.pagesFetched)}`,
     );
+    lines.push(
+      `    available: ${row.availableFrom ?? "—"} .. ${row.availableTo ?? "—"}`,
+    );
+    if (row.status === "PARTIAL_HISTORY")
+      lines.push(
+        "    PARTIAL_HISTORY — do not describe this dataset by the range " +
+          "that was requested",
+      );
+    if (row.truncatedResponses > 0)
+      lines.push(
+        `    ${String(row.truncatedResponses)} response(s) stopped early — ` +
+          "the page size may exceed the vendor cap (§3.1 Q1)",
+      );
+    for (const period of row.missingPeriods)
+      lines.push(
+        `    ${period.cause} ${period.fromDate}..${period.toDate} ` +
+          `(${String(period.tradingDays)} trading day(s))` +
+          (period.reason === undefined ? "" : `: ${period.reason}`),
+      );
     if (row.daysWithNoData.length > 0) {
       const shown = row.daysWithNoData.slice(0, 10).join(", ");
       const more =

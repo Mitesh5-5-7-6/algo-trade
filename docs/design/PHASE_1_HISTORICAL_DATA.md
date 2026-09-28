@@ -159,7 +159,9 @@ export const CandleSchema = z.object({
 
 **The default is load-bearing.** [CandlesRepository.loadRecent](../../packages/db/src/candles-repository.ts) runs `CandleSchema.parse` on every document it reads. Every candle already in Mongo lacks `source`; a required field would make indicator warm-up throw on the first read after deploy. `.default("LIVE_TICK")` is also factually correct — every existing bar came from tick aggregation, because no other producer has ever existed.
 
-`volumeAvailable` / `volumeSource` / `volumeQuality` from [ARCHITECTURE_DECISION §20.2](../architecture/ARCHITECTURE_DECISION.md) are deliberately **not** added here. They depend on question 4 in §3.1 and belong with the first index backfill, not with the schema change.
+> **Un-deferred.** `volumeAvailable` / `volumeSource` / `volumeQuality` ([ARCHITECTURE_DECISION §20](../architecture/ARCHITECTURE_DECISION.md) — the original citation of §20.2 was wrong; §20.2 is position sizing) were deferred here pending §3.1 Q4. They are now on `CandleSchema`, and the reason for the change is that the deferral had it backwards: the fields are what let ingestion proceed **without** Q4's answer. An unverified zero is stored as `SUSPECT`, which is a true statement now and becomes `REAL` or `UNAVAILABLE` when the probe answers. Without the fields, the only options were to discard index volume or to present an unverified number as fact.
+
+All three are optional, so every bar already in Mongo still parses — the same constraint that made `source` a default rather than a requirement.
 
 ### D3 — Source precedence governs the upsert
 
@@ -255,6 +257,10 @@ A bar is rejected, never stored, and counted, if any of these holds:
 
 Rejections are summarised per run — count, first few examples, and the reason — and the run reports them as a result, not a log line. A backfill that silently discarded 4% of its bars is worse than one that failed.
 
+**Volume is optional, and its absence is never a rejection.** An NSE index has no tradeable volume of its own, so a source that omits the column is stating a fact about the instrument. Rejecting the bar would discard a sound OHLC record over a field that instrument was never going to have — and rejecting every index bar is a data outage, not a validation rule. A negative volume is still corrupt and still rejected; a `NaN` is still a defect, because `Number("n/a")` produces one and it would survive every comparison in the table above.
+
+Instead the bar carries what is known about its volume ([ARCHITECTURE_DECISION §20](../architecture/ARCHITECTURE_DECISION.md)): `volumeAvailable`, `volumeSource` and `volumeQuality`, one of `REAL`, `SUSPECT` or `UNAVAILABLE`. Volume-based conclusions are not drawn where the volume is not real, and the bar says which case it is rather than leaving a reader to infer it from a zero. **An unverified zero is `SUSPECT`, not `REAL` and not `UNAVAILABLE`** — whether an index reports real volume is §3.1 Q4, and both other labels would assert a measurement nobody has made.
+
 **Never repair a bad bar by interpolation.** [RND_RESEARCH_SPECIFICATION §5.7](../architecture/RND_RESEARCH_SPECIFICATION.md) treats stored candles as evidence; an invented bar is evidence of nothing and cannot be distinguished later from a real one.
 
 ---
@@ -275,10 +281,24 @@ export interface HistoryRequest {
 
 export interface HistoryResult {
   candles: readonly Candle[]; // source already stamped BROKER_HISTORICAL
+  /** What arrived, measured against what was asked for — §7.2. */
+  coverage: HistoryCoverage;
   /** Bars the provider returned but validation refused. */
   rejected: readonly HistoryRejection[];
   /** True when the provider signalled no data rather than an error. */
   empty: boolean;
+  /** How many requests this range cost. */
+  pagesFetched: number;
+}
+
+export interface HistoryCoverage {
+  requestedFrom: number;
+  requestedTo: number;
+  requestedDays: readonly string[]; // IST trading days
+  coveredDays: readonly string[];
+  missingDays: readonly string[];
+  /** Missing days form an unbroken tail — the signature of a silent cap. */
+  truncated: boolean;
 }
 
 export interface HistoryRejection {
@@ -302,15 +322,33 @@ export interface BackfillRequest {
   toDate: string; // "YYYY-MM-DD" IST, inclusive
 }
 
+/** Three causes that all look like zero candles, and never mean the same thing. */
+export type DayStatus = "MARKET_CLOSED" | "DATA_MISSING" | "API_FAILURE";
+
+export type HistoryStatus = "COMPLETE" | "PARTIAL_HISTORY" | "EMPTY";
+
 export interface BackfillReport {
   requestedTradingDays: number;
   perSymbol: ReadonlyMap<
     string,
     {
       stored: number;
+      superseded: number; // a better bar was already stored (D3)
       rejected: number;
       daysWithNoData: readonly string[];
       pagesFetched: number;
+      status: HistoryStatus;
+      availableFrom: string | null;
+      availableTo: string | null;
+      missingPeriods: readonly {
+        fromDate: string;
+        toDate: string;
+        cause: DayStatus;
+        tradingDays: number;
+        reason?: string;
+      }[];
+      truncatedResponses: number;
+      failures: readonly { fromDate: string; toDate: string; reason: string }[];
     }
   >;
   startedAt: number;
@@ -320,6 +358,10 @@ export interface BackfillReport {
 
 The job returns a report. It does not decide what the report means.
 
+**`PARTIAL_HISTORY` is the load-bearing field.** A dataset labelled "1 year" that holds eight months will be used as a year by every backtest that touches it, and the error surfaces much later as a strategy behaving oddly in a period nobody can explain. The label travels with the data so no reader has to remember, and the CLI exits non-zero on it — a short dataset that exits 0 is one the next script treats as complete.
+
+**`MARKET_CLOSED`, `DATA_MISSING` and `API_FAILURE` are never merged.** All three produce zero candles and mean entirely different things: expected, a hole research must know about, and an operational fault that may clear on a re-run. Collapsing any two either buries a real gap in holiday noise or raises an alert every Diwali until nobody reads them. A closed day never appears as a gap at all, because it was never requested — which is what counting in trading days rather than calendar days buys.
+
 ---
 
 ## 7. Execution behaviour
@@ -328,11 +370,17 @@ The job returns a report. It does not decide what the report means.
 
 Oldest range first, one symbol at a time. A partial run then leaves a contiguous prefix of history rather than a scatter of fragments, and re-running resumes cleanly.
 
-### 7.2 Paging and rate limits
+### 7.2 Paging and rate limits — **SUPERSEDED on the shared budget**
 
-Requests are chunked to the confirmed maximum window (§3.1 question 1) and issued **sequentially**, never concurrently, with a fixed delay between calls. Historical backfill is not latency-sensitive and shares a rate-limit budget with live trading — the existing optional `checkRateLimit` hook on `FyersBrokerDeps` ([packages/broker/src/fyers-broker.ts](../../packages/broker/src/fyers-broker.ts)) is the intended seam.
+Requests are chunked to the confirmed maximum window (§3.1 question 1) and issued **sequentially**, never concurrently, with a fixed delay between calls. That part stands.
 
-A backfill must never be able to rate-limit the live order path. If that guarantee cannot be made from inside the trading process, the job moves to its own process before it runs against a full symbol list.
+> **Superseded.** This section originally said the backfill _shares_ a rate-limit budget with live trading through the optional `checkRateLimit` hook on `FyersBrokerDeps`, and that the job moves to its own process only "if that guarantee cannot be made". The separation is now **unconditional**: the backfill owns a [`RateLimiter`](../../packages/broker/src/rate-limiter.ts) of its own and `checkRateLimit` is deliberately not forwarded to the history path.
+>
+> The reasoning the original section was missing: the guarantee cannot be made from inside one process by politeness alone. A shared limiter puts the backfill's four-thousandth call and a real exit order in contention for one token, and arrival order decides which loses. The backfill losing costs a retry; the exit losing costs money, in the minute it mattered.
+
+**Isolation in this process is necessary and not sufficient.** Two local limiters still meet at one FYERS account, so the backfill's budget must be set _below_ what the account allows, leaving headroom for trading. That headroom is a number from §3.1 Q3, which is why `minIntervalMs` has no default. The fallback of a separate process stays on the table for a full symbol list.
+
+**Every response is measured against the range it asked for.** A provider may cap a range it considers too long, return a contiguous prefix and still answer `s: "ok"` — nothing throws, the run reports success, and the dataset is short forever. `HistoryResult.coverage` names the requested trading days, the covered ones and the missing ones, and sets `truncated` when the gap is an unbroken tail. A scattered gap is reported separately, because a cap and a hole send an operator looking for different problems.
 
 ### 7.3 Failure
 

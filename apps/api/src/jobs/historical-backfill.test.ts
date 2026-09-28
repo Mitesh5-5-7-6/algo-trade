@@ -25,7 +25,9 @@ const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
 const ist = (y: number, mo: number, d: number, h: number, mi: number): number =>
   Date.UTC(y, mo, d, h, mi) - IST_OFFSET_MS;
 
-const candle = (ts: number, symbol = "NSE:NIFTY50-INDEX"): Candle => ({
+const SYMBOL_A = "NSE:NIFTY50-INDEX";
+
+const candle = (ts: number, symbol = SYMBOL_A): Candle => ({
   symbol,
   interval: "5m",
   open: 100,
@@ -37,8 +39,19 @@ const candle = (ts: number, symbol = "NSE:NIFTY50-INDEX"): Candle => ({
   source: "BROKER_HISTORICAL",
 });
 
+/** Coverage for a result that was asked for nothing in particular. */
+const noCoverage = {
+  requestedFrom: 0,
+  requestedTo: 0,
+  requestedDays: [],
+  coveredDays: [],
+  missingDays: [],
+  truncated: false,
+};
+
 const emptyResult: HistoryResult = {
   candles: [],
+  coverage: noCoverage,
   rejected: [],
   empty: true,
   pagesFetched: 1,
@@ -261,6 +274,7 @@ describe("runHistoricalBackfill — the report", () => {
         candle(ist(2026, 0, 8, 9, 15)),
         candle(ist(2026, 0, 9, 9, 15)),
       ],
+      coverage: noCoverage,
       rejected: [],
       empty: false,
       pagesFetched: 2,
@@ -288,6 +302,7 @@ describe("runHistoricalBackfill — the report", () => {
   it("counts a refused write as superseded, not stored", async () => {
     const { provider } = fakeProvider(() => ({
       candles: [candle(ist(2026, 0, 5, 9, 15)), candle(ist(2026, 0, 6, 9, 15))],
+      coverage: noCoverage,
       rejected: [],
       empty: false,
       pagesFetched: 1,
@@ -306,6 +321,7 @@ describe("runHistoricalBackfill — the report", () => {
   it("carries the provider's rejection count through to the report", async () => {
     const { provider } = fakeProvider(() => ({
       candles: [candle(ist(2026, 0, 5, 9, 15))],
+      coverage: noCoverage,
       rejected: [
         { ts: 1, reason: "high-below-low: ...", raw: [1, 2, 3, 4, 5, 6] },
         { ts: 2, reason: "ts-not-aligned: ...", raw: [2, 2, 3, 4, 5, 6] },
@@ -330,6 +346,7 @@ describe("runHistoricalBackfill — the report", () => {
   it("names the trading days that came back with no bars", async () => {
     const { provider } = fakeProvider(() => ({
       candles: [candle(ist(2026, 0, 5, 9, 15)), candle(ist(2026, 0, 9, 9, 15))],
+      coverage: noCoverage,
       rejected: [],
       empty: false,
       pagesFetched: 1,
@@ -349,6 +366,7 @@ describe("runHistoricalBackfill — the report", () => {
   it("does not list a declared holiday as a day with no data", async () => {
     const { provider } = fakeProvider(() => ({
       candles: [candle(ist(2026, 0, 5, 9, 15))],
+      coverage: noCoverage,
       rejected: [],
       empty: false,
       pagesFetched: 1,
@@ -371,6 +389,7 @@ describe("runHistoricalBackfill — the report", () => {
         req.symbol === "NSE:NIFTY50-INDEX"
           ? [candle(ist(2026, 0, 5, 9, 15), req.symbol)]
           : [],
+      coverage: noCoverage,
       rejected: [],
       empty: req.symbol !== "NSE:NIFTY50-INDEX",
       pagesFetched: 1,
@@ -406,6 +425,7 @@ describe("runHistoricalBackfill — failure is per range (§7.3)", () => {
         return new Error("HTTP 500: upstream");
       return {
         candles: [candle(req.fromTs + 33_300_000)],
+        coverage: noCoverage,
         rejected: [],
         empty: false,
         pagesFetched: 1,
@@ -435,6 +455,7 @@ describe("runHistoricalBackfill — failure is per range (§7.3)", () => {
       if (req.symbol === "NSE:NIFTY50-INDEX") return new Error("boom");
       return {
         candles: [candle(ist(2026, 0, 5, 9, 15), req.symbol)],
+        coverage: noCoverage,
         rejected: [],
         empty: false,
         pagesFetched: 1,
@@ -469,6 +490,7 @@ describe("runHistoricalBackfill — re-running is a no-op (D6)", () => {
   it("produces the same report when run twice over the same range", async () => {
     const script = () => ({
       candles: [candle(ist(2026, 0, 5, 9, 15)), candle(ist(2026, 0, 6, 9, 15))],
+      coverage: noCoverage,
       rejected: [],
       empty: false,
       pagesFetched: 1,
@@ -525,6 +547,7 @@ describe("formatBackfillReport", () => {
         ? {
             candles: [candle(ist(2026, 0, 5, 9, 15), req.symbol)],
             rejected: [],
+            coverage: noCoverage,
             empty: false,
             pagesFetched: 1,
           }
@@ -537,7 +560,9 @@ describe("formatBackfillReport", () => {
     );
     const text = formatBackfillReport(report);
 
-    expect(text).toContain("NSE:NIFTY50-INDEX: stored 1");
+    // The status label now leads the line — a reader should not have to
+    // reach the end to learn the dataset is incomplete.
+    expect(text).toContain("NSE:NIFTY50-INDEX [PARTIAL_HISTORY]: stored 1");
     expect(text).toContain("FAILED 2026-01-05..2026-01-09: token expired");
     expect(text).toContain("no data on 4 trading day(s)");
   });
@@ -549,5 +574,214 @@ describe("formatBackfillReport", () => {
     );
     const text = formatBackfillReport(report);
     expect(text).toMatch(/\(\+\d+ more\)/);
+  });
+});
+
+describe("the three reasons a day can hold no bars (§5)", () => {
+  /**
+   * They look identical from the data — zero candles — and mean completely
+   * different things. Collapsing any two either buries a real gap in
+   * holiday noise or raises an alert every Diwali until nobody reads them.
+   */
+  it("classifies a fetched-but-empty trading day as DATA_MISSING", async (ctx) => {
+    void ctx;
+    const report = await runHistoricalBackfill(request, deps());
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    expect(row?.missingPeriods).toEqual([
+      {
+        fromDate: "2026-01-05",
+        toDate: "2026-01-09",
+        cause: "DATA_MISSING",
+        tradingDays: 5,
+      },
+    ]);
+  });
+
+  it("classifies a failed range as API_FAILURE, with the reason", async () => {
+    const { provider } = fakeProvider(() => new Error("HTTP 500"));
+    const report = await runHistoricalBackfill(
+      request,
+      deps({ history: provider }),
+    );
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    expect(row?.missingPeriods[0]?.cause).toBe("API_FAILURE");
+    expect(row?.missingPeriods[0]?.reason).toBe("HTTP 500");
+  });
+
+  /**
+   * MARKET_CLOSED never appears as a gap: a closed day was never requested,
+   * so it cannot be missing. That is the whole point of counting in trading
+   * days rather than calendar days.
+   */
+  it("never reports a holiday or weekend as a gap", async () => {
+    const report = await runHistoricalBackfill(
+      { ...request, fromDate: "2026-01-03", toDate: "2026-01-06" },
+      deps({ holidays: new Set(["2026-01-05"]) }),
+    );
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    // Sat, Sun and the holiday are all excluded; only Tuesday was asked for.
+    expect(report.requestedTradingDays).toBe(1);
+    for (const period of row?.missingPeriods ?? [])
+      expect(period.cause).not.toBe("MARKET_CLOSED");
+  });
+
+  /**
+   * A report naming 187 individual dates is one nobody reads. Runs sharing
+   * a cause collapse into one period.
+   */
+  it("groups consecutive days of the same cause into one period", async () => {
+    const { provider } = fakeProvider((req) =>
+      req.fromTs === istMidnight("2026-01-08")
+        ? new Error("boom")
+        : {
+            candles: [],
+            coverage: noCoverage,
+            rejected: [],
+            empty: true,
+            pagesFetched: 1,
+          },
+    );
+    const report = await runHistoricalBackfill(
+      request,
+      deps({ history: provider, daysPerRange: 3 }),
+    );
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    expect(row?.missingPeriods).toHaveLength(2);
+    expect(row?.missingPeriods[0]?.cause).toBe("DATA_MISSING");
+    expect(row?.missingPeriods[1]?.cause).toBe("API_FAILURE");
+  });
+});
+
+describe("PARTIAL_HISTORY is never called by the range that was asked for", () => {
+  const fullWeek = () => ({
+    candles: [0, 1, 2, 3, 4].map((i) => candle(ist(2026, 0, 5 + i, 9, 15))),
+    coverage: noCoverage,
+    rejected: [],
+    empty: false,
+    pagesFetched: 1,
+  });
+
+  it("reports COMPLETE when every requested trading day has bars", async () => {
+    const { provider } = fakeProvider(fullWeek);
+    const report = await runHistoricalBackfill(
+      request,
+      deps({ history: provider }),
+    );
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    expect(row?.status).toBe("COMPLETE");
+    expect(row?.availableFrom).toBe("2026-01-05");
+    expect(row?.availableTo).toBe("2026-01-09");
+    expect(row?.missingPeriods).toEqual([]);
+  });
+
+  /**
+   * The failure this prevents: a dataset labelled "1 year" holding eight
+   * months gets used as a year by every backtest that touches it, and the
+   * error surfaces as a strategy behaving oddly in a period nobody can
+   * explain.
+   */
+  it("reports PARTIAL_HISTORY, and the range it actually got", async () => {
+    const { provider } = fakeProvider(() => ({
+      candles: [candle(ist(2026, 0, 5, 9, 15)), candle(ist(2026, 0, 6, 9, 15))],
+      coverage: noCoverage,
+      rejected: [],
+      empty: false,
+      pagesFetched: 1,
+    }));
+    const report = await runHistoricalBackfill(
+      request,
+      deps({ history: provider }),
+    );
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    expect(row?.status).toBe("PARTIAL_HISTORY");
+    expect(row?.availableFrom).toBe("2026-01-05");
+    expect(row?.availableTo).toBe("2026-01-06");
+    expect(row?.missingPeriods[0]).toMatchObject({
+      fromDate: "2026-01-07",
+      toDate: "2026-01-09",
+      cause: "DATA_MISSING",
+      tradingDays: 3,
+    });
+  });
+
+  it("reports EMPTY when nothing at all was stored", async () => {
+    const report = await runHistoricalBackfill(request, deps());
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    expect(row?.status).toBe("EMPTY");
+    expect(row?.availableFrom).toBeNull();
+    expect(row?.availableTo).toBeNull();
+  });
+
+  /**
+   * A superseded bar means a BETTER record is already stored — the opposite
+   * of a gap. Counting it as missing would label a correct dataset partial.
+   */
+  it("counts a superseded day as covered, not missing", async () => {
+    const { provider } = fakeProvider(fullWeek);
+    const report = await runHistoricalBackfill(
+      request,
+      deps({ history: provider, saveCandle: () => Promise.resolve(false) }),
+    );
+    const row = report.perSymbol.get(SYMBOL_A);
+
+    expect(row?.status).toBe("COMPLETE");
+    expect(row?.stored).toBe(0);
+    expect(row?.superseded).toBe(5);
+  });
+
+  it("names PARTIAL_HISTORY in the printed report", async () => {
+    const { provider } = fakeProvider(() => ({
+      candles: [candle(ist(2026, 0, 5, 9, 15))],
+      coverage: noCoverage,
+      rejected: [],
+      empty: false,
+      pagesFetched: 1,
+    }));
+    const report = await runHistoricalBackfill(
+      request,
+      deps({ history: provider }),
+    );
+    const text = formatBackfillReport(report);
+
+    expect(text).toContain("PARTIAL_HISTORY");
+    expect(text).toContain("available: 2026-01-05 .. 2026-01-05");
+    expect(text).toContain("DATA_MISSING 2026-01-06..2026-01-09");
+  });
+});
+
+describe("a truncated response is surfaced, not absorbed", () => {
+  /**
+   * §3.1 Q1: FYERS may cap a too-long range, return a prefix, and still
+   * answer ok. The provider detects the shape; the job must carry it into
+   * the report, because the operator is the one who can lower the page
+   * size.
+   */
+  it("counts responses that stopped early", async () => {
+    const { provider } = fakeProvider(() => ({
+      candles: [candle(ist(2026, 0, 5, 9, 15))],
+      coverage: { ...noCoverage, truncated: true },
+      rejected: [],
+      empty: false,
+      pagesFetched: 1,
+    }));
+    const report = await runHistoricalBackfill(
+      request,
+      deps({ history: provider }),
+    );
+
+    expect(report.perSymbol.get(SYMBOL_A)?.truncatedResponses).toBe(1);
+    expect(formatBackfillReport(report)).toContain("stopped early");
+  });
+
+  it("counts zero when every response was complete", async () => {
+    const report = await runHistoricalBackfill(request, deps());
+    expect(report.perSymbol.get(SYMBOL_A)?.truncatedResponses).toBe(0);
   });
 });

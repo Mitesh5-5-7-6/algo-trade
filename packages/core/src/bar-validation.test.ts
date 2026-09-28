@@ -353,3 +353,46 @@ describe("summarizeRejections — a result, not a log line", () => {
     expect(summarizeRejections([])).toEqual([]);
   });
 });
+
+describe("volume is optional, because an index has none of its own", () => {
+  /**
+   * ARCHITECTURE_DECISION §20: volume is not meaningful for every
+   * instrument. An NSE index has no tradeable volume, so a source that
+   * omits it is telling us something true. Rejecting the bar would discard
+   * a sound OHLC record over a field the instrument never had — and
+   * rejecting every index bar is a data outage, not a validation rule.
+   */
+  it("accepts a bar with no volume at all", () => {
+    expect(validateBar(bar({ volume: null }), options)).toBeNull();
+  });
+
+  it("still accepts a real zero", () => {
+    expect(validateBar(bar({ volume: 0 }), options)).toBeNull();
+  });
+
+  /** Optional is not unchecked. */
+  it("still rejects a negative volume", () => {
+    expect(validateBar(bar({ volume: -1 }), options)?.code).toBe(
+      "volume-negative",
+    );
+  });
+
+  /**
+   * `null` is a statement; NaN is a defect. `Number("n/a")` produces NaN,
+   * and it would survive `volume < 0` by returning false.
+   */
+  it("rejects a NaN volume while accepting a null one", () => {
+    expect(validateBar(bar({ volume: Number.NaN }), options)?.code).toBe(
+      "non-finite",
+    );
+    expect(validateBar(bar({ volume: null }), options)).toBeNull();
+  });
+
+  it("does not let a missing volume mask a bad price", () => {
+    const rejection = validateBar(
+      bar({ volume: null, high: 1, low: 99 }),
+      options,
+    );
+    expect(rejection?.code).toBe("high-below-low");
+  });
+});

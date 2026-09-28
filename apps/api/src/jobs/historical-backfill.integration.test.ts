@@ -5,7 +5,7 @@ import {
   ensureIndexes,
   type MongoConnection,
 } from "@neelkanth/db";
-import type { Candle } from "@neelkanth/core";
+import { istDateKey, type Candle } from "@neelkanth/core";
 import type { HistoryProvider, HistoryResult } from "@neelkanth/broker";
 import { runHistoricalBackfill } from "./historical-backfill.js";
 import { closeProbe, STRICT } from "../test-support/infra.js";
@@ -83,8 +83,18 @@ const bar = (
 
 /** A provider that returns the broker's version of the same five bars. */
 function providerFor(closes: readonly number[]): HistoryProvider {
+  const candles = closes.map((close, i) => bar(i, "BROKER_HISTORICAL", close));
+  const days = [...new Set(candles.map((c) => istDateKey(c.ts)))];
   const result: HistoryResult = {
-    candles: closes.map((close, i) => bar(i, "BROKER_HISTORICAL", close)),
+    candles,
+    coverage: {
+      requestedFrom: OPEN,
+      requestedTo: OPEN + 100 * BAR_MS,
+      requestedDays: [MONDAY],
+      coveredDays: days,
+      missingDays: days.length === 0 ? [MONDAY] : [],
+      truncated: false,
+    },
     rejected: [],
     empty: closes.length === 0,
     pagesFetched: 1,

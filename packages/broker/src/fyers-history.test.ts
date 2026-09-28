@@ -5,6 +5,7 @@ import {
   type FyersHistoryDeps,
 } from "./fyers-history.js";
 import { HistoryFetchError } from "./history-provider.js";
+import { RateLimiter, RateLimitExhaustedError } from "./rate-limiter.js";
 
 /**
  * §6 and §7 of the Phase 1 design, task 1.6.
@@ -501,10 +502,11 @@ describe("getHistory — failure (§7.3)", () => {
   });
 });
 
-describe("getHistory — rate-limit discipline (§7.2)", () => {
+describe("getHistory — rate-limit discipline (§7.2, overridden)", () => {
   /**
-   * A backfill shares its rate-limit budget with the live order path. Issuing
-   * pages concurrently is how a historical run costs a real entry its fill.
+   * Issuing pages concurrently is how a historical run costs a real entry
+   * its fill — the vendor limit is per account, so two local limiters still
+   * meet there. Sequential is the shape that leaves headroom.
    */
   it("issues pages sequentially, never concurrently", async () => {
     let inFlight = 0;
@@ -540,19 +542,80 @@ describe("getHistory — rate-limit discipline (§7.2)", () => {
     expect(waits).toEqual([250, 250]);
   });
 
-  it("goes through the shared rate-limit gate once per attempt", async () => {
-    let gated = 0;
+  /**
+   * The override of §7.2. The backfill's limiter is its own instance, so
+   * exhausting it cannot make the live order path wait — under a shared
+   * limiter the backfill's four-thousandth call and a real exit order
+   * contend for one token, and arrival order decides which loses.
+   */
+  it("meters every attempt through its own limiter", async () => {
+    let metered = 0;
+    const limiter = new RateLimiter({
+      minIntervalMs: 0,
+      sleep: () => Promise.resolve(),
+    });
     const { fetchImpl } = scriptedFetch([{ body: { s: "ok", candles: [] } }]);
+    const counting = new Proxy(limiter, {
+      get(target, key, receiver) {
+        if (key === "run") {
+          return <T>(fn: () => Promise<T>): Promise<T> => {
+            metered += 1;
+            return target.run(fn);
+          };
+        }
+        return Reflect.get(target, key, receiver) as unknown;
+      },
+    });
+
     await provider({
       fetch: fetchImpl,
       maxDaysPerRequest: 1,
-      checkRateLimit: () => {
-        gated += 1;
+      rateLimiter: counting,
+    }).getHistory({ ...request, toTs: ist(2026, 0, 8, 0, 0) });
+
+    expect(metered).toBe(3);
+    expect(limiter.callsMade).toBe(3);
+  });
+
+  /**
+   * A job that would spend the whole account allowance overnight must stop
+   * and say so, rather than arriving at the open with nothing left for
+   * trading.
+   */
+  it("stops when its own call ceiling is reached", async () => {
+    const limiter = new RateLimiter({
+      minIntervalMs: 0,
+      maxCalls: 2,
+      sleep: () => Promise.resolve(),
+    });
+    const { fetchImpl } = scriptedFetch([{ body: { s: "ok", candles: [] } }]);
+
+    await expect(
+      provider({
+        fetch: fetchImpl,
+        maxDaysPerRequest: 1,
+        maxRetries: 0,
+        rateLimiter: limiter,
+      }).getHistory({ ...request, toTs: ist(2026, 0, 9, 0, 0) }),
+    ).rejects.toBeInstanceOf(RateLimitExhaustedError);
+    expect(limiter.callsMade).toBe(2);
+  });
+
+  it("runs unmetered, but still spaced, when given no limiter", async () => {
+    const waits: number[] = [];
+    const { fetchImpl } = scriptedFetch([{ body: { s: "ok", candles: [] } }]);
+    const result = await provider({
+      fetch: fetchImpl,
+      maxDaysPerRequest: 1,
+      requestDelayMs: 100,
+      sleep: (ms) => {
+        waits.push(ms);
         return Promise.resolve();
       },
     }).getHistory({ ...request, toTs: ist(2026, 0, 8, 0, 0) });
 
-    expect(gated).toBe(3);
+    expect(result.pagesFetched).toBe(3);
+    expect(waits).toEqual([100, 100]);
   });
 });
 
@@ -584,5 +647,224 @@ describe("construction refuses an unmeasured page size (§3.1 Q1)", () => {
           requestDelayMs: -1,
         }),
     ).toThrow(/requestDelayMs/);
+  });
+});
+
+describe("getHistory — coverage, so a partial response cannot pass silently", () => {
+  /**
+   * The failure this exists for: FYERS caps a range it considers too long,
+   * returns the first N days, and still answers `s: "ok"`. Nothing throws,
+   * the run reports success, and the dataset is short forever.
+   */
+  it("flags a response that stops before the end of the window", async () => {
+    // Ask Mon–Fri; the vendor answers with Mon–Tue only.
+    const { fetchImpl } = scriptedFetch([
+      {
+        body: {
+          s: "ok",
+          candles: [row(ist(2026, 0, 5, 9, 15)), row(ist(2026, 0, 6, 9, 15))],
+        },
+      },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory({
+      ...request,
+      fromTs: ist(2026, 0, 5, 0, 0),
+      toTs: ist(2026, 0, 10, 0, 0),
+    });
+
+    expect(result.coverage.truncated).toBe(true);
+    expect(result.coverage.coveredDays).toEqual(["2026-01-05", "2026-01-06"]);
+    expect(result.coverage.missingDays).toEqual([
+      "2026-01-07",
+      "2026-01-08",
+      "2026-01-09",
+    ]);
+  });
+
+  it("does not flag a fully covered window", async () => {
+    const { fetchImpl } = scriptedFetch([
+      {
+        body: {
+          s: "ok",
+          candles: [row(ist(2026, 0, 5, 9, 15)), row(ist(2026, 0, 6, 9, 15))],
+        },
+      },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory({
+      ...request,
+      fromTs: ist(2026, 0, 5, 0, 0),
+      toTs: ist(2026, 0, 7, 0, 0),
+    });
+
+    expect(result.coverage.truncated).toBe(false);
+    expect(result.coverage.missingDays).toEqual([]);
+  });
+
+  /**
+   * A hole in the middle is not a cap. A provider that truncates returns a
+   * contiguous prefix; a scattered gap means something else — an unlisted
+   * holiday, or a genuine absence — and merging the two would send an
+   * operator looking for the wrong problem.
+   */
+  it("reports a middle gap as missing without calling it truncation", async () => {
+    const { fetchImpl } = scriptedFetch([
+      {
+        body: {
+          s: "ok",
+          candles: [row(ist(2026, 0, 5, 9, 15)), row(ist(2026, 0, 9, 9, 15))],
+        },
+      },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory({
+      ...request,
+      fromTs: ist(2026, 0, 5, 0, 0),
+      toTs: ist(2026, 0, 10, 0, 0),
+    });
+
+    expect(result.coverage.truncated).toBe(false);
+    expect(result.coverage.missingDays).toEqual([
+      "2026-01-06",
+      "2026-01-07",
+      "2026-01-08",
+    ]);
+  });
+
+  it("counts trading days only, so a weekend is not a gap", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [row(ist(2026, 0, 9, 9, 15))] } },
+    ]);
+    // Fri 2026-01-09 through Sun 2026-01-11.
+    const result = await provider({ fetch: fetchImpl }).getHistory({
+      ...request,
+      fromTs: ist(2026, 0, 9, 0, 0),
+      toTs: ist(2026, 0, 12, 0, 0),
+    });
+
+    expect(result.coverage.requestedDays).toEqual(["2026-01-09"]);
+    expect(result.coverage.missingDays).toEqual([]);
+    expect(result.coverage.truncated).toBe(false);
+  });
+
+  it("excludes declared holidays from what was requested", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [row(ist(2026, 0, 5, 9, 15))] } },
+    ]);
+    const result = await provider({
+      fetch: fetchImpl,
+      holidays: new Set(["2026-01-06"]),
+    }).getHistory({
+      ...request,
+      fromTs: ist(2026, 0, 5, 0, 0),
+      toTs: ist(2026, 0, 7, 0, 0),
+    });
+
+    expect(result.coverage.requestedDays).toEqual(["2026-01-05"]);
+    expect(result.coverage.truncated).toBe(false);
+  });
+
+  /**
+   * An entirely empty range is `empty`, not truncation. Calling it a cap
+   * would flag every closed period as a vendor problem.
+   */
+  it("does not call a wholly empty response truncated", async () => {
+    const { fetchImpl } = scriptedFetch([{ body: { s: "no_data" } }]);
+    const result = await provider({ fetch: fetchImpl }).getHistory(request);
+
+    expect(result.empty).toBe(true);
+    expect(result.coverage.truncated).toBe(false);
+  });
+});
+
+describe("getHistory — volume is optional for an index", () => {
+  /**
+   * An index has no tradeable volume of its own. Rejecting the bar for a
+   * missing volume column would discard a sound OHLC record over a field
+   * that instrument was never going to have — and rejecting every index bar
+   * is a data outage, not a validation rule.
+   */
+  it("keeps a bar whose volume column is absent", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [[OPEN / 1000, 100, 101, 99, 100.5]] } },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory(request);
+
+    expect(result.rejected).toEqual([]);
+    expect(result.candles).toHaveLength(1);
+    expect(result.candles[0]?.volume).toBe(0);
+    expect(result.candles[0]?.volumeAvailable).toBe(false);
+    expect(result.candles[0]?.volumeQuality).toBe("UNAVAILABLE");
+  });
+
+  it("keeps a bar whose volume is null", async () => {
+    const { fetchImpl } = scriptedFetch([
+      {
+        body: { s: "ok", candles: [[OPEN / 1000, 100, 101, 99, 100.5, null]] },
+      },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory(request);
+
+    expect(result.candles).toHaveLength(1);
+    expect(result.candles[0]?.volumeAvailable).toBe(false);
+  });
+
+  /**
+   * Zero is NOT assumed to mean unavailable. Whether an NSE index reports
+   * real volume is §3.1 Q4, unmeasured — so the bar is marked SUSPECT,
+   * which says "do not build on this" without claiming to know why.
+   */
+  it("marks an unverified zero SUSPECT rather than guessing", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [[OPEN / 1000, 100, 101, 99, 100.5, 0]] } },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory(request);
+
+    expect(result.candles[0]?.volume).toBe(0);
+    expect(result.candles[0]?.volumeQuality).toBe("SUSPECT");
+  });
+
+  it("marks zero UNAVAILABLE once Q4 has confirmed it", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [[OPEN / 1000, 100, 101, 99, 100.5, 0]] } },
+    ]);
+    const result = await provider({
+      fetch: fetchImpl,
+      zeroVolumeIsUnavailable: true,
+    }).getHistory(request);
+
+    expect(result.candles[0]?.volumeAvailable).toBe(false);
+    expect(result.candles[0]?.volumeQuality).toBe("UNAVAILABLE");
+  });
+
+  it("marks volume REAL for a symbol known to have it", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [row(OPEN, { v: 4242 })] } },
+    ]);
+    const result = await provider({
+      fetch: fetchImpl,
+      symbolHasRealVolume: true,
+    }).getHistory(request);
+
+    expect(result.candles[0]?.volume).toBe(4242);
+    expect(result.candles[0]?.volumeAvailable).toBe(true);
+    expect(result.candles[0]?.volumeQuality).toBe("REAL");
+  });
+
+  /** A negative volume is still corrupt — optional is not unchecked. */
+  it("still rejects a negative volume", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [[OPEN / 1000, 100, 101, 99, 100.5, -5]] } },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory(request);
+
+    expect(result.candles).toEqual([]);
+    expect(result.rejected[0]?.reason).toContain("volume-negative");
+  });
+
+  it("still rejects a row missing a price column", async () => {
+    const { fetchImpl } = scriptedFetch([
+      { body: { s: "ok", candles: [[OPEN / 1000, 100, 101, 99]] } },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory(request);
+    expect(result.candles).toEqual([]);
   });
 });

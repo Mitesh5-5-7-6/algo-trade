@@ -33,7 +33,16 @@ export interface RawBar {
   high: number;
   low: number;
   close: number;
-  volume: number;
+  /**
+   * Traded quantity, or `null` when the source supplied none.
+   *
+   * Nullable on purpose. An index has no tradeable volume of its own,
+   * and a source that omits it is telling us something true. Rejecting
+   * the bar for it would discard a perfectly good OHLC record over a
+   * field that instrument was never going to have — and rejecting
+   * every index bar is not a validation rule, it is a data outage.
+   */
+  volume: number | null;
 }
 
 export interface BarValidationOptions {
@@ -87,7 +96,7 @@ export function validateBar(
   // NaN and Infinity survive every comparison below by returning false, so a
   // non-finite price would pass "high < low" and land in the database. JSON
   // cannot carry them, but a vendor's null coerced with Number() can.
-  for (const field of [...PRICE_FIELDS, "volume", "ts"] as const) {
+  for (const field of [...PRICE_FIELDS, "ts"] as const) {
     const value = bar[field];
     if (!Number.isFinite(value)) {
       return {
@@ -95,6 +104,16 @@ export function validateBar(
         reason: `${field} is ${String(value)}, not a finite number`,
       };
     }
+  }
+
+  // A null volume is a statement, not a defect — see `RawBar.volume`. A
+  // NaN is still a defect: it is what `Number("n/a")` produces, and it
+  // would survive the comparison below by returning false.
+  if (bar.volume !== null && !Number.isFinite(bar.volume)) {
+    return {
+      code: "non-finite",
+      reason: `volume is ${String(bar.volume)}, not a finite number`,
+    };
   }
 
   for (const field of PRICE_FIELDS) {
@@ -106,7 +125,7 @@ export function validateBar(
     }
   }
 
-  if (bar.volume < 0) {
+  if (bar.volume !== null && bar.volume < 0) {
     return {
       code: "volume-negative",
       reason: `volume is ${String(bar.volume)}`,

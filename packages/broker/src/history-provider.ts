@@ -28,13 +28,51 @@ export interface HistoryRequest {
 export interface HistoryRejection {
   ts: number;
   reason: string;
-  /** The provider's row exactly as it arrived, for the run report. */
-  raw: readonly number[];
+  /**
+   * The provider row exactly as it arrived, for the run report.
+   *
+   * Nullable entries: a source may omit the volume column, and the report
+   * should show what arrived rather than a coerced stand-in.
+   */
+  raw: readonly (number | null)[];
+}
+
+/**
+ * What a response actually covered, against what was asked for.
+ *
+ * Without this a partial response passes silently, which is the single
+ * most dangerous failure in historical ingestion: FYERS may cap a range it
+ * considers too long, return the first N days, and still answer `s: "ok"`.
+ * Nothing throws. The run reports success. The dataset is short, and every
+ * strategy and backtest built on it inherits the gap without a signal.
+ */
+export interface HistoryCoverage {
+  /** The window the caller asked for. */
+  requestedFrom: number;
+  requestedTo: number;
+  /** IST trading days inside that window, per the configured calendar. */
+  requestedDays: readonly string[];
+  /** IST days at least one accepted bar landed in. */
+  coveredDays: readonly string[];
+  /** Trading days that were asked for and produced no accepted bar. */
+  missingDays: readonly string[];
+  /**
+   * True when the missing days form an unbroken run at the END of the
+   * window.
+   *
+   * That shape is the signature of a silent cap: a provider that truncates
+   * gives back a contiguous prefix. Scattered gaps look different and mean
+   * something else — an unlisted holiday, or a genuine hole — so the two
+   * are reported separately rather than merged into one `incomplete` flag.
+   */
+  truncated: boolean;
 }
 
 export interface HistoryResult {
   /** Sound bars, ascending by `ts`, already stamped `BROKER_HISTORICAL`. */
   candles: readonly Candle[];
+  /** What arrived, measured against what was requested. */
+  coverage: HistoryCoverage;
   /** Bars the provider returned but validation refused. */
   rejected: readonly HistoryRejection[];
   /**

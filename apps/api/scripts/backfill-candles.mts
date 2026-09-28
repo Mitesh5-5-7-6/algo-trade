@@ -17,6 +17,17 @@
  * quietly short. Until the probe has been run, this script refuses to start —
  * which is the intended behaviour, not a limitation to work around.
  *
+ * Optional:
+ *   --max-calls=N                 hard ceiling on vendor calls this run
+ *   --zero-volume-unavailable     once Q4 confirms index volume is filler
+ *   --days-per-range=N            days per fetched range (default: --max-days)
+ *   --delay-ms=N                  gap between calls (default 250)
+ *   --dry-run                     fetch and report, write nothing
+ *
+ * Exits non-zero when any range failed OR any symbol came back
+ * PARTIAL_HISTORY — a short dataset that exits 0 is one the next script
+ * treats as a complete year.
+ *
  * Defaults to the `indexSymbols` in global settings (task 1.5: index-only), so
  * ingestion and the live feed cannot drift apart about which indices matter.
  *
@@ -24,7 +35,7 @@
  * identical values (D3, D6).
  */
 import { MongoClient } from "mongodb";
-import { FyersHistoryProvider } from "@neelkanth/broker";
+import { FyersHistoryProvider, RateLimiter } from "@neelkanth/broker";
 import {
   backfillSucceeded,
   formatBackfillReport,
@@ -57,6 +68,10 @@ const DELAY_MS = Number(args.get("delay-ms") ?? "250");
 const DAYS_PER_RANGE = Number(args.get("days-per-range") ?? String(MAX_DAYS));
 const DRY_RUN = args.get("dry-run") === "true";
 const SYMBOLS = args.get("symbols")?.split(",").filter(Boolean);
+/** Hard ceiling on vendor calls for this run. Default: unlimited. */
+const MAX_CALLS = args.get("max-calls");
+/** Set once §3.1 Q4 confirms index volume is meaningless. */
+const ZERO_VOLUME_UNAVAILABLE = args.get("zero-volume-unavailable") === "true";
 
 if (!Number.isInteger(MAX_DAYS) || MAX_DAYS < 1)
   throw new Error(
@@ -91,12 +106,26 @@ async function main(): Promise<void> {
     const token = await loadToken(db, appId);
     const candles = db.collection("candles");
 
+    // The backfill's OWN limiter, never the live order path's. Design §7.2
+    // accepted a shared budget; that is overridden, because a shared one
+    // makes this job's four-thousandth call and a real exit order contend
+    // for a single token with arrival order deciding which loses.
+    const rateLimiter = new RateLimiter({
+      minIntervalMs: DELAY_MS,
+      maxConcurrent: 1,
+      ...(MAX_CALLS === undefined || MAX_CALLS === "true"
+        ? {}
+        : { maxCalls: Number(MAX_CALLS) }),
+    });
+
     const provider = new FyersHistoryProvider({
       appId,
       getToken: () => Promise.resolve(token),
       maxDaysPerRequest: MAX_DAYS,
       requestDelayMs: DELAY_MS,
+      rateLimiter,
       holidays,
+      zeroVolumeIsUnavailable: ZERO_VOLUME_UNAVAILABLE,
       ingestionVersion: Math.floor(Date.now() / 1000),
     });
 
@@ -130,8 +159,21 @@ async function main(): Promise<void> {
     );
 
     console.log(`\n${formatBackfillReport(report)}`);
+
+    const partial = [...report.perSymbol.values()].filter(
+      (row) => row.status !== "COMPLETE",
+    );
     if (!backfillSucceeded(report)) {
       console.error("\nsome ranges failed — see FAILED lines above");
+      process.exitCode = 1;
+    } else if (partial.length > 0) {
+      // A partial dataset that exits 0 is one a script will treat as a
+      // complete year. The whole point of the label is that nobody has to
+      // remember to read it.
+      console.error(
+        `\n${String(partial.length)} symbol(s) returned PARTIAL_HISTORY — ` +
+          "do not describe this dataset by the range requested",
+      );
       process.exitCode = 1;
     }
   } finally {

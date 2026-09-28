@@ -42,7 +42,7 @@ export interface FyersBrokerDeps {
    * `maxDaysPerRequest` is a measured vendor fact (§3.1 Q1), and a guess
    * silently truncates history.
    */
-  history?: Omit<FyersHistoryDeps, "appId" | "getToken" | "checkRateLimit">;
+  history?: Omit<FyersHistoryDeps, "appId" | "getToken">;
 }
 
 /** Loose shape for FYERS API JSON responses. */
@@ -448,9 +448,10 @@ export class FyersBroker implements Broker, HistoryProvider {
             ...deps.history,
             appId: deps.appId,
             getToken: deps.getToken,
-            ...(deps.checkRateLimit === undefined
-              ? {}
-              : { checkRateLimit: deps.checkRateLimit }),
+            // deps.checkRateLimit is NOT forwarded. That hook is the live
+            // order path budget; sharing it is what the rate-limiter override
+            // removes. The backfill supplies its own RateLimiter through
+            // deps.history.rateLimiter or runs unmetered and says so.
           });
   }
 
