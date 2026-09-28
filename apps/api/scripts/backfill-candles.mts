@@ -217,5 +217,8 @@ async function loadToken(
 
 main().catch((error: unknown) => {
   console.error((error as Error).message);
-  process.exit(1);
+  // Not process.exit(): on Windows it can tear down an in-flight fetch
+  // handle mid-close and print a libuv assertion after the real error,
+  // which reads like a second, worse failure.
+  process.exitCode = 1;
 });
