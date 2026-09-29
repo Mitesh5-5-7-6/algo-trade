@@ -9,6 +9,7 @@ import {
   type StrategyConfig,
 } from "@neelkanth/core";
 import {
+  CandlesRepository,
   OrdersRepository,
   PnlSnapshotsRepository,
   PositionsRepository,
@@ -18,6 +19,11 @@ import {
   StrategiesRepository,
   type GlobalSettings,
 } from "@neelkanth/db";
+import type { HistoryProvider } from "@neelkanth/broker";
+import {
+  runHistoricalBackfill,
+  type BackfillReport,
+} from "../jobs/historical-backfill.js";
 import { resolveFnoLimits } from "@neelkanth/engines";
 import { startOfDayIST } from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
@@ -127,6 +133,34 @@ const UpdateSettingsBody = z.object({
   stepUpPassword: z.string().optional(),
 });
 
+/**
+ * A backfill request (design D6 entry point 3).
+ *
+ * `maxDaysPerRequest` is required and has no default, exactly as in the CLI.
+ * §3.1 Q1 measured the cap at 100 days, but a measured number recorded in a
+ * document is not the same as one baked into a request handler — the vendor
+ * can change it, and a stale default would silently truncate. Making the
+ * operator state it keeps the number somewhere a human looks.
+ */
+const BackfillBody = z.object({
+  /** Defaults to `indexSymbols` in global settings (task 1.5: index-only). */
+  symbols: z.array(z.string().min(1)).min(1).optional(),
+  interval: z.enum(["1m", "5m", "15m", "30m", "60m"]).optional(),
+  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  maxDaysPerRequest: z.number().int().positive(),
+  /** Fetch and report, write nothing. */
+  dryRun: z.boolean().optional(),
+  /**
+   * Weekend dates the exchange traded anyway — the Budget session on 1
+   * February, the Diwali Muhurat session. Without these a real session's bars
+   * are rejected as falling on a non-trading day, which is how the first
+   * one-year run silently discarded 75 genuine bars.
+   */
+  specialSessions: z.array(z.string()).optional(),
+  stepUpPassword: z.string().optional(),
+});
+
 /** Body carrying only the step-up confirmation — resume takes nothing else. */
 const StepUpBody = z.object({ stepUpPassword: z.string().optional() });
 
@@ -178,6 +212,15 @@ export interface ControlPlaneDeps {
   runtime: RuntimeControls;
   /** Enforces step-up re-auth on dangerous routes (plan/21 §5). */
   verifyStepUp: StepUpVerifier;
+  /**
+   * Historical fetch, or null where no real provider exists (design D1).
+   *
+   * Null is meaningful rather than merely absent: `POST /backfill` refuses
+   * outright instead of running to completion and reporting that it stored
+   * nothing. A deployment with paper or scripted brokers has no history to
+   * fetch, and saying so is more useful than an empty success.
+   */
+  historyProvider?: HistoryProvider | null;
 }
 
 /**
@@ -200,6 +243,7 @@ export function registerControlPlane(
   const riskLogs = new RiskLogsRepository(deps.db);
   const pnlSnapshots = new PnlSnapshotsRepository(deps.db);
   const settings = new SettingsRepository(deps.db);
+  const candles = new CandlesRepository(deps.db);
   const registry = createStrategyRegistry();
   const { runtime, verifyStepUp } = deps;
 
@@ -411,6 +455,65 @@ export function registerControlPlane(
 
   // --- Control (plan/06 §4, plan/12 §4) ---
 
+  /**
+   * ⚠ step-up. Operator-triggered historical backfill (design D6).
+   *
+   * Gated for two reasons, either of which would be enough. It writes to the
+   * candle collection that every backtest and every indicator warm-up reads,
+   * and it spends vendor rate-limit budget on an account that is also
+   * trading. Neither is something a stray click should do.
+   *
+   * Synchronous by design at the agreed scope: §10.2 is index-only over one
+   * year, which Q1's 100-day page turns into 4 requests per symbol — the
+   * measured run took under two seconds. A wider universe would need this to
+   * become a queued job, and that is a decision to make when the universe
+   * widens, not a generality to build now.
+   */
+  app.post("/backfill", async (request) => {
+    const body = parse(BackfillBody, request.body);
+    await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
+
+    const provider = deps.historyProvider ?? null;
+    if (provider === null) {
+      throw new ValidationError(
+        "no history provider is configured — this deployment cannot fetch " +
+          "historical candles",
+      );
+    }
+
+    const global = await settings.getGlobal();
+    const symbols = body.symbols ?? global.indexSymbols;
+    if (symbols.length === 0) {
+      throw new ValidationError(
+        "no symbols: pass symbols, or set indexSymbols in global settings",
+      );
+    }
+
+    const report = await runHistoricalBackfill(
+      {
+        symbols,
+        interval: body.interval ?? "5m",
+        fromDate: body.fromDate,
+        toDate: body.toDate,
+      },
+      {
+        history: provider,
+        // The same holiday list the live session reads, so ingestion and
+        // trading cannot disagree about which days existed.
+        holidays: new Set(global.marketHolidays),
+        specialSessions: new Set(body.specialSessions ?? []),
+        daysPerRange: body.maxDaysPerRequest,
+        saveCandle:
+          (body.dryRun ?? false)
+            ? () => Promise.resolve(true)
+            : (candle) =>
+                candles.upsert(candle as Parameters<typeof candles.upsert>[0]),
+      },
+    );
+
+    return serializeBackfillReport(report, body.dryRun ?? false);
+  });
+
   app.get("/control/status", async () => {
     const global = await settings.getGlobal();
     return {
@@ -446,4 +549,26 @@ export function registerControlPlane(
     runtime.setTradingEnabled(true);
     return { tradingEnabled: true };
   });
+}
+
+/**
+ * A `ReadonlyMap` does not survive JSON, so the per-symbol rows are emitted
+ * as an array. The status label leads each row: a reader must not have to
+ * reach the end of the object to learn the dataset is incomplete.
+ */
+function serializeBackfillReport(report: BackfillReport, dryRun: boolean) {
+  return {
+    dryRun,
+    requestedTradingDays: report.requestedTradingDays,
+    startedAt: report.startedAt,
+    finishedAt: report.finishedAt,
+    /** True only when every symbol came back COMPLETE and nothing failed. */
+    complete: [...report.perSymbol.values()].every(
+      (row) => row.status === "COMPLETE",
+    ),
+    symbols: [...report.perSymbol.entries()].map(([symbol, row]) => ({
+      symbol,
+      ...row,
+    })),
+  };
 }

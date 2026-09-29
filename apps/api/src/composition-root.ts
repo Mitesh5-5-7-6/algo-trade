@@ -397,6 +397,14 @@ export async function bootstrap(
     db: mongo.db,
     runtime,
     verifyStepUp: createStepUpVerifier(users),
+    // Null unless a FYERS broker exists AND was configured to fetch history
+    // (design D1). POST /backfill refuses on null rather than running to
+    // completion and reporting that it stored nothing — a paper or scripted
+    // deployment has no history to fetch, and saying so beats an empty
+    // success. The page size is §3.1 Q1 and has no default, so a deployment
+    // that has not set it has no history capability, deliberately.
+    historyProvider:
+      fyersBroker !== null && fyersBroker.supportsHistory ? fyersBroker : null,
   });
 
   // --- Realtime bridge (plan/10): push live state to the dashboard ---

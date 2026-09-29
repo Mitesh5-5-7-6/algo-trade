@@ -26,6 +26,7 @@ import {
   type MongoConnection,
 } from "@neelkanth/db";
 import { createLogger } from "@neelkanth/logger";
+import type { HistoryProvider, HistoryResult } from "@neelkanth/broker";
 import { buildServer, type ApiServer } from "../server.js";
 import { registerControlPlane } from "./routes.js";
 import type { RuntimeControls, StepUpVerifier } from "./controls.js";
@@ -115,6 +116,12 @@ function silentLogger() {
 let app: ApiServer;
 let runtime: ReturnType<typeof fakeRuntime>;
 let stepUps: Array<string | undefined>;
+/**
+ * Set before `makeApp()` to choose whether this deployment can fetch history.
+ * Null is the default, because null is the honest default: most deployments
+ * have no real provider (design D1).
+ */
+let historyProvider: HistoryProvider | null = null;
 
 function makeApp() {
   runtime = fakeRuntime();
@@ -130,13 +137,16 @@ function makeApp() {
     db: connection.db,
     runtime: runtime.controls,
     verifyStepUp,
+    historyProvider,
   });
 }
 
 afterEach(async () => {
+  historyProvider = null;
   await app.close();
   await connection.db.collection("strategies").deleteMany({});
   await connection.db.collection("settings").deleteMany({});
+  await connection.db.collection("candles").deleteMany({});
 });
 
 const createBody = {
@@ -400,4 +410,215 @@ describe("settings & control routes", () => {
     // Resume is a ⚠ route — it must go through the step-up gate (plan/21 §5).
     expect(stepUps).toEqual(["hunter2"]);
   });
+});
+
+describe("POST /backfill (design D6 entry point 3)", () => {
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
+  const ist = (y: number, mo: number, d: number, h: number, mi: number) =>
+    Date.UTC(y, mo, d, h, mi) - IST_OFFSET_MS;
+
+  /** Bars for Monday 2026-01-05, the only trading day these tests request. */
+  function providerReturning(count: number): HistoryProvider {
+    const open = ist(2026, 0, 5, 9, 15);
+    const candles = Array.from({ length: count }, (_, i) => ({
+      symbol: "NSE:NIFTY50-INDEX",
+      interval: "5m" as const,
+      open: 100,
+      high: 101,
+      low: 99,
+      close: 100.5,
+      volume: 1_000,
+      ts: open + i * 300_000,
+      source: "BROKER_HISTORICAL" as const,
+    }));
+    const result: HistoryResult = {
+      candles,
+      coverage: {
+        requestedFrom: open,
+        requestedTo: open + 86_400_000,
+        requestedDays: ["2026-01-05"],
+        coveredDays: count > 0 ? ["2026-01-05"] : [],
+        missingDays: count > 0 ? [] : ["2026-01-05"],
+        truncated: false,
+      },
+      rejected: [],
+      empty: count === 0,
+      pagesFetched: 1,
+    };
+    return { getHistory: () => Promise.resolve(result) };
+  }
+
+  const body = {
+    symbols: ["NSE:NIFTY50-INDEX"],
+    fromDate: "2026-01-05",
+    toDate: "2026-01-05",
+    maxDaysPerRequest: 100,
+    stepUpPassword: "pw",
+  };
+
+  /**
+   * D1's whole reason for being a capability interface rather than a widening
+   * of `Broker`. A deployment with no real provider must say so — running to
+   * completion and reporting that it stored nothing is indistinguishable from
+   * a genuinely empty range.
+   */
+  it("refuses when no history provider is configured", async () => {
+    makeApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toContain("no history provider");
+  });
+
+  it("takes step-up before doing anything", async () => {
+    historyProvider = providerReturning(75);
+    makeApp();
+    await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: body,
+    });
+
+    expect(stepUps).toContain("pw");
+  });
+
+  /**
+   * The gate runs BEFORE the provider check, so an unconfigured deployment
+   * cannot be used to probe whether a password was accepted.
+   */
+  it("takes step-up even when it will then refuse", async () => {
+    makeApp();
+    await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: body,
+    });
+
+    expect(stepUps).toContain("pw");
+  });
+
+  it("stores the bars and reports COMPLETE", { timeout: 30_000 }, async () => {
+    historyProvider = providerReturning(75);
+    makeApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(200);
+    const payload = response.json<{
+      complete: boolean;
+      dryRun: boolean;
+      symbols: { symbol: string; status: string; stored: number }[];
+    }>();
+    expect(payload.complete).toBe(true);
+    expect(payload.dryRun).toBe(false);
+    expect(payload.symbols[0]).toMatchObject({
+      symbol: "NSE:NIFTY50-INDEX",
+      status: "COMPLETE",
+      stored: 75,
+    });
+    expect(await connection.db.collection("candles").countDocuments()).toBe(75);
+  });
+
+  it("writes nothing on a dry run, but still reports", async () => {
+    historyProvider = providerReturning(75);
+    makeApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: { ...body, dryRun: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ dryRun: boolean }>().dryRun).toBe(true);
+    expect(await connection.db.collection("candles").countDocuments()).toBe(0);
+  });
+
+  /**
+   * The label has to survive the HTTP boundary. A `ReadonlyMap` does not
+   * serialize, and a partial dataset that arrives looking complete is exactly
+   * what PARTIAL_HISTORY exists to prevent.
+   */
+  it("reports PARTIAL_HISTORY when a requested day produced nothing", async () => {
+    historyProvider = providerReturning(0);
+    makeApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: body,
+    });
+
+    const payload = response.json<{
+      complete: boolean;
+      symbols: { status: string; missingPeriods: { cause: string }[] }[];
+    }>();
+    expect(payload.complete).toBe(false);
+    expect(payload.symbols[0]?.status).toBe("EMPTY");
+    expect(payload.symbols[0]?.missingPeriods[0]?.cause).toBe("DATA_MISSING");
+  });
+
+  /**
+   * §3.1 Q1 measured the cap at 100 days, but a measured number in a document
+   * is not one baked into a handler. Requiring it keeps the value somewhere a
+   * human looks, and stops a stale default silently truncating.
+   */
+  it("requires maxDaysPerRequest", async () => {
+    historyProvider = providerReturning(75);
+    makeApp();
+    const { maxDaysPerRequest, ...without } = body;
+    void maxDaysPerRequest;
+    const response = await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: without,
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it.each([
+    ["05-01-2026", "a non-ISO date"],
+    ["2026-1-5", "an unpadded date"],
+  ])("rejects %s (%s)", async (fromDate) => {
+    historyProvider = providerReturning(75);
+    makeApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/backfill",
+      payload: { ...body, fromDate },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it(
+    "falls back to indexSymbols when no symbols are given",
+    { timeout: 30_000 },
+    async () => {
+      historyProvider = providerReturning(75);
+      makeApp();
+      const { symbols, ...without } = body;
+      void symbols;
+      const response = await app.inject({
+        method: "POST",
+        url: "/backfill",
+        payload: without,
+      });
+
+      // The default settings document names the two indices, so the run covers
+      // both rather than silently doing nothing.
+      expect(response.statusCode).toBe(200);
+      const payload = response.json<{ symbols: { symbol: string }[] }>();
+      expect(payload.symbols.map((r) => r.symbol)).toEqual([
+        "NSE:NIFTY50-INDEX",
+        "NSE:NIFTYBANK-INDEX",
+      ]);
+    },
+  );
 });

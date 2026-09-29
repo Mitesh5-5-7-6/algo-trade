@@ -173,11 +173,21 @@ describe("special sessions — a weekend is not conclusive", () => {
     const special = new Set(["2026-02-01"]);
     // Sat 2026-01-31 is still closed.
     expect(
-      tradingDaysBetween(ist(2026, 0, 31, 0, 0), ist(2026, 0, 31, 23, 59), NONE, special),
+      tradingDaysBetween(
+        ist(2026, 0, 31, 0, 0),
+        ist(2026, 0, 31, 23, 59),
+        NONE,
+        special,
+      ),
     ).toEqual([]);
     // Mon 2026-01-05 is still open.
     expect(
-      tradingDaysBetween(ist(2026, 0, 5, 0, 0), ist(2026, 0, 5, 23, 59), NONE, special),
+      tradingDaysBetween(
+        ist(2026, 0, 5, 0, 0),
+        ist(2026, 0, 5, 23, 59),
+        NONE,
+        special,
+      ),
     ).toEqual(["2026-01-05"]);
   });
 });

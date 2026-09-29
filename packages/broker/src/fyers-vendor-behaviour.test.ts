@@ -113,10 +113,9 @@ describe("an over-long range is refused, not truncated (Q1, measured)", () => {
    * looking at credentials or the network when the fix is one number.
    */
   it("names the page size as the cause", async () => {
-    const error = await provider(
-      () => new Response("", { status: 422 }),
-      { maxDaysPerRequest: 150 },
-    )
+    const error = await provider(() => new Response("", { status: 422 }), {
+      maxDaysPerRequest: 150,
+    })
       .getHistory(request)
       .catch((e: unknown) => e);
 
@@ -155,10 +154,9 @@ describe("an over-long range is refused, not truncated (Q1, measured)", () => {
    * signal that the kinder behaviour has gone away.
    */
   it("carries no candles with the refusal", async () => {
-    const result = await provider(
-      () => new Response("", { status: 422 }),
-      { maxDaysPerRequest: 150 },
-    )
+    const result = await provider(() => new Response("", { status: 422 }), {
+      maxDaysPerRequest: 150,
+    })
       .getHistory(request)
       .then(
         () => "resolved",
@@ -264,7 +262,9 @@ describe("index volume is real (Q4, measured)", () => {
       requestDelayMs: 0,
       now: () => 1_760_000_000_000,
       fetch: () =>
-        Promise.resolve(new Response(JSON.stringify({ s: "ok", candles: bars }))),
+        Promise.resolve(
+          new Response(JSON.stringify({ s: "ok", candles: bars })),
+        ),
     });
 
     const result = await p.getHistory({
