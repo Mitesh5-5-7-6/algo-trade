@@ -14,6 +14,17 @@
  * — the authcode URL, the `appIdHash` construction, the validate payload — is
  * copied from that file rather than derived, so the two cannot drift.
  *
+ * Usual flow — one command, which waits for the browser redirect:
+ *
+ *   cd apps/api
+ *   node --env-file=../../.env.local scripts/fyers-token.mts
+ *
+ * It prints a login URL, listens on the registered redirect URI, captures the
+ * auth code when the browser lands, exchanges it, writes the token and
+ * verifies it against the data API. Nothing is copied by hand.
+ *
+ * Fall back to --code=<auth_code> if the redirect port is occupied.
+ *
  * Step 1 — print the login URL:
  *
  *   cd apps/api
@@ -35,6 +46,7 @@
  */
 
 import { createHash } from "node:crypto";
+import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -168,33 +180,111 @@ async function verify(appId: string, token: string): Promise<void> {
   );
 }
 
+/**
+ * Listen on the registered redirect URI and capture the auth code itself.
+ *
+ * The manual route — read `auth_code` out of the address bar, paste it into a
+ * second command — is where this kept failing. The code is long, single-use,
+ * expires in minutes, and sits next to three other query parameters, so a
+ * truncated copy or a slow paste both look like "invalid auth code". Worse,
+ * a browser session token copied from the wrong place looks plausible and
+ * fails much later, at the data API, with an unrelated message.
+ *
+ * Capturing it removes every one of those. The browser lands here, the code
+ * goes straight into the exchange, and the operator sees a result rather than
+ * a string to handle.
+ */
+function captureAuthCode(
+  redirectUrl: string,
+  timeoutMs = 300_000,
+): Promise<string> {
+  const url = new URL(redirectUrl);
+  const port = Number(url.port || "80");
+
+  return new Promise<string>((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const incoming = new URL(req.url ?? "/", `http://${url.host}`);
+      if (incoming.pathname !== url.pathname) {
+        res.writeHead(404).end("not the callback path");
+        return;
+      }
+
+      const authCode = incoming.searchParams.get("auth_code");
+      const message = incoming.searchParams.get("message");
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(
+        authCode
+          ? "<h2>Authorised.</h2><p>You can close this tab and return to the terminal.</p>"
+          : `<h2>Login failed.</h2><p>${message ?? "no auth_code in the redirect"}</p>`,
+      );
+
+      // Close after responding, so the browser is not left waiting on a
+      // socket that has already served its one purpose.
+      server.close();
+      clearTimeout(timer);
+      if (authCode) resolve(authCode);
+      else
+        reject(
+          new Error(
+            `FYERS redirect carried no auth_code: ${message ?? "no message"}`,
+          ),
+        );
+    });
+
+    const timer = setTimeout(() => {
+      server.close();
+      reject(
+        new Error(`no redirect received within ${String(timeoutMs / 1000)}s`),
+      );
+    }, timeoutMs);
+
+    server.on("error", (error: NodeJS.ErrnoException) => {
+      clearTimeout(timer);
+      reject(
+        error.code === "EADDRINUSE"
+          ? new Error(
+              `port ${String(port)} is already in use — stop whatever is on it ` +
+                `(often a dev server), or use --code=<auth_code> manually`,
+            )
+          : error,
+      );
+    });
+
+    server.listen(port, () => {
+      console.log(
+        `listening on ${url.origin}${url.pathname} for the redirect\n`,
+      );
+    });
+  });
+}
+
 async function main(): Promise<void> {
   const appId = required("FYERS_APP_ID");
-  const code = args.get("code");
+  const appSecret = required("FYERS_APP_SECRET");
+  const redirectUrl = required("FYERS_REDIRECT_URL");
+  const manual = args.get("code");
 
-  if (code === undefined || code === "true") {
-    const redirectUrl = required("FYERS_REDIRECT_URL");
-    console.log("1. Open this and log in:\n");
+  let code: string;
+  if (manual !== undefined && manual !== "true") {
+    code = manual;
+  } else {
+    console.log("Open this and log in:\n");
     console.log(`   ${loginUrl(appId, redirectUrl)}\n`);
-    console.log(
-      `2. You will be redirected to ${redirectUrl}. If nothing is listening\n` +
-        "   there the page will fail to load — that is expected. Copy the\n" +
-        "   auth_code value out of the address bar.\n",
-    );
-    console.log("3. Then run:\n");
-    console.log(
-      "   node --env-file=../../.env.local scripts/fyers-token.mts --code=<auth_code>\n",
-    );
-    return;
+    const waiting = captureAuthCode(redirectUrl);
+    code = await waiting;
+    console.log("auth code captured; exchanging it now\n");
   }
 
-  const appSecret = required("FYERS_APP_SECRET");
   const token = await exchange(appId, appSecret, code);
   writeToken(token);
   console.log(`wrote ${TOKEN_KEY} to .env.local — ${fingerprint(token)}`);
+
+  // The exchange succeeding is not the same as the token working. A web
+  // session token also parses, also looks fresh, and only fails later at the
+  // data API — so the check is against the endpoint that matters.
   await verify(appId, token);
   console.log(
-    "\nExpires in roughly 14 hours. Next:\n" +
+    "\nExpires in roughly 14 hours. Tell Claude it is written, or run:\n" +
       "  node --env-file=../../.env.local scripts/probe-fyers-history.mts",
   );
 }
