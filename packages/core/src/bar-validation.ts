@@ -1,6 +1,6 @@
 import {
   NSE_DEFAULT_SESSION,
-  isWeekendIST,
+  isTradingDayIST,
   istDateKey,
   minuteOfDayIST,
   parseHHMM,
@@ -55,6 +55,12 @@ export interface BarValidationOptions {
    * Weekends need no list and are always rejected.
    */
   holidays?: ReadonlySet<string>;
+  /**
+   * Weekend dates the exchange nonetheless traded — the Budget session and
+   * the Diwali Muhurat session. Without these a real session's bars are
+   * rejected as falling on a non-trading day.
+   */
+  specialSessions?: ReadonlySet<string>;
 }
 
 /**
@@ -167,7 +173,13 @@ export function validateBar(
   const session = options.session ?? NSE_DEFAULT_SESSION;
   const dateKey = istDateKey(bar.ts);
 
-  if (isWeekendIST(dateKey) || (options.holidays?.has(dateKey) ?? false)) {
+  if (
+    !isTradingDayIST(
+      dateKey,
+      options.holidays ?? new Set(),
+      options.specialSessions ?? new Set(),
+    )
+  ) {
     return {
       code: "ts-non-trading-day",
       reason: `ts ${String(bar.ts)} falls on ${dateKey}, not a trading day`,

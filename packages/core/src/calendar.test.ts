@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { istDateKey, startOfDayIST, tradingDaysBetween } from "./calendar.js";
+import {
+  isTradingDayIST,
+  istDateKey,
+  startOfDayIST,
+  tradingDaysBetween,
+} from "./calendar.js";
 
 /** Epoch ms for an IST wall-clock instant (month is 0-based). */
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -112,5 +117,89 @@ describe("tradingDaysBetween (research windows are counted in sessions)", () => 
       NONE,
     );
     expect(days).toEqual(["2026-01-30", "2026-02-02"]);
+  });
+});
+
+describe("special sessions — a weekend is not conclusive", () => {
+  const NONE: ReadonlySet<string> = new Set();
+
+  /**
+   * NSE runs special live sessions on weekends: the Union Budget session on
+   * 1 February and the Diwali Muhurat session. They are real trading days
+   * with real volume.
+   *
+   * This is not hypothetical. The first one-year backfill rejected 75 genuine
+   * bars for Sunday 2026-02-01 — a full Budget-day session — because the
+   * weekend rule was treated as absolute. The rejection report is what
+   * surfaced it.
+   */
+  it("counts a weekend date listed as a special session", () => {
+    const sunday = ist(2026, 1, 1, 12, 0); // 2026-02-01, a Sunday
+    expect(tradingDaysBetween(sunday, sunday, NONE)).toEqual([]);
+    expect(
+      tradingDaysBetween(sunday, sunday, NONE, new Set(["2026-02-01"])),
+    ).toEqual(["2026-02-01"]);
+  });
+
+  it("includes it in the middle of an ordinary range", () => {
+    // Fri 2026-01-30 .. Mon 2026-02-02, with Sunday the 1st traded.
+    const days = tradingDaysBetween(
+      ist(2026, 0, 30, 0, 0),
+      ist(2026, 1, 2, 23, 59),
+      NONE,
+      new Set(["2026-02-01"]),
+    );
+    expect(days).toEqual(["2026-01-30", "2026-02-01", "2026-02-02"]);
+  });
+
+  /**
+   * A date in both lists is a configuration mistake. Failing closed is the
+   * safe direction: a declared closure is a stronger statement than a
+   * calendar convention, and treating the day as open would invent bars.
+   */
+  it("lets an explicit holiday override a special session", () => {
+    const sunday = ist(2026, 1, 1, 12, 0);
+    expect(
+      tradingDaysBetween(
+        sunday,
+        sunday,
+        new Set(["2026-02-01"]),
+        new Set(["2026-02-01"]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not affect ordinary weekdays or weekends", () => {
+    const special = new Set(["2026-02-01"]);
+    // Sat 2026-01-31 is still closed.
+    expect(
+      tradingDaysBetween(ist(2026, 0, 31, 0, 0), ist(2026, 0, 31, 23, 59), NONE, special),
+    ).toEqual([]);
+    // Mon 2026-01-05 is still open.
+    expect(
+      tradingDaysBetween(ist(2026, 0, 5, 0, 0), ist(2026, 0, 5, 23, 59), NONE, special),
+    ).toEqual(["2026-01-05"]);
+  });
+});
+
+describe("isTradingDayIST", () => {
+  const NONE: ReadonlySet<string> = new Set();
+
+  it.each([
+    ["2026-01-05", true, "a Monday"],
+    ["2026-01-03", false, "a Saturday"],
+    ["2026-01-04", false, "a Sunday"],
+  ])("%s -> %s (%s)", (day, expected) => {
+    expect(isTradingDayIST(day, NONE)).toBe(expected);
+  });
+
+  it("closes a declared holiday that falls on a weekday", () => {
+    expect(isTradingDayIST("2026-01-05", new Set(["2026-01-05"]))).toBe(false);
+  });
+
+  it("opens a weekend day listed as a special session", () => {
+    expect(isTradingDayIST("2026-02-01", NONE, new Set(["2026-02-01"]))).toBe(
+      true,
+    );
   });
 });

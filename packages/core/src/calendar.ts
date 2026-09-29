@@ -76,6 +76,7 @@ export function tradingDaysBetween(
   fromTs: number,
   toTs: number,
   holidays: ReadonlySet<string>,
+  specialSessions: ReadonlySet<string> = EMPTY,
 ): string[] {
   const days: string[] = [];
   if (toTs < fromTs) return days;
@@ -84,10 +85,41 @@ export function tradingDaysBetween(
   const lastDay = startOfDayIST(toTs);
   for (let day = startOfDayIST(fromTs); day <= lastDay; day += DAY_MS) {
     const dateKey = istDateKey(day);
-    if (isWeekendIST(dateKey) || holidays.has(dateKey)) continue;
+    if (!isTradingDayIST(dateKey, holidays, specialSessions)) continue;
     days.push(dateKey);
   }
   return days;
+}
+
+const EMPTY: ReadonlySet<string> = new Set();
+
+/**
+ * Whether the exchange was open on an IST date.
+ *
+ * **A weekend is not conclusive.** NSE runs special live sessions on
+ * Saturdays and Sundays — the Union Budget session on 1 February, and the
+ * Diwali Muhurat session — and they are real trading days with real volume.
+ * A calendar that treats the weekend rule as absolute silently discards them:
+ * the first one-year backfill rejected 75 genuine bars for Sunday
+ * 2026-02-01 before `specialSessions` existed.
+ *
+ * Precedence, and the order matters:
+ *
+ * 1. an explicit holiday closes the day, even if it is also listed as a
+ *    special session — a declared closure is a stronger statement than a
+ *    calendar convention, and a date in both lists is a configuration
+ *    mistake that should fail closed;
+ * 2. a special session opens a weekend day;
+ * 3. otherwise, weekdays are open and weekends are not.
+ */
+export function isTradingDayIST(
+  dateKey: string,
+  holidays: ReadonlySet<string>,
+  specialSessions: ReadonlySet<string> = EMPTY,
+): boolean {
+  if (holidays.has(dateKey)) return false;
+  if (specialSessions.has(dateKey)) return true;
+  return !isWeekendIST(dateKey);
 }
 
 export interface SessionConfig {

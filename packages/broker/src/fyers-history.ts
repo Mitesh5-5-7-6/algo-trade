@@ -27,9 +27,23 @@ import {
  * `FyersBroker` delegates to it, so `FyersBroker implements HistoryProvider`
  * still holds and the composition root has one thing to wire.
  *
- * Vendor-specific behaviour this file deliberately does NOT assume is in
- * §3.1 — the five questions task 1.8 answers with one real call each. The
- * page size is a required dependency for exactly that reason.
+ * Vendor behaviour here is MEASURED, not assumed — §3.1, task 1.8, probed
+ * 2026-09-28:
+ *
+ *   - a range over the cap returns **HTTP 422** with no body, rejecting the
+ *     whole request. It does not truncate silently, which is the kinder of
+ *     the two failure modes — but `coverage` still checks, because that is a
+ *     vendor promise rather than a guarantee.
+ *   - a non-trading day returns **HTTP 200 with `s: "no_data"`** and an empty
+ *     `candles` array. A closed market is a SUCCESSFUL response, which is
+ *     what lets a transport failure be told apart from a holiday without a
+ *     heuristic.
+ *   - index symbols return **real, non-zero volume**, contrary to the common
+ *     claim, so volume is not discarded for indices.
+ *
+ * The page size stays a required dependency even though the cap is now known:
+ * a measured number recorded in a document is not the same as one hard-coded
+ * into the fetch path, and the vendor can change it without telling anyone.
  */
 
 const HISTORY_URL = "https://api-t1.fyers.in/data/history";
@@ -75,6 +89,8 @@ export interface FyersHistoryDeps {
   requestDelayMs: number;
   /** Exchange holidays, so ingestion and the live session agree (§5). */
   holidays?: ReadonlySet<string>;
+  /** Weekend dates the exchange traded anyway (Budget, Muhurat). */
+  specialSessions?: ReadonlySet<string>;
   /** Session window bars are validated against. Defaults to NSE. */
   session?: SessionConfig;
   /**
@@ -158,6 +174,9 @@ export class FyersHistoryProvider implements HistoryProvider {
       ...(this.deps.holidays === undefined
         ? {}
         : { holidays: this.deps.holidays }),
+      ...(this.deps.specialSessions === undefined
+        ? {}
+        : { specialSessions: this.deps.specialSessions }),
       ...(this.deps.session === undefined
         ? {}
         : { session: this.deps.session }),
@@ -238,6 +257,7 @@ export class FyersHistoryProvider implements HistoryProvider {
       req.fromTs,
       req.toTs - 1,
       holidays,
+      this.deps.specialSessions ?? new Set<string>(),
     );
     const covered = new Set(candles.map((c) => istDateKey(c.ts)));
     const coveredDays = requestedDays.filter((day) => covered.has(day));
@@ -413,17 +433,43 @@ export class FyersHistoryProvider implements HistoryProvider {
     }
 
     const text = await response.text();
-    let body: FyersHistoryBody;
+    let body: FyersHistoryBody = {};
+    let parsed = true;
     try {
       body = JSON.parse(text) as FyersHistoryBody;
     } catch {
+      parsed = false;
+    }
+
+    // Order matters. The measured 422 for an over-long range comes back with
+    // an EMPTY body, so parsing first and reporting "not JSON" would bury the
+    // one diagnosis that names the fix. A non-2xx is classified by its status;
+    // an unreadable body is only a story of its own when the request
+    // otherwise succeeded.
+    if (response.ok && !parsed) {
       throw new HistoryFetchError(
         `history response was not JSON (HTTP ${String(response.status)}): ${text.slice(0, 200)}`,
-        { retryable: response.status >= 500, status: response.status },
+        { retryable: false, status: response.status },
       );
     }
 
     if (!response.ok) {
+      // 422 is the measured response to an over-long range (§3.1 Q1: 100 days
+      // succeed, 150 returns 422 with no body). Worth naming, because the
+      // generic message would send an operator looking at credentials or the
+      // network when the fix is one number. The vendor gives no hint of its
+      // own — no message, no documented code — so the interpretation has to
+      // come from here.
+      if (response.status === 422) {
+        throw new HistoryFetchError(
+          `history request refused as too large (HTTP 422) for ` +
+            `${page.fromKey}..${page.toKey} at ${String(this.deps.maxDaysPerRequest)} ` +
+            `days per request. The measured cap is 100 days (§3.1 Q1) — lower ` +
+            `maxDaysPerRequest. Nothing was truncated; the range was rejected ` +
+            `outright.`,
+          { retryable: false, status: 422 },
+        );
+      }
       throw new HistoryFetchError(
         `history request rejected (HTTP ${String(response.status)}): ${body.message ?? "no message"}`,
         {

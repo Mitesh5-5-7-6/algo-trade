@@ -133,6 +133,12 @@ export interface BackfillDeps {
   /** Exchange holidays, from the same global settings the live session reads. */
   holidays: ReadonlySet<string>;
   /**
+   * Weekend dates the exchange traded anyway — the Budget session and the
+   * Diwali Muhurat session. Omitting them makes a real session look like a
+   * weekend and throws its bars away.
+   */
+  specialSessions?: ReadonlySet<string>;
+  /**
    * Days per fetched range. Independent of the provider's own page size: this
    * is how much the job asks for at a time, and the provider pages within it.
    */
@@ -186,7 +192,12 @@ export async function runHistoricalBackfill(
       `range is inverted: ${request.fromDate} is after ${request.toDate}`,
     );
 
-  const tradingDays = tradingDaysBetween(fromMs, toMs, deps.holidays);
+  const tradingDays = tradingDaysBetween(
+    fromMs,
+    toMs,
+    deps.holidays,
+    deps.specialSessions ?? new Set<string>(),
+  );
   const daysPerRange = deps.daysPerRange ?? DEFAULT_DAYS_PER_RANGE;
   if (!Number.isInteger(daysPerRange) || daysPerRange < 1)
     throw new Error("daysPerRange must be a positive integer");

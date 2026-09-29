@@ -20,6 +20,9 @@
  * Optional:
  *   --max-calls=N                 hard ceiling on vendor calls this run
  *   --zero-volume-unavailable     once Q4 confirms index volume is filler
+ *   --holidays=A,B                override the settings holiday list
+ *   --special-sessions=A,B        weekend dates the exchange traded anyway
+ *                                 (Budget 1 Feb, Diwali Muhurat)
  *   --days-per-range=N            days per fetched range (default: --max-days)
  *   --delay-ms=N                  gap between calls (default 250)
  *   --dry-run                     fetch and report, write nothing
@@ -40,7 +43,11 @@ import {
   backfillSucceeded,
   formatBackfillReport,
   runHistoricalBackfill,
-} from "../src/jobs/historical-backfill.js";
+  // Built output, not src: Node type-stripping does not remap a .js
+  // specifier onto a .ts file, and this script runs under plain node. Run
+  // `pnpm build` first — the same rule the repository already has for
+  // typecheck reading dist/.
+} from "../dist/jobs/historical-backfill.js";
 import type { Candle, CandleInterval } from "@neelkanth/core";
 
 const args = new Map(
@@ -72,6 +79,18 @@ const SYMBOLS = args.get("symbols")?.split(",").filter(Boolean);
 const MAX_CALLS = args.get("max-calls");
 /** Set once §3.1 Q4 confirms index volume is meaningless. */
 const ZERO_VOLUME_UNAVAILABLE = args.get("zero-volume-unavailable") === "true";
+/** Weekend dates the exchange traded anyway (Budget, Muhurat). */
+const SPECIAL_SESSIONS = new Set(
+  args.get("special-sessions")?.split(",").filter(Boolean) ?? [],
+);
+/**
+ * Holidays to use INSTEAD of the ones in global settings.
+ *
+ * For a scratch database that has no settings document. Against the real one
+ * this stays unset, so ingestion and the live session cannot come to disagree
+ * about which days existed.
+ */
+const HOLIDAYS_OVERRIDE = args.get("holidays")?.split(",").filter(Boolean);
 
 if (!Number.isInteger(MAX_DAYS) || MAX_DAYS < 1)
   throw new Error(
@@ -94,7 +113,9 @@ async function main(): Promise<void> {
       .collection("settings")
       .findOne({ scope: "global" });
     const holidays = new Set(
-      (settings?.["marketHolidays"] as string[] | undefined) ?? [],
+      HOLIDAYS_OVERRIDE ??
+        (settings?.["marketHolidays"] as string[] | undefined) ??
+        [],
     );
     const symbols =
       SYMBOLS ?? (settings?.["indexSymbols"] as string[] | undefined) ?? [];
@@ -125,6 +146,7 @@ async function main(): Promise<void> {
       requestDelayMs: DELAY_MS,
       rateLimiter,
       holidays,
+      specialSessions: SPECIAL_SESSIONS,
       zeroVolumeIsUnavailable: ZERO_VOLUME_UNAVAILABLE,
       ingestionVersion: Math.floor(Date.now() / 1000),
     });
@@ -145,6 +167,7 @@ async function main(): Promise<void> {
       {
         history: provider,
         holidays,
+        specialSessions: SPECIAL_SESSIONS,
         daysPerRange: DAYS_PER_RANGE,
         saveCandle: DRY_RUN
           ? () => Promise.resolve(true)
