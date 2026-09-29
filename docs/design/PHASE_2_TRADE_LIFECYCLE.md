@@ -147,34 +147,255 @@ than guessing a nicer one.
 
 ---
 
-## 5. Open questions
+## 5. Questions
 
-None of these is guessable, and each changes the schema or the arithmetic.
+### 5.1 Q1 and Q2 — SETTLED
 
-| #   | Question                                                                                                      | Why it matters                                                                                                                     |
-| --- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Q1  | Does a **reversal** (long → short in one fill) end one trade and open another, or one trade with a remainder? | `applyTradeFill` already returns a remainder, so the code has an opinion. It needs confirming, because it decides the trade count. |
-| Q2  | Do **partial exits** produce one trade with several exit legs, or several trades?                             | One trade with legs needs an exit-leg array the schema does not have. Several trades makes "how big was this trade?" ambiguous.    |
-| Q3  | Does an **overnight position** remain one trade, or close at session end and reopen?                          | Decides whether a swing strategy is measurable at all.                                                                             |
-| Q4  | What `strategyVersion` value is recorded, and who supplies it?                                                | A later edit to a strategy must not rewrite what past trades were made by. Nothing currently produces a version string.            |
+**A Trade represents a complete trading lifecycle, not a broker order.** That
+single sentence decides both, and is the reason to record it here rather than
+leave it implied by the code.
 
-**Q1 and Q2 block implementation.** Q3 and Q4 can be deferred to the first
-real dataset, but not past it.
+#### Q1 — a reversal is TWO trades
+
+A fill that crosses through flat — long 50, a SELL 80 arrives — closes the
+long and opens a short of 30.
+
+```text
+LONG  Trade #1   entry → … → exit 50 → CLOSED
+SHORT Trade #2   entry 30 → …
+```
+
+Both "what did the long earn?" and "how is the short doing?" must stay
+independently answerable, and one merged record can answer neither.
+
+This confirms what `applyTradeFill` already does. **What it does NOT confirm**
+is the cost handling. The remainder is currently built with `charges: 0,
+slippage: 0`, which avoids a double-count by attributing the whole order's
+cost to the closing trade — so the closing trade pays for the new entry and
+the new trade appears to enter for free. Both figures are wrong, in opposite
+directions, and cost sensitivity is exactly what D2 keeps costs separate to
+measure.
+
+**Allocate pro-rata by quantity:**
+
+```text
+order qty 80   =   closing 50   +   opening 30
+
+closingCost = totalCost × 50/80      (62.5%)
+openingCost = totalCost × 30/80      (37.5%)
+```
+
+The same rule applies to slippage wherever the broker reports it at order
+level rather than per leg.
+
+**Rounding is part of the decision, not an implementation detail.** Rounding
+each leg independently lets the parts drift from the whole, and a cost that
+does not reconcile is worse than one that is slightly misallocated — the
+first is undetectable, the second is auditable. Allocate deterministically
+and give any remainder to one leg, normally the last:
+
+```text
+sum(allocated costs) === original fill cost      (at the model's precision)
+```
+
+#### Q2 — a partial exit is ONE trade, with a weighted-average exit price
+
+`LONG 100`, then `SELL 30`, `SELL 30`, `SELL 40`, is one lifecycle:
+
+```text
+Trade #1   100 → 70 → 40 → 0 → CLOSED
+```
+
+Not three trades. Accumulating `grossPnl` and `charges` across the legs is
+already correct; the defect is `exitPrice`, which is overwritten by the
+latest leg. On a trade exited in tranches it therefore means "the price of
+the last tranche", so the obvious research arithmetic disagrees with the
+stored result and nothing says which is right:
+
+```text
+(exitPrice − entryPrice) × quantity   ≠   grossPnl
+```
+
+**Store the quantity-weighted mean instead**, mirroring what the entry side
+already does when a position is added to:
+
+```ts
+entryPrice = (entryPrice * held + fill.price * fill.qty) / newHeld;
+```
+
+```text
+entry   100 @ 100
+exits    30 @ 110,  30 @ 115,  40 @ 120
+
+exitPrice = (30×110 + 30×115 + 40×120) / 100 = 115.50
+grossPnl  = (115.50 − 100) × 100            = 1,550
+```
+
+The record is then internally consistent, and the two sides of it are
+symmetric.
+
+**An exit-legs array is deliberately NOT added.** It is the more faithful
+representation, but it introduces a second data model to solve a Phase 3
+problem before anything produces partial exits at all. The Trade is the
+research-level summary; execution-level detail belongs in fill records, which
+can be added later without disturbing it.
+
+### 5.2 The resulting rules
+
+| Scenario          | Trades | `entryPrice`     | `exitPrice`      | Costs             |
+| ----------------- | ------ | ---------------- | ---------------- | ----------------- |
+| Entry → full exit | 1      | entry price      | exit price       | full lifecycle    |
+| Multiple entries  | 1      | weighted average | exit price       | accumulated       |
+| Partial exits     | 1      | weighted average | weighted average | accumulated       |
+| Reversal          | 2      | independent      | independent      | split by quantity |
+
+### 5.3 Invariants
+
+These matter more than any particular implementation: they are what lets R&D
+trust the numbers instead of reverse-engineering what the execution code
+probably meant six months earlier.
+
+For a closed trade:
+
+```text
+grossPnl  ≈  direction × (weightedExitPrice − weightedEntryPrice) × quantity
+netPnl    =  grossPnl − charges
+```
+
+For a reversal:
+
+```text
+closingTrade.cost + openingTrade.cost  =  originalFill.cost
+```
+
+**One thing to settle before these are written as law.** The invariant was
+stated as `netPnl = grossPnl − charges − otherCosts`. There is no
+`otherCosts` field, and if it is meant to be `slippage`, subtracting it would
+**double-count**: slippage is the gap between the expected and actual fill
+price, so it is already inside `entryPrice` and `exitPrice`, and therefore
+already inside `grossPnl`. `netPnlFor` says exactly this today —
+`grossPnl − charges`, with slippage stored for measurement but never
+subtracted. The formula above keeps that. If `otherCosts` means something
+else — financing, borrow, STT handled outside `charges` — it needs a field
+and a definition, and should be raised as Q5 rather than folded in silently.
+
+### 5.4 Q3 and Q4 — SETTLED
+
+#### Q3 — an overnight position stays ONE trade
+
+|                                |                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------- |
+| Overnight position             | One trade, remains `OPEN` across sessions                              |
+| Automatic close at session end | **No** — the Trade entity never closes a trade for bookkeeping reasons |
+| Intraday strategy wants out    | It emits an explicit exit                                              |
+| New trade next morning         | No, unless an actual new entry occurs                                  |
+| Overnight research measurable  | Yes                                                                    |
+
+A trading day boundary is a fact about the exchange, not about the decision
+being measured. Closing a trade at 15:30 and opening a replacement at 09:15
+would turn one three-day swing into three trades, none of which earned what
+the swing earned, and would make swing strategies unmeasurable by
+construction.
+
+> **Gap this exposes.** The decision is a rule about the Trade entity, and as
+> such it holds. But "overnight research measurable: yes" presumes a position
+> _can_ survive the night, and today none can:
+> [exit-engine.ts](../../packages/engines/src/exit/exit-engine.ts)
+> `onSessionTick` flattens **every** open position at
+> `marketHours.squareOff` — 15:12 by default — and
+> [runtime.ts](../../apps/api/src/engines/runtime.ts) drives it
+> unconditionally on every session tick while the market is open. There is no
+> per-strategy opt-out.
+>
+> So Q3 costs nothing to honour now — it simply never triggers, because
+> square-off closes everything first. It becomes real only when a strategy
+> can decline the flatten, which is exit-lifecycle work (Phase 3,
+> CURRENT_STATE §3.5). **Recorded rather than resolved here**, because
+> quietly adding an opt-out would be Phase 3 work done early.
+
+This does not retire the `SESSION_CLOSE` exit reason. Square-off is a real
+trading action producing a real fill, and a trade closed by it is closed for
+that reason. What Q3 forbids is a trade ending because a date changed.
+
+#### Q4 — `strategyVersion` is stamped by the Strategy Runner and never rewritten
+
+|                                           |                                                  |
+| ----------------------------------------- | ------------------------------------------------ |
+| Supplied by                               | The strategy / Strategy Runner, at decision time |
+| Stored on Signal                          | Yes                                              |
+| Stored on Order                           | Yes                                              |
+| Stored on Trade                           | Yes                                              |
+| Historical value mutable                  | **No**                                           |
+| A later strategy edit rewrites old trades | **Never**                                        |
+| Exact-code identity                       | A `strategyRevision` / commit hash, later        |
+
+Carrying it on all three is not redundancy. Each is written at a different
+moment by a different component, and a trade whose version had to be looked
+up through its order would lose it the moment orders are pruned. The value
+is copied forward, never referenced.
+
+> **Scope this exposes.** None of it exists yet:
+> [strategy.ts](../../packages/core/src/strategy.ts) has no version field,
+> and neither [signal.ts](../../packages/core/src/signal.ts) nor
+> [order.ts](../../packages/core/src/order.ts) carries `strategyVersion` —
+> all three hold `strategyId` alone. `TradeSchema` is the only one already
+> ready for it, and there it is optional.
+>
+> Q4 is therefore a change across four places: a version on
+> `StrategyConfig`, the field on `SignalSchema` and `OrderSchema`, and a
+> producer in the Strategy Runner. Each field must be optional, for the same
+> reason `source` was defaulted rather than required — every signal, order
+> and trade already in Mongo predates it, and a required field throws on the
+> first read after deploy.
+
+### 5.5 The lifecycle these decisions define
+
+```text
+Strategy
+   │  strategyId + strategyVersion
+   ▼
+Signal  ──▶  Risk  ──▶  Order  ──▶  Execution
+                                        │
+                                        ▼
+                                      Trade
+                                        ├── spans multiple sessions
+                                        ├── absorbs partial exits
+                                        ├── a reversal starts a new one
+                                        └── strategy identity is immutable
+```
+
+What this buys is a historical dataset of decisions rather than a pile of
+broker-order-shaped accidents — which is the difference between research that
+can attribute an outcome to a strategy version and research that cannot.
+
+### 5.6 Still open
+
+| #   | Question                                                                                                                                                                                                                                                                 | Raised by |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| Q5  | Does `netPnl` subtract anything beyond `charges`? If `otherCosts` means financing, borrow or STT handled outside `charges`, it needs a field and a definition. It must **not** mean `slippage`, which is already inside the fill prices and therefore inside `grossPnl`. | §5.3      |
+
+Q5 does not block the port. It blocks calling `netPnl` final.
 
 ---
 
 ## 6. Proposed task order
 
-| ID  | Task                                                                        | Depends on |
-| --- | --------------------------------------------------------------------------- | ---------- |
-| 2.1 | Port `5dac705`, audit against §2's three drifts                             | —          |
-| 2.2 | Answer Q1 and Q2                                                            | —          |
-| 2.3 | `trades` collection + indexes; confirm `trade_logs` stays unused            | 2.1        |
-| 2.4 | `TradeEngine` fill idempotency proven by replaying one event (D5)           | 2.1        |
-| 2.5 | Entry ↔ exit linkage: `entryOrderId`, `exitOrderId`, `positionId` populated | 2.1, 2.2   |
-| 2.6 | `exitReason` threaded from whoever closes the position (D6)                 | 2.5        |
-| 2.7 | Integration: a full round trip produces exactly one CLOSED trade            | 2.3–2.6    |
-| 2.8 | `/trades` read route                                                        | 2.7        |
+| ID  | Task                                                                                                                                               | Depends on |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 2.1 | Port `5dac705`; audit against §2 three drifts **and apply §5.1 two corrections** — pro-rata cost split on a reversal, weighted-average `exitPrice` | —          |
+| 2.2 | ~~Answer Q1 and Q2~~ — **settled, §5.1**. Q3 and Q4 settled too, §5.4                                                                              | —          |
+| 2.3 | `trades` collection + indexes; confirm `trade_logs` stays unused                                                                                   | 2.1        |
+| 2.4 | `TradeEngine` fill idempotency proven by replaying one event (D5)                                                                                  | 2.1        |
+| 2.5 | Entry ↔ exit linkage: `entryOrderId`, `exitOrderId`, `positionId` populated                                                                        | 2.1, 2.2   |
+| 2.6 | `exitReason` threaded from whoever closes the position (D6)                                                                                        | 2.5        |
+| 2.7 | Integration: a full round trip produces exactly one CLOSED trade                                                                                   | 2.3–2.6    |
+| 2.8 | `strategyVersion` on `StrategyConfig`, `SignalSchema`, `OrderSchema`, stamped by the Strategy Runner (Q4) — all optional                           | 2.1        |
+| 2.9 | `/trades` read route                                                                                                                               | 2.7        |
+
+**Not in Phase 2:** a per-strategy square-off opt-out. Q3's rule holds without
+it; what it unlocks is positions that actually survive the night, and that is
+Phase 3 exit-lifecycle work. Building it here would be implementing a later
+phase early.
 
 2.1 first is deliberate: everything else is an audit of ported code rather than
 new work, and the port shrinks the phase considerably.

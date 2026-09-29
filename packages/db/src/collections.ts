@@ -14,6 +14,15 @@ export const COLLECTIONS = {
   pnlSnapshots: "pnl_snapshots",
   marketTicks: "market_ticks",
   candles: "candles",
+  /**
+   * Completed trades — the canonical outcome primitive (ADR §9.2).
+   *
+   * Deliberately NOT `trade_logs`, which carries a 90-day TTL. A completed
+   * trade is research evidence, and evidence on an operational TTL is a
+   * dataset that silently shrinks under whoever is studying it (ADR §10.4).
+   * This collection has no TTL and must never acquire one.
+   */
+  trades: "trades",
   tradeLogs: "trade_logs",
   riskLogs: "risk_logs",
   notifications: "notifications",
@@ -94,6 +103,22 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.candles)
       .createIndex({ symbol: 1, interval: 1, ts: 1 }, { unique: true }),
+
+    // trades — completed outcomes. No TTL: this is the research dataset.
+    db
+      .collection(COLLECTIONS.trades)
+      .createIndex({ tradeId: 1 }, { unique: true }),
+    // The research read pattern: one strategy over a date range.
+    db
+      .collection(COLLECTIONS.trades)
+      .createIndex({ strategyId: 1, entryTime: -1 }),
+    db.collection(COLLECTIONS.trades).createIndex({ symbol: 1, entryTime: -1 }),
+    db.collection(COLLECTIONS.trades).createIndex({ entryTime: -1 }),
+    // Finding the open trade a fill belongs to — the hot path in the Trade
+    // Engine, so it is indexed rather than scanned.
+    db
+      .collection(COLLECTIONS.trades)
+      .createIndex({ status: 1, strategyId: 1, symbol: 1 }),
 
     // strategy_state — one row per instance; the key IS the identity.
     db

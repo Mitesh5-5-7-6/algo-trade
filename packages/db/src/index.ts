@@ -8,6 +8,7 @@ export * from "./signals-repository.js";
 export * from "./risk-logs-repository.js";
 export * from "./pnl-snapshots-repository.js";
 export * from "./candles-repository.js";
+export * from "./trades-repository.js";
 export * from "./strategies-repository.js";
 export * from "./broker-tokens-repository.js";
 export * from "./strategy-state-repository.js";

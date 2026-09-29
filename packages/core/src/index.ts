@@ -6,6 +6,7 @@ export * from "./signal.js";
 export * from "./order.js";
 export * from "./broker.js";
 export * from "./position.js";
+export * from "./trade.js";
 export * from "./strategy.js";
 export * from "./context.js";
 export * from "./risk.js";

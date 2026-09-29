@@ -6,3 +6,4 @@ export * from "./order/index.js";
 export * from "./position/index.js";
 export * from "./exit/index.js";
 export * from "./market/index.js";
+export * from "./trade/index.js";
