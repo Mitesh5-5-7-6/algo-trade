@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   BrokerConnectionState,
   Candle,
@@ -29,6 +30,7 @@ import {
   SettingsRepository,
   SignalsRepository,
   StrategiesRepository,
+  TradesRepository,
   StrategyStateRepository,
   type MongoConnection,
 } from "@neelkanth/db";
@@ -49,6 +51,7 @@ import {
   RiskEngine,
   SessionManager,
   StrategyRunner,
+  TradeEngine,
   unrealizedPnl,
   type IndicatorPorts,
   type MarketDataPorts,
@@ -196,6 +199,7 @@ export async function startEngineRuntime(deps: {
   const riskLogs = new RiskLogsRepository(db);
   const pnlSnapshots = new PnlSnapshotsRepository(db);
   const candles = new CandlesRepository(db);
+  const trades = new TradesRepository(db);
   const strategiesRepo = new StrategiesRepository(db);
   const strategyState = new StrategyStateRepository(db);
   const settingsRepo = new SettingsRepository(db);
@@ -388,6 +392,24 @@ export async function startEngineRuntime(deps: {
   const positionEngine = new PositionEngine({
     ports: positionPorts,
     nextPositionId: () => `pos_${crypto.randomUUID()}`,
+    onError,
+  });
+
+  // The outcome projection (ADR §9.2). Runs alongside the Position Engine
+  // on the same fills and keyed the same way: the position says what is
+  // held now, the trade says what one decision earned. Only the second is
+  // something research can label.
+  const tradeEngine = new TradeEngine({
+    ports: {
+      saveTrade: (trade) => trades.save(trade),
+      loadOpenTrades: () => trades.findAllOpen(),
+      findTradeByOrderId: (orderId) => trades.findByOrderId(orderId),
+      // In-memory, and safe because the fill handler awaits the Position
+      // Engine first — see the ORDER_FILLED subscription below.
+      resolvePositionId: (strategyId, symbol) =>
+        positionEngine.getPosition(strategyId, symbol)?.positionId ?? null,
+    },
+    nextTradeId: () => `trd_${randomUUID()}`,
     onError,
   });
 
@@ -768,8 +790,12 @@ export async function startEngineRuntime(deps: {
   );
   await bus.subscribe("ORDER_FILLED", async (event) => {
     // Position first: the system's view of what it holds is the thing that
-    // must never be wrong.
+    // must never be wrong. It also has to land before the Trade Engine, which
+    // reads the position it just built to record `positionId`.
     await positionEngine.onOrderFilled(event.payload);
+    // Then the outcome record. Its own failures are swallowed into onError, so
+    // a lost trade row cannot take the position projection down with it.
+    await tradeEngine.onOrderFilled(event.payload);
     // And the strategy learns its proposal became a trade (§0.5.5).
     runner.onOrderFilled(event.payload);
   });
@@ -800,6 +826,10 @@ export async function startEngineRuntime(deps: {
   // (which registers + warms their indicators). The kill flag was honored by
   // the composition root before this point.
   positionEngine.hydrate(await positions.findOpen());
+  // Open trades too, or a restart mid-position opens a SECOND trade on the
+  // next fill and leaves the first open forever — one position recorded as
+  // two trades, neither of them true.
+  await tradeEngine.hydrate();
   // The day's realized loss, restored BEFORE anything can trade (§0.5.4).
   // Not in the optional warm-up block below: a boot that cannot read this does
   // not know whether the daily-loss limit is already breached, and the ledger

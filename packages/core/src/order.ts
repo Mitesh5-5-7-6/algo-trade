@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ExitReasonSchema } from "./trade.js";
 import {
   EntityIdSchema,
   PriceSchema,
@@ -39,6 +40,19 @@ export const OrderSchema = z.object({
   orderId: EntityIdSchema,
   signalId: EntityIdSchema,
   strategyId: EntityIdSchema,
+  /**
+   * The strategy's version at the moment of the decision (design §5.4 Q4).
+   *
+   * Optional, and absence means a record written before versions existed —
+   * the same reason `source` was defaulted rather than required. A required
+   * field would throw on the first read of anything already in Mongo.
+   *
+   * Copied forward rather than referenced. Each of Signal, Order and Trade
+   * is written at a different moment by a different component, and a trade
+   * whose version had to be looked up through its order would lose it the
+   * moment orders are pruned.
+   */
+  strategyVersion: z.string().min(1).optional(),
   symbol: SymbolSchema,
   side: OrderSideSchema,
   qty: QuantitySchema,
@@ -49,6 +63,8 @@ export const OrderSchema = z.object({
   stopLoss: PriceSchema.optional(),
   /** Take profit target price (if a bracket order). */
   takeProfit: PriceSchema.optional(),
+  /** Copied from the signal, so the fill can report it without a join. */
+  exitReason: ExitReasonSchema.optional(),
   status: OrderStatusSchema,
   mode: TradeModeSchema,
   brokerOrderId: z.string().optional(),

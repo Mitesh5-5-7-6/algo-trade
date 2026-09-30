@@ -37,6 +37,8 @@ interface PendingSignal {
 /** A live per-(strategy, symbol) instance; state is private to the strategy. */
 interface Instance {
   readonly strategyId: string;
+  /** Captured at enable time, so a mid-session config edit cannot rewrite it. */
+  readonly strategyVersion?: string;
   readonly symbol: string;
   readonly interval: CandleInterval;
   readonly strategy: RunnableStrategy;
@@ -139,6 +141,9 @@ export class StrategyRunner {
       );
       const instance: Instance = {
         strategyId: config.strategyId,
+        ...(config.strategyVersion === undefined
+          ? {}
+          : { strategyVersion: config.strategyVersion }),
         symbol,
         interval: strategy.interval,
         strategy,
@@ -636,6 +641,11 @@ export class StrategyRunner {
     return {
       signalId: this.deps.nextSignalId(),
       strategyId: instance.strategyId,
+      // Stamped at decision time from the config that was enabled, so a later
+      // edit cannot restate what this signal was made by (Q4).
+      ...(instance.strategyVersion === undefined
+        ? {}
+        : { strategyVersion: instance.strategyVersion }),
       symbol: trade.symbol,
       ...(trade.underlying === undefined
         ? {}

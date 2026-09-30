@@ -251,36 +251,44 @@ describe("the day's risk state survives a restart (§0.8)", () => {
    * something writes at all. Asserted against the real key so a typo in
    * `riskDailyLossKey` cannot pass.
    */
-  it("writes the counter to the key the namespace table reserved", async () => {
-    const runtime = await boot();
-    try {
-      await roundTrip(runtime, 200, 150, 4); // −200 realized
-      const raw = await redis?.client.get(
-        riskDailyLossKey(istDateKey(Date.now())),
-      );
-      expect(raw).not.toBeNull();
-      expect(Number(raw)).toBeCloseTo(runtime.realizedPnl(), 4);
-    } finally {
-      await runtime.shutdown();
-    }
-  });
+  it(
+    "writes the counter to the key the namespace table reserved",
+    async () => {
+      const runtime = await boot();
+      try {
+        await roundTrip(runtime, 200, 150, 4); // −200 realized
+        const raw = await redis?.client.get(
+          riskDailyLossKey(istDateKey(Date.now())),
+        );
+        expect(raw).not.toBeNull();
+        expect(Number(raw)).toBeCloseTo(runtime.realizedPnl(), 4);
+      } finally {
+        await runtime.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
 
   /**
    * The counter must outlive an overnight restart, so a TTL shorter than a
    * trading day would silently reintroduce the bug on the next morning's boot.
    */
-  it("keeps the counter alive well beyond one trading day", async () => {
-    const runtime = await boot();
-    try {
-      await roundTrip(runtime, 100, 95, 2);
-      const ttl = await redis?.client.ttl(
-        riskDailyLossKey(istDateKey(Date.now())),
-      );
-      expect(ttl).toBeGreaterThan(86_400);
-    } finally {
-      await runtime.shutdown();
-    }
-  });
+  it(
+    "keeps the counter alive well beyond one trading day",
+    async () => {
+      const runtime = await boot();
+      try {
+        await roundTrip(runtime, 100, 95, 2);
+        const ttl = await redis?.client.ttl(
+          riskDailyLossKey(istDateKey(Date.now())),
+        );
+        expect(ttl).toBeGreaterThan(86_400);
+      } finally {
+        await runtime.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
 
   /**
    * A profitable day is not a loss. `lossFrom` clamps at zero, and the gate

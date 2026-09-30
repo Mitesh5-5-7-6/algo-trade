@@ -414,3 +414,48 @@ describe("StrategyRunner derivative resolution (plan/15 §4, plan/17 §7)", () =
     expect(h.resolved).toHaveLength(0);
   });
 });
+
+describe("strategyVersion travels with the decision (§2.8, Q4)", () => {
+  /**
+   * A later edit to a strategy must never rewrite what past trades were made
+   * by. The version is therefore stamped onto the decision at the moment it is
+   * made, and copied forward from there — never joined back to the config,
+   * which is the thing that changes.
+   */
+  it("stamps the enabled config's version onto the signal", async () => {
+    const h = harness();
+    await h.runner.enable({ ...config("ALWAYS_BUY"), strategyVersion: "v3" });
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toBe("v3");
+    expect(h.signals[0]?.strategyVersion).toBe("v3");
+  });
+
+  /**
+   * Absent stays absent. Every strategy already stored predates the field, and
+   * inventing a version for them would put a claim in the research dataset
+   * that nothing ever made.
+   */
+  it("leaves it absent when the config has none", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toBeUndefined();
+  });
+
+  /**
+   * The instance captures the version at enable time, so a config edited
+   * mid-session cannot restate what the running strategy has been deciding as.
+   */
+  it("keeps the version the instance was enabled with", async () => {
+    const h = harness();
+    const enabled = { ...config("ALWAYS_BUY"), strategyVersion: "v1" };
+    await h.runner.enable(enabled);
+    // The operator's object is mutated after the fact — a plausible accident.
+    enabled.strategyVersion = "v2";
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toBe("v1");
+  });
+});

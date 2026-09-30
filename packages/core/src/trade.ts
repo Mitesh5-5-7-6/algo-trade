@@ -191,6 +191,16 @@ export function applyTradeFill(
     strategyId: string;
     symbol: string;
     mode: Trade["mode"];
+    /**
+     * The position this fill built, when it is known.
+     *
+     * Set once, at open. Later fills spread the existing trade, so a closing
+     * fill — by which time the position may already be gone from memory —
+     * cannot blank it.
+     */
+    positionId?: string;
+    /** Stamped at open so a later strategy edit cannot restate history (Q4). */
+    strategyVersion?: string;
   },
 ): TradeFillResult {
   const open = current !== null && current.status === "OPEN" ? current : null;
@@ -210,6 +220,12 @@ export function applyTradeFill(
           : { entrySignalId: fill.signalId }),
         entryTime: fill.filledAt,
         entryPrice: fill.price,
+        ...(context.positionId === undefined
+          ? {}
+          : { positionId: context.positionId }),
+        ...(context.strategyVersion === undefined
+          ? {}
+          : { strategyVersion: context.strategyVersion }),
         quantity: fill.qty,
         openQuantity: fill.qty,
         status: "OPEN",

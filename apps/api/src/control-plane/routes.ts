@@ -10,6 +10,7 @@ import {
 } from "@neelkanth/core";
 import {
   CandlesRepository,
+  TradesRepository,
   OrdersRepository,
   PnlSnapshotsRepository,
   PositionsRepository,
@@ -21,6 +22,7 @@ import {
 } from "@neelkanth/db";
 import type { HistoryProvider } from "@neelkanth/broker";
 import {
+  istMidnight,
   runHistoricalBackfill,
   type BackfillReport,
 } from "../jobs/historical-backfill.js";
@@ -134,6 +136,27 @@ const UpdateSettingsBody = z.object({
 });
 
 /**
+ * A trades query.
+ *
+ * Both bounds or neither: a half-specified range reads as a typo more often
+ * than an intention, and answering it with an unbounded scan of the research
+ * dataset is the wrong guess to make on someone's behalf.
+ */
+const TradesQuery = z.object({
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  strategyId: z.string().min(1).optional(),
+  symbol: z.string().min(1).optional(),
+  limit: z.coerce.number().int().positive().max(1000).optional(),
+});
+
+/**
  * A backfill request (design D6 entry point 3).
  *
  * `maxDaysPerRequest` is required and has no default, exactly as in the CLI.
@@ -244,6 +267,7 @@ export function registerControlPlane(
   const pnlSnapshots = new PnlSnapshotsRepository(deps.db);
   const settings = new SettingsRepository(deps.db);
   const candles = new CandlesRepository(deps.db);
+  const trades = new TradesRepository(deps.db);
   const registry = createStrategyRegistry();
   const { runtime, verifyStepUp } = deps;
 
@@ -512,6 +536,51 @@ export function registerControlPlane(
     );
 
     return serializeBackfillReport(report, body.dryRun ?? false);
+  });
+
+  /**
+   * Completed trades — the outcome primitive research reads (ADR §9.2).
+   *
+   * Read-only and unauthenticated beyond the usual session guard: a trade
+   * is a record of what already happened, so reading one changes nothing.
+   * Contrast `POST /backfill`, which writes and therefore takes step-up.
+   *
+   * A date range reads through `findRange`, which is served by the
+   * `(strategyId, entryTime)` index; without one it falls back to the most
+   * recent trades rather than scanning the whole collection.
+   */
+  app.get("/trades", async (request) => {
+    const query = parse(TradesQuery, request.query);
+    const limit = query.limit ?? LIST_LIMIT;
+
+    if ((query.fromDate === undefined) !== (query.toDate === undefined)) {
+      throw new ValidationError(
+        "fromDate and toDate must be given together, or neither",
+      );
+    }
+
+    if (query.fromDate === undefined || query.toDate === undefined) {
+      return trades.findRecent(limit);
+    }
+
+    // Half-open, IST: `toDate` is inclusive to the operator, so the query
+    // runs to the start of the following day. Consecutive ranges then tile
+    // exactly, with no trade counted twice at a boundary.
+    const fromTs = istMidnight(query.fromDate);
+    const toTs = istMidnight(query.toDate) + 86_400_000;
+    if (toTs <= fromTs) {
+      throw new ValidationError(
+        `range is inverted: ${query.fromDate} is after ${query.toDate}`,
+      );
+    }
+
+    const rows = await trades.findRange(fromTs, toTs, {
+      ...(query.strategyId === undefined
+        ? {}
+        : { strategyId: query.strategyId }),
+      ...(query.symbol === undefined ? {} : { symbol: query.symbol }),
+    });
+    return rows.slice(0, limit);
   });
 
   app.get("/control/status", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ExitReasonSchema } from "./trade.js";
 import {
   ConfidenceSchema,
   EntityIdSchema,
@@ -59,6 +60,33 @@ export type SignalOutcome = z.infer<typeof SignalOutcomeSchema>;
 export const SignalSchema = z.object({
   signalId: EntityIdSchema,
   strategyId: EntityIdSchema,
+  /**
+   * The strategy's version at the moment of the decision (design §5.4 Q4).
+   *
+   * Optional, and absence means a record written before versions existed —
+   * the same reason `source` was defaulted rather than required. A required
+   * field would throw on the first read of anything already in Mongo.
+   *
+   * Copied forward rather than referenced. Each of Signal, Order and Trade
+   * is written at a different moment by a different component, and a trade
+   * whose version had to be looked up through its order would lose it the
+   * moment orders are pruned.
+   */
+  strategyVersion: z.string().min(1).optional(),
+  /**
+   * Why this signal closes a position, when it does (ADR §9.2, D6).
+   *
+   * Typed rather than parsed back out of `reason`. The Exit Engine
+   * already writes `"exit: stop"` there for humans; deriving the enum from
+   * that string would make a log line load-bearing, and the first person
+   * to reword it would silently change what every completed trade claims
+   * about why it ended.
+   *
+   * Absent on an entry signal, and absent is the honest value: a trade
+   * closed by something that never said why must not be given a reason it
+   * did not have.
+   */
+  exitReason: ExitReasonSchema.optional(),
   symbol: SymbolSchema,
   /**
    * What the strategy ANALYSED, when that differs from what it trades.

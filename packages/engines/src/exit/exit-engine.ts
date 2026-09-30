@@ -1,7 +1,23 @@
 import type { Position, Signal } from "@neelkanth/core";
+import type { ExitReason } from "@neelkanth/core";
 import type { EventPayload } from "@neelkanth/contracts";
 import type { RiskHandoff } from "../strategy/ports.js";
 import type { ExitPorts, ExitTrigger } from "./ports.js";
+
+/**
+ * The Exit Engine's triggers, as the Trade's vocabulary (ADR §9.2).
+ *
+ * Only three of the seven exit reasons have a producer today. The other
+ * four — STRATEGY_EXIT, TIME_EXIT, MANUAL_EMERGENCY, BROKER_RECONCILIATION
+ * — are deliberately absent rather than approximated: nothing emits them,
+ * and mapping a square-off onto TIME_EXIT because the names rhyme would
+ * put a claim in the research dataset that no component ever made.
+ */
+const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
+  stop: "STOP_LOSS",
+  target: "TAKE_PROFIT",
+  square_off: "SESSION_CLOSE",
+};
 
 export interface ExitEngineDeps {
   ports: ExitPorts;
@@ -146,6 +162,7 @@ export class ExitEngine {
       confidence: this.exitConfidence,
       qtyProposal: position.qty,
       reason: `exit: ${trigger}`,
+      exitReason: EXIT_REASON[trigger],
       contextSnapshot: {
         price,
         indicators: {},

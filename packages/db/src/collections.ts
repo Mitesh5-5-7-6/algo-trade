@@ -119,6 +119,10 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.trades)
       .createIndex({ status: 1, strategyId: 1, symbol: 1 }),
+    // Restart-durable fill idempotency: find the trade an order's fill
+    // already landed in, without scanning the research dataset.
+    db.collection(COLLECTIONS.trades).createIndex({ entryOrderId: 1 }),
+    db.collection(COLLECTIONS.trades).createIndex({ exitOrderId: 1 }),
 
     // strategy_state — one row per instance; the key IS the identity.
     db

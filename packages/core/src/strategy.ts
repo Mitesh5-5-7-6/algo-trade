@@ -42,6 +42,20 @@ export const StrategyConfigSchema = z.object({
   riskRules: RiskRulesSchema.optional(),
   enabled: z.boolean(),
   status: StrategyStatusSchema,
+  /**
+   * Bumped whenever a change would alter what this strategy decides.
+   *
+   * A later edit must never rewrite what past trades were made by, so the
+   * value is stamped onto each decision rather than joined at read time.
+   * Optional today: every strategy already stored predates it.
+   *
+   * Deliberately NOT derived from `updatedAt`. A timestamp changes when a
+   * name is corrected, which is not a different strategy — and research
+   * comparing versions would then see change where there was none. An
+   * exact-code identity (`strategyRevision`, a commit hash) is a later
+   * addition, not a replacement.
+   */
+  strategyVersion: z.string().min(1).optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 });

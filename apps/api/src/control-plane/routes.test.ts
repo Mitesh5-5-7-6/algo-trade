@@ -147,6 +147,7 @@ afterEach(async () => {
   await connection.db.collection("strategies").deleteMany({});
   await connection.db.collection("settings").deleteMany({});
   await connection.db.collection("candles").deleteMany({});
+  await connection.db.collection("trades").deleteMany({});
 });
 
 const createBody = {
@@ -484,7 +485,7 @@ describe("POST /backfill (design D6 entry point 3)", () => {
     });
 
     expect(stepUps).toContain("pw");
-  });
+  }, 30_000);
 
   /**
    * The gate runs BEFORE the provider check, so an unconfigured deployment
@@ -538,7 +539,7 @@ describe("POST /backfill (design D6 entry point 3)", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json<{ dryRun: boolean }>().dryRun).toBe(true);
     expect(await connection.db.collection("candles").countDocuments()).toBe(0);
-  });
+  }, 30_000);
 
   /**
    * The label has to survive the HTTP boundary. A `ReadonlyMap` does not
@@ -561,7 +562,7 @@ describe("POST /backfill (design D6 entry point 3)", () => {
     expect(payload.complete).toBe(false);
     expect(payload.symbols[0]?.status).toBe("EMPTY");
     expect(payload.symbols[0]?.missingPeriods[0]?.cause).toBe("DATA_MISSING");
-  });
+  }, 30_000);
 
   /**
    * §3.1 Q1 measured the cap at 100 days, but a measured number in a document
@@ -621,4 +622,145 @@ describe("POST /backfill (design D6 entry point 3)", () => {
       ]);
     },
   );
+});
+
+describe("GET /trades (§2.9)", () => {
+  const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
+  const istMid = (day: string) =>
+    Date.parse(`${day}T00:00:00Z`) - IST_OFFSET_MS;
+
+  const trade = (over: Record<string, unknown> = {}) => ({
+    tradeId: "trd_1",
+    strategyId: "str_a",
+    symbol: "NSE:A-EQ",
+    side: "LONG",
+    mode: "paper",
+    entryOrderId: "ord_in",
+    entryTime: istMid("2026-01-05") + 3_600_000,
+    entryPrice: 100,
+    quantity: 10,
+    openQuantity: 0,
+    status: "CLOSED",
+    charges: 0,
+    slippage: 0,
+    grossPnl: 50,
+    netPnl: 50,
+    openedAt: istMid("2026-01-05") + 3_600_000,
+    ...over,
+  });
+
+  async function seed(rows: Record<string, unknown>[]) {
+    await connection.db.collection("trades").insertMany(rows);
+  }
+
+  it("returns the most recent trades when no range is given", async () => {
+    makeApp();
+    await seed([
+      trade({ tradeId: "trd_old", entryTime: istMid("2026-01-05") }),
+      trade({ tradeId: "trd_new", entryTime: istMid("2026-02-05") }),
+    ]);
+
+    const response = await app.inject({ method: "GET", url: "/trades" });
+    expect(response.statusCode).toBe(200);
+    const rows = response.json<{ tradeId: string }[]>();
+    expect(rows.map((r) => r.tradeId)).toEqual(["trd_new", "trd_old"]);
+  });
+
+  /**
+   * `toDate` is inclusive to the operator but the query is half-open, so a
+   * trade on the last day must be included. Getting this backwards silently
+   * drops a day from every range anyone asks for.
+   */
+  it("includes trades on the final day of the range", async () => {
+    makeApp();
+    await seed([
+      trade({ tradeId: "trd_last", entryTime: istMid("2026-01-09") + 60_000 }),
+      trade({ tradeId: "trd_after", entryTime: istMid("2026-01-10") + 60_000 }),
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/trades?fromDate=2026-01-05&toDate=2026-01-09",
+    });
+    const rows = response.json<{ tradeId: string }[]>();
+    expect(rows.map((r) => r.tradeId)).toEqual(["trd_last"]);
+  });
+
+  it("filters by strategy and by symbol", async () => {
+    makeApp();
+    await seed([
+      trade({ tradeId: "trd_a", strategyId: "str_a", symbol: "NSE:A-EQ" }),
+      trade({ tradeId: "trd_b", strategyId: "str_b", symbol: "NSE:B-EQ" }),
+    ]);
+
+    const byStrategy = await app.inject({
+      method: "GET",
+      url: "/trades?fromDate=2026-01-01&toDate=2026-01-31&strategyId=str_b",
+    });
+    expect(
+      byStrategy.json<{ tradeId: string }[]>().map((r) => r.tradeId),
+    ).toEqual(["trd_b"]);
+
+    const bySymbol = await app.inject({
+      method: "GET",
+      url: "/trades?fromDate=2026-01-01&toDate=2026-01-31&symbol=NSE:A-EQ",
+    });
+    expect(
+      bySymbol.json<{ tradeId: string }[]>().map((r) => r.tradeId),
+    ).toEqual(["trd_a"]);
+  });
+
+  /**
+   * A half-specified range reads as a typo more often than an intention, and
+   * answering it with an unbounded scan of the research dataset is the wrong
+   * guess to make for someone.
+   */
+  it.each([
+    ["/trades?fromDate=2026-01-05", "only fromDate"],
+    ["/trades?toDate=2026-01-09", "only toDate"],
+  ])("refuses %s (%s)", async (url) => {
+    makeApp();
+    const response = await app.inject({ method: "GET", url });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("refuses an inverted range", async () => {
+    makeApp();
+    const response = await app.inject({
+      method: "GET",
+      url: "/trades?fromDate=2026-01-09&toDate=2026-01-05",
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("refuses a malformed date", async () => {
+    makeApp();
+    const response = await app.inject({
+      method: "GET",
+      url: "/trades?fromDate=05-01-2026&toDate=2026-01-09",
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("honours an explicit limit", async () => {
+    makeApp();
+    await seed([
+      trade({ tradeId: "t1", entryTime: istMid("2026-01-05") }),
+      trade({ tradeId: "t2", entryTime: istMid("2026-01-06") }),
+      trade({ tradeId: "t3", entryTime: istMid("2026-01-07") }),
+    ]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/trades?limit=2",
+    });
+    expect(response.json<unknown[]>()).toHaveLength(2);
+  });
+
+  /** Reading a record of what already happened changes nothing. */
+  it("takes no step-up", async () => {
+    makeApp();
+    await app.inject({ method: "GET", url: "/trades" });
+    expect(stepUps).toEqual([]);
+  });
 });

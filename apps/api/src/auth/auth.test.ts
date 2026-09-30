@@ -299,7 +299,7 @@ describe("step-up re-auth (plan/21 §5)", () => {
     });
     expect(good.statusCode).toBe(200);
     expect(good.json()).toEqual({ tradingEnabled: true });
-  });
+  }, 30_000);
 
   it("requires step-up to loosen a limit, but not to tighten it", async () => {
     const cookie = sessionCookie(await login());

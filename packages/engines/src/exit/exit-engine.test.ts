@@ -83,6 +83,8 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
     expect(handedOff[0]?.side).toBe("SELL");
     expect(handedOff[0]?.qtyProposal).toBe(10);
     expect(handedOff[0]?.reason).toBe("exit: stop");
+    // Typed, so the Trade records it without parsing the sentence above (D6).
+    expect(handedOff[0]?.exitReason).toBe("STOP_LOSS");
     // Recorded before it was acted on — the audit trail, not a side effect.
     expect(persisted).toHaveLength(1);
   });
@@ -91,6 +93,7 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
     const { engine, handedOff } = harness([position()]);
     await engine.onCandleClosed(bar(111, 99));
     expect(handedOff[0]?.reason).toBe("exit: target");
+    expect(handedOff[0]?.exitReason).toBe("TAKE_PROFIT");
   });
 
   it("closes a SHORT on the mirrored levels", async () => {
@@ -147,6 +150,7 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
     await engine.onSessionTick(squareOff, squareOff);
     expect(handedOff).toHaveLength(1);
     expect(handedOff[0]?.reason).toBe("exit: square_off");
+    expect(handedOff[0]?.exitReason).toBe("SESSION_CLOSE");
     expect(handedOff[0]?.side).toBe("SELL");
   });
 

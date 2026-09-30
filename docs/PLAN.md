@@ -284,6 +284,40 @@ Signal → Order → Fill → Position → Active Trade → Exit → Completed T
 `exitReason`, `grossPnL`, `charges`, `slippage`, `netPnL`, `entryPattern`,
 market context, data provenance.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_2_TRADE_LIFECYCLE.md](design/PHASE_2_TRADE_LIFECYCLE.md), which is the
+detailed design for this phase. Q1–Q4 are settled there; Q5 is open and
+blocks nothing.
+
+| ID  | Task                                                                                     | STATUS | Commit | Evidence |
+| --- | ---------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 2.1 | Port `5dac705`; audit for drift; apply §5.1's two corrections                            | READY  | —      | —        |
+| 2.2 | ~~Answer Q1 and Q2~~ — settled in design §5.1, with Q3 and Q4 in §5.4                    | READY  | —      | —        |
+| 2.3 | `trades` collection + indexes; confirm `trade_logs` stays unused                         | READY  | —      | —        |
+| 2.4 | `TradeEngine` fill idempotency, proven by replaying one event (D5)                       | READY  | —      | —        |
+| 2.5 | Entry ↔ exit linkage: `entryOrderId`, `exitOrderId`, `positionId` populated              | READY  | —      | —        |
+| 2.6 | `exitReason` threaded from whoever closes the position (D6)                              | READY  | —      | —        |
+| 2.7 | Integration: a full round trip produces exactly one CLOSED trade                         | READY  | —      | —        |
+| 2.8 | `strategyVersion` on `StrategyConfig`, `SignalSchema`, `OrderSchema` (Q4) — all optional | READY  | —      | —        |
+| 2.9 | `/trades` read route                                                                     | READY  | —      | —        |
+
+**2.1, 2.3 and 2.4 are implemented and verified in the working tree but not
+committed**, so their rows stay READY: a COMPLETE row must cite a commit that
+resolves, and `scripts/check-plan.mjs` enforces it. They move to COMPLETE with
+the commit that lands them, not before.
+
+**Most of this phase already exists.** `docs/architecture-baseline` carries
+`5dac705` — the Trade schema, repository, engine and their tests — deferred
+during the Phase 0 port because it belongs here. 2.1 is a port and an audit
+rather than new work, which is why it comes first.
+
+**Not in this phase:** a per-strategy square-off opt-out. Q3's rule — an
+overnight position stays one trade — holds without it. What it would unlock is
+positions that actually survive the night, and that is Phase 3 exit-lifecycle
+work (CURRENT_STATE §3.5).
+
 ### Done when
 
 Every completed position produces exactly one complete Trade.

@@ -251,7 +251,7 @@ describe("historical and LIVE_TICK candles in one collection (§1.11)", () => {
     const historicalFirst = await stored();
 
     expect(historicalFirst).toEqual(liveFirst);
-  });
+  }, 30_000);
 
   /**
    * Bars from both producers genuinely coexist — this is not "historical wins

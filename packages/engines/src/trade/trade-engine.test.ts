@@ -21,6 +21,10 @@ function harness(openTrades: Trade[] = []) {
       return Promise.resolve();
     },
     loadOpenTrades: () => Promise.resolve(openTrades),
+    // Restart-durable idempotency (D5). These fixtures are per-test, so
+    // nothing a previous lifetime wrote can be found.
+    findTradeByOrderId: () => Promise.resolve(null),
+    resolvePositionId: () => "pos_1",
   };
   const errors: unknown[] = [];
   const engine = new TradeEngine({
@@ -274,6 +278,8 @@ describe("TradeEngine — failures stay contained", () => {
       ports: {
         saveTrade: () => Promise.reject(new Error("mongo down")),
         loadOpenTrades: () => Promise.resolve([]),
+        findTradeByOrderId: () => Promise.resolve(null),
+        resolvePositionId: () => null,
       },
       nextTradeId: () => "trd_1",
       onError: (error) => errors.push(error),

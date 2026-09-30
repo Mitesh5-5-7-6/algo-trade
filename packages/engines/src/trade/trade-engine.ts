@@ -19,9 +19,11 @@ export interface TradeEngineDeps {
  * the position says what is held *now*; the trade says what one decision
  * *earned*, which is the only thing research can label an outcome with.
  *
- * Idempotent on `orderId`. The event bus does not await its handlers and a
- * broker can repeat an update, so a redelivered fill must change nothing. This
- * is the same guard the Position Engine keeps, for the same reason.
+ * Idempotent on `orderId`, in memory AND across a restart. The event bus
+ * does not await its handlers and a broker can repeat an update, so a
+ * redelivered fill must change nothing — including one that arrives after the
+ * process came back, when the in-memory guard is empty and a repeated CLOSING
+ * fill would otherwise look like a fresh opening fill on the other side.
  *
  * Never throws into the bus: a failure here must not stop the position
  * projection or the PnL that follows it. Losing a trade record is bad; losing
@@ -57,6 +59,12 @@ export class TradeEngine {
     try {
       for (const trade of await this.ports.loadOpenTrades()) {
         this.open.set(TradeEngine.key(trade.strategyId, trade.symbol), trade);
+        // Pre-seed the guard. Not needed for correctness — the durable
+        // lookup below would catch a redelivery anyway — but it saves that
+        // read, and redeliveries cluster right after a restart.
+        this.applied.add(trade.entryOrderId);
+        if (trade.exitOrderId !== undefined)
+          this.applied.add(trade.exitOrderId);
       }
     } catch (error) {
       this.onError(error, { where: "hydrate" });
@@ -71,6 +79,12 @@ export class TradeEngine {
   async onOrderFilled(payload: EventPayload<"ORDER_FILLED">): Promise<void> {
     try {
       if (this.applied.has(payload.orderId)) return;
+      // Memory does not know it — but a previous lifetime might have. One
+      // indexed read, and only for a fill this process has not seen.
+      if ((await this.ports.findTradeByOrderId(payload.orderId)) !== null) {
+        this.applied.add(payload.orderId);
+        return;
+      }
       this.applied.add(payload.orderId);
 
       const key = TradeEngine.key(payload.strategyId, payload.symbol);
@@ -84,18 +98,32 @@ export class TradeEngine {
         // why execution quality has never been measurable (CURRENT_STATE §3.5).
         slippage: payload.slippage,
         filledAt: payload.filledAt,
+        // Recorded, never inferred (D6). Absent when whoever closed the
+        // position did not say why — which is a fact about the close, not a
+        // gap to fill with a plausible guess.
+        ...(payload.exitReason === undefined
+          ? {}
+          : { exitReason: payload.exitReason }),
       };
 
       // A reversal produces a remainder that opens a new trade; the loop is
       // bounded because each pass strictly reduces the outstanding quantity.
       while (fill !== null) {
         const current = this.open.get(key) ?? null;
+        const positionId = this.ports.resolvePositionId(
+          payload.strategyId,
+          payload.symbol,
+        );
         const result = applyTradeFill(current, fill, {
           tradeId:
             current?.status === "OPEN" ? current.tradeId : this.nextTradeId(),
           strategyId: payload.strategyId,
           symbol: payload.symbol,
           mode: payload.mode,
+          ...(positionId === null ? {} : { positionId }),
+          ...(payload.strategyVersion === undefined
+            ? {}
+            : { strategyVersion: payload.strategyVersion }),
         });
 
         if (result.trade.status === "CLOSED") {

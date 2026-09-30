@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ExitReasonSchema,
   CandleSchema,
   ContextSnapshotSchema,
   EntityIdSchema,
@@ -144,6 +145,18 @@ export const EVENT_PAYLOAD_SCHEMAS = {
      */
     stopLoss: PriceSchema.optional(),
     takeProfit: PriceSchema.optional(),
+    /** The strategy version that produced this decision (Q4). */
+    strategyVersion: z.string().min(1).optional(),
+    /**
+     * Why this fill closes a position, when it does (D6).
+     *
+     * On the fill rather than left to a join, for the same reason the
+     * protective levels are: the Trade Engine is the only consumer that needs
+     * it, it reads this event and nothing else, and a stop and a session
+     * square-off at the same price are the same number and entirely different
+     * events.
+     */
+    exitReason: ExitReasonSchema.optional(),
     filledAt: TimestampSchema,
     mode: TradeModeSchema,
     ts: TimestampSchema,
