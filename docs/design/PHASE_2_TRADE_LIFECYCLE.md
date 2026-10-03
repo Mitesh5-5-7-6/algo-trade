@@ -366,6 +366,29 @@ is copied forward, never referenced.
 > and trade already in Mongo predates it, and a required field throws on the
 > first read after deploy.
 
+#### Q4 addendum — where a config's version comes from (task 2.8)
+
+Q4 decided who stamps the version and that it is never rewritten. It did not
+say where the config's version comes from, and in practice nothing set one:
+neither `POST` nor `PATCH /strategies` accepts it, so every decision went out
+unversioned — against PLAN.md rule 9, "every strategy is versioned".
+
+`strategyVersionOf` (`packages/core/src/strategy-version.ts`) settles it:
+
+| Case                      | Version                                                         |
+| ------------------------- | --------------------------------------------------------------- |
+| Operator declared one     | That value, unchanged                                           |
+| None declared             | `cfg-<hash>` of the rule that decides: type, params, risk rules |
+| Rename, symbols, enabling | No change — not a different rule                                |
+
+The `cfg-` label keeps a derived version from being mistaken for a declared
+one. The runner stamps it at enable, so every stored strategy is versioned from
+its next enable without a migration; records written before keep their absent
+version, which is the honest value for them.
+
+**When Phase 3 lands per-strategy exit rules, they belong in the hash** — a
+time exit or a trailing stop changes what the strategy decides.
+
 ### 5.5 The lifecycle these decisions define
 
 ```text
@@ -403,7 +426,7 @@ Recorded in 2.1, whose scope was the port, and decided as each task closed.
 | L1  | **A redelivered add or earlier exit leg was applied twice after a restart.** The durable lookup matched only `entryOrderId` and the latest `exitOrderId`. An earlier exit leg of a CLOSED trade was worse than a double count: it found nothing and opened a phantom on the other side.                                                       | **Fixed in 2.4.** The Trade records every order folded into it (`orderIds`), matched through a multikey index; entry and exit are still matched for trades stored before the field. Idempotency keys only — no per-leg price or quantity, which §5.1 declines to model.                                                                                                                                                                                                                                              |
 | L2  | **Memory moves before Mongo.** The engine updates its open trade before `saveTrade` resolves.                                                                                                                                                                                                                                                 | **Deliberate, kept.** Every save writes the whole trade, so a failed save is healed by the next save of the same trade; advancing memory only after the write would turn a lost entry save into a phantom on the closing fill (pinned by a test, mutation-checked). **Residual:** a restart before the healing save loses the unsaved effect, and a reversal is two documents written separately. Closing that needs both in one transaction or an outbox — ADR §11.1 names completed trades as an outbox candidate. |
 | L3  | **`exitPrice` assumes no add after a partial exit.** It derives "already exited" from the peak `quantity`, which stops being "total entered" once a reduced position is added to.                                                                                                                                                             | **Deferred to Phase 3.** Nothing produces partial exits until Phase 3 decides scale-out (its D1/Q1), which is where the arithmetic needs an exited quantity it can trust.                                                                                                                                                                                                                                                                                                                                            |
-| L4  | **`entrySignalId` / `exitSignalId` were never populated**, because `ORDER_FILLED` carried no `signalId`.                                                                                                                                                                                                                                      | Taken up in 2.5.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| L4  | **`entrySignalId` / `exitSignalId` were never populated**, because `ORDER_FILLED` carried no `signalId`.                                                                                                                                                                                                                                      | **Fixed in 2.5.** `ORDER_FILLED` carries the order's `signalId`, set by the helper every fill path shares, and the Trade records it as entry or exit signal.                                                                                                                                                                                                                                                                                                                                                         |
 | L5  | **Found by 2.7: fills applied out of order.** The bus does not await handlers; the runtime reached the Trade Engine in the order position writes returned, and the engine applied in the order its durable lookups returned. A BUY-then-SELL round trip was recorded as a SHORT, and one fill delivered twice at once passed the guard twice. | **Fixed in 2.7**, at both layers, each shown necessary: the Trade Engine applies fills one at a time in call order, and the runtime projects each fill — position, trade, runner — before starting the next.                                                                                                                                                                                                                                                                                                         |
 
 **D5's key, as built.** D5 names `(orderId, filledAt)`; the engine keys on

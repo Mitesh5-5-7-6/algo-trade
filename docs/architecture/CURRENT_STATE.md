@@ -1,7 +1,7 @@
 # Current State — Neelkanth Trader
 
 **Status:** Audit baseline — Phase 0 durability work applied
-**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23
+**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23. **Phase 2 entries** — the Trade entity and entry ↔ exit linkage (§1, §2, §3.4, §3.5) — re-audited at `09e6e89`, 2026-10-03; every other entry still stands at `9c1a9bc`
 **Execution order:** [PLAN.md](../PLAN.md) — this document says what exists, never what to build next
 **Governed by:** [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md)
 
@@ -33,8 +33,8 @@ Every claim here is verified against the **working branch** at the time of writi
 | Historical 5m ingestion                 | `PARTIALLY EXISTS` |
 | Date-range candle query                 | `EXISTS` ✅        |
 | Candle provenance                       | `EXISTS` ✅        |
-| Completed Trade entity                  | `MISSING`          |
-| Entry ↔ exit linkage                    | `MISSING`          |
+| Completed Trade entity                  | `EXISTS` ✅        |
+| Entry ↔ exit linkage                    | `EXISTS` ✅        |
 | Exit lifecycle completeness             | `PARTIALLY EXISTS` |
 | Session flush / `pollSession`           | `EXISTS` ✅        |
 | Flush depends on a correct holiday list | `MISSING` guard    |
@@ -73,7 +73,7 @@ Entries are trading-platform defects as well as research dependencies; both are 
 | Order manager                      | `EXISTS`           | Unique `signalId` index as the duplicate-execution backstop          |
 | Position engine                    | `EXISTS`           | Fill projection, idempotent, reversal-aware                          |
 | Exit engine                        | `PARTIALLY EXISTS` | Three triggers                                                       |
-| Trade entity                       | `MISSING`          | —                                                                    |
+| Trade entity                       | `EXISTS`           | One trade per position lifecycle; restart-idempotent; costs separate |
 | PnL                                | `PARTIALLY EXISTS` | Global scope works; per-strategy is empty                            |
 | Broker abstraction                 | `EXISTS`           | One contract, three implementations                                  |
 | Event bus                          | `EXISTS`           | In-process by default; Redis path present but unused                 |
@@ -87,7 +87,7 @@ Entries are trading-platform defects as well as research dependencies; both are 
 
 These five gaps are strictly sequential. Nothing in the R&D specification can begin before the first is closed.
 
-**Progress:** §3.2 and §3.3 are closed — the storage and provenance foundation, which depends on nothing the broker has to tell us. §3.1 is now partially closed: the fetch path and its validation exist and are tested offline. What remains is the backfill job, and it is blocked on the vendor questions in [../design/PHASE_1_HISTORICAL_DATA.md §10.1](../design/PHASE_1_HISTORICAL_DATA.md) — specifically Q1, the page size — not on engineering.
+**Progress:** §3.4 and §3.5 are closed by Phase 2 — the Trade and its linkage. §3.2 and §3.3 are closed — the storage and provenance foundation, which depends on nothing the broker has to tell us. §3.1 is now partially closed: the fetch path and its validation exist and are tested offline. What remains is the backfill job, and it is blocked on the vendor questions in [../design/PHASE_1_HISTORICAL_DATA.md §10.1](../design/PHASE_1_HISTORICAL_DATA.md) — specifically Q1, the page size — not on engineering.
 
 ### 3.1 Historical 5-minute ingestion
 
@@ -111,23 +111,20 @@ These five gaps are strictly sequential. Nothing in the R&D specification can be
 - **Precedence:** `CANDLE_SOURCE_RANK` plus a conditional upsert means a write can never demote the stored bar — the broker's record overwrites ours, ours never overwrites the broker's ([candles-repository.ts](../../packages/db/src/candles-repository.ts)). Legacy bars carry no `sourceRank`, and in Mongo a missing field does not match `$lte`, so absence is treated as `LIVE_TICK` rather than falling through to an insert the unique index would refuse.
 - **Status:** `EXISTS`. Design D2 and D3.
 
-### 3.4 Completed Trade entity
+### 3.4 Completed Trade entity — CLOSED
 
-- **Current state:** `MISSING`.
-- **Evidence:** `trade_logs` is declared in the collection registry, given three indexes and a 90-day TTL ([packages/db/src/collections.ts](../../packages/db/src/collections.ts)), and is **never read or written**. There is no `Trade` schema, no `TradeLogsRepository`, no insert site and no `/trades` route. A repository-wide search for `tradeLogs` returns only `collections.ts`.
-- **Why it matters:** This is the canonical outcome primitive named in [ARCHITECTURE_DECISION.md §9.2](ARCHITECTURE_DECISION.md). Without it, research has no labels: a signal is not an outcome and an entry is not an outcome. It is also why the platform cannot currently answer what any individual decision earned.
-- **Dependencies:** Needs 3.5 to be meaningful.
-- **Planned phase:** 2.
-- **Out of scope for the documentation task.**
+- **Original state:** `MISSING`. `trade_logs` was declared with three indexes and a 90-day TTL and never read or written; there was no Trade schema, repository, insert site or `/trades` route.
+- **Fix:** `TradeSchema` and `applyTradeFill` ([packages/core/src/trade.ts](../../packages/core/src/trade.ts)), persisted to the untimed `trades` collection by [packages/db/src/trades-repository.ts](../../packages/db/src/trades-repository.ts), projected from `ORDER_FILLED` by the Trade Engine ([packages/engines/src/trade/trade-engine.ts](../../packages/engines/src/trade/trade-engine.ts)) beside the Position Engine, and read through `GET /trades`. A trade opens on the entry FILL, never the signal; a reversal is two trades with the order's cost split by quantity; a partial exit is one trade with a weighted exit price; `grossPnl`, `charges`, `slippage` and `netPnl` are stored side by side.
+- **Idempotent across a restart:** every order folded into a trade is recorded (`orderIds`), so a redelivered fill — any leg — is recognised after the in-memory guard is gone. Fills are applied one at a time in the order published; the first end-to-end test found them applied in the order their writes returned, which recorded a round trip backwards.
+- **`trade_logs` stays unused**, enforced by a test rather than a grep.
+- **Status:** `EXISTS`. Phase 2 — [../design/PHASE_2_TRADE_LIFECYCLE.md](../design/PHASE_2_TRADE_LIFECYCLE.md); its §5.7 records the limits still standing, notably that a reversal's two documents are not written atomically.
 
-### 3.5 Entry ↔ exit linkage
+### 3.5 Entry ↔ exit linkage — CLOSED
 
-- **Current state:** `MISSING`.
-- **Evidence:** The persisted `Position` ([packages/core/src/position.ts](../../packages/core/src/position.ts)) carries no `entryOrderId`, `exitOrderId`, `exitReason`, `charges` or `slippage`. `Order` ([packages/core/src/order.ts](../../packages/core/src/order.ts)) carries `signalId` but no `positionId` — so the order/position edge exists in neither direction. `ORDER_FILLED` carries `slippage`, and the position engine consumes only `charges`, folding them irreversibly into `realizedPnl`; `slippage` is discarded.
-- **Why it matters:** Reconstructing "what did this trade make, and why did it end?" currently requires joining positions to orders with no foreign key and inferring the closing fill from `closedAt`. The links the research chain depends on — `Pattern → Signal → Order → Trade → Outcome` — are inferences, not references.
-- **Dependencies:** Prerequisite for 3.4.
-- **Planned phase:** 2.
-- **Out of scope for the documentation task.**
+- **Original state:** `MISSING`. The Position carried no order ids and the Order no `positionId`; "what did this trade make, and why did it end?" was a join with no foreign key, inferred from `closedAt`, and `slippage` was discarded.
+- **Fix:** the Trade names both orders, both signals and the position (`entryOrderId`, `exitOrderId`, `entrySignalId`, `exitSignalId`, `positionId`), so `Signal → Order → Trade → Position` is navigable from the trade. `exitReason` is recorded from whoever closed the position — never inferred — and `strategyVersion`, the entry bar's provenance and its volume quality are copied forward Signal → Order → `ORDER_FILLED` → Trade. Every strategy is versioned: declared, or derived from the rule that decides.
+- **Remaining gap:** the Order still has no `positionId`, so the order → position edge exists only through the trade. The Exit Engine's durable in-flight check needs it; that is Phase 3 (D3).
+- **Status:** `EXISTS`.
 
 ---
 
