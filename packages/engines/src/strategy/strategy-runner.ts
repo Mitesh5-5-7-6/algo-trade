@@ -6,6 +6,7 @@ import type {
   StrategyConfig,
   StrategyVerdict,
 } from "@neelkanth/core";
+import { strategyVersionOf } from "@neelkanth/core";
 import { indicatorKey } from "@neelkanth/indicators";
 import type {
   RunnableStrategy,
@@ -142,9 +143,9 @@ export class StrategyRunner {
       );
       const instance: Instance = {
         strategyId: config.strategyId,
-        ...(config.strategyVersion === undefined
-          ? {}
-          : { strategyVersion: config.strategyVersion }),
+        // Declared, or derived from the rule that decides — never absent
+        // (§2.8, PLAN rule 9). Captured here, at enable time.
+        strategyVersion: strategyVersionOf(config),
         symbol,
         interval: strategy.interval,
         strategy,

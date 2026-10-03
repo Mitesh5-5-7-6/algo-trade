@@ -10,6 +10,7 @@ import type {
   StrategyConfig,
   StrategyVerdict,
 } from "@neelkanth/core";
+import { strategyVersionOf } from "@neelkanth/core";
 import type { EventName } from "@neelkanth/contracts";
 import {
   StrategyRegistry,
@@ -432,16 +433,36 @@ describe("strategyVersion travels with the decision (§2.8, Q4)", () => {
   });
 
   /**
-   * Absent stays absent. Every strategy already stored predates the field, and
-   * inventing a version for them would put a claim in the research dataset
-   * that nothing ever made.
+   * Derived, not left absent (PLAN.md rule 9: every strategy is versioned).
+   *
+   * This test used to assert "absent stays absent", on the ground that a
+   * version nothing declared would be a claim nothing made. But no route ever
+   * declares one, so that rule left EVERY decision unversioned. The derived
+   * version is computed from the rule actually running — it claims only what
+   * the config says — and is labelled `cfg-` so it is never mistaken for a
+   * declared one.
    */
-  it("leaves it absent when the config has none", async () => {
+  it("derives one from the config when none is declared", async () => {
     const h = harness();
-    await h.runner.enable(config("ALWAYS_BUY"));
+    const enabled = config("ALWAYS_BUY");
+    await h.runner.enable(enabled);
     await fireBar(h, 150);
 
-    expect(h.handoffs[0]?.strategyVersion).toBeUndefined();
+    expect(h.handoffs[0]?.strategyVersion).toBe(strategyVersionOf(enabled));
+    expect(h.handoffs[0]?.strategyVersion).toMatch(/^cfg-/);
+  });
+
+  /** An edit that changes how it decides is a new version from then on. */
+  it("stamps a new version once a params edit is re-enabled", async () => {
+    const h = harness();
+    const before = config("ALWAYS_BUY");
+    await h.runner.enable(before);
+    h.runner.disable(before.strategyId);
+    await h.runner.enable({ ...before, params: { edited: true } });
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toMatch(/^cfg-/);
+    expect(h.handoffs[0]?.strategyVersion).not.toBe(strategyVersionOf(before));
   });
 
   /**

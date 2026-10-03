@@ -16,3 +16,4 @@ export * from "./instrument.js";
 export * from "./market-view.js";
 export * from "./derivative.js";
 export * from "./option-chain.js";
+export * from "./strategy-version.js";
