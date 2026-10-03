@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { createLogger } from "@neelkanth/logger";
 import { ScriptedFakeBroker } from "@neelkanth/broker";
 import {
@@ -137,9 +145,22 @@ async function roundTrip(
     filledAt: 2,
     ts: 2,
   });
-  // The fill → position → PnL → ledger chain crosses the bus, so it settles a
-  // tick or two after publish returns.
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // The fill → position → PnL → ledger chain crosses the bus and Mongo, so
+  // wait for its OUTCOME rather than a fixed time. Fills are projected one at
+  // a time since §2.7, each waiting on the last one's writes; against hosted
+  // Mongo a fixed 300ms ended before the exit fill was processed, and the
+  // test read a realized P&L of zero.
+  const realized = (exit - entry) * qty;
+  await vi.waitFor(
+    async () => {
+      expect(runtime.realizedPnl()).toBeCloseTo(realized, 4);
+      const raw = await redis?.client.get(
+        riskDailyLossKey(istDateKey(Date.now())),
+      );
+      expect(Number(raw)).toBeCloseTo(realized, 4);
+    },
+    { timeout: 20_000, interval: 50 },
+  );
 }
 
 beforeAll(async () => {
@@ -393,7 +414,11 @@ describe("the runtime records exactly one trade per round trip (§2.7)", () => {
           mode: "paper",
           ts: 2,
         });
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        // A fixed wait, unlike `roundTrip`: the expected outcome is that
+        // NOTHING changes, which no condition can wait for. Long enough for
+        // one fill's writes against hosted Mongo, so the assertion below
+        // cannot pass merely because the redelivery was not processed yet.
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
       } finally {
         await second.shutdown();
       }
