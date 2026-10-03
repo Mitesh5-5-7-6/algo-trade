@@ -642,3 +642,76 @@ describe("a fill names its signal (§2.5)", () => {
     expect(h.events[1]?.payload).toMatchObject({ signalId: "sig_42" });
   });
 });
+
+/**
+ * Tasks 2.6 and 2.8: the middle link of two chains the Trade depends on.
+ *
+ * The Exit Engine stamps `exitReason` and the Strategy Runner stamps
+ * `strategyVersion` on the signal; the Trade Engine reads them off the fill.
+ * Between the two sits this class — persist on the order, forward on every
+ * fill — and a fill published from the STORED order (the live path) is only as
+ * good as what was persisted.
+ */
+describe("exit reason and strategy version travel with the order (§2.6, §2.8)", () => {
+  it("persists both on the order and forwards both on a synchronous fill", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ side: "SELL", exitReason: "STOP_LOSS", strategyVersion: "v7" }),
+      approved,
+    );
+
+    expect(h.orders.get("ord_1")).toMatchObject({
+      exitReason: "STOP_LOSS",
+      strategyVersion: "v7",
+    });
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).toMatchObject({
+      exitReason: "STOP_LOSS",
+      strategyVersion: "v7",
+    });
+  });
+
+  it("forwards both on a fill that arrives later on the broker stream", async () => {
+    const broker = new ScriptedFakeBroker({ pendingByDefault: true });
+    const h = harness({ broker, mode: "live" });
+    broker.onOrderUpdate((u) => {
+      void h.manager.onBrokerUpdate(u);
+    });
+    await h.manager.place(
+      signal({
+        side: "SELL",
+        exitReason: "SESSION_CLOSE",
+        strategyVersion: "v7",
+      }),
+      approved,
+    );
+    broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 99,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.events).toHaveLength(2);
+    });
+
+    expect(h.events[1]?.payload).toMatchObject({
+      exitReason: "SESSION_CLOSE",
+      strategyVersion: "v7",
+    });
+  });
+
+  /** An entry carries no reason, and must not acquire one on the way. */
+  it("leaves exitReason absent on an entry", async () => {
+    const h = harness();
+    await h.manager.place(signal(), approved);
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).not.toHaveProperty("exitReason");
+  });
+});
