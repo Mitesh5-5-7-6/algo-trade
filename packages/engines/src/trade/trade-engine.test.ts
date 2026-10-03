@@ -454,3 +454,80 @@ describe("TradeEngine — a failed save is healed by the next one (§2.4, L2)", 
     });
   });
 });
+
+/**
+ * Task 2.7 found this through the real runtime: fills applied out of order.
+ *
+ * The bus does not await its handlers, so two fills can be in flight at once.
+ * The engine awaits a durable lookup BEFORE applying a fill, so whichever
+ * lookup returned first applied first — a BUY then SELL round trip was
+ * recorded as a SHORT entered on the SELL. And the same fill delivered twice
+ * concurrently passed the in-memory guard twice. Fills are therefore applied
+ * one at a time, in the order delivered.
+ */
+describe("TradeEngine — fills apply in the order delivered (§2.7)", () => {
+  /** A lookup that answers slowly for one order, at once for the rest. */
+  function slowFor(slowOrderId: string) {
+    const saved: Trade[] = [];
+    const engine = new TradeEngine({
+      ports: {
+        saveTrade: (trade) => {
+          saved.push(trade);
+          return Promise.resolve();
+        },
+        loadOpenTrades: () => Promise.resolve([]),
+        findTradeByOrderId: (orderId) =>
+          new Promise((resolve) => {
+            setTimeout(
+              () => {
+                resolve(null);
+              },
+              orderId === slowOrderId ? 30 : 0,
+            );
+          }),
+        resolvePositionId: () => "pos_1",
+      },
+      nextTradeId: () => `trd_${String(saved.length + 1)}`,
+      onError: () => undefined,
+    });
+    const latest = (tradeId: string) =>
+      saved.filter((t) => t.tradeId === tradeId).at(-1);
+    return { engine, saved, latest };
+  }
+
+  it("does not let a fast exit overtake a slow entry", async () => {
+    const h = slowFor("ord_1");
+    await Promise.all([
+      h.engine.onOrderFilled(fill()),
+      h.engine.onOrderFilled(
+        fill({
+          orderId: "ord_2",
+          side: "SELL",
+          filledPrice: 110,
+          filledAt: 2_000,
+        }),
+      ),
+    ]);
+
+    expect(h.latest("trd_1")).toMatchObject({
+      side: "LONG",
+      status: "CLOSED",
+      entryOrderId: "ord_1",
+      exitOrderId: "ord_2",
+      grossPnl: 100,
+    });
+  });
+
+  it("applies a fill delivered twice at once only once", async () => {
+    const h = slowFor("ord_1");
+    await Promise.all([
+      h.engine.onOrderFilled(fill()),
+      h.engine.onOrderFilled(fill()),
+    ]);
+
+    expect(h.engine.getOpen("str_1", "NSE:X-EQ")).toMatchObject({
+      quantity: 10,
+      openQuantity: 10,
+    });
+  });
+});

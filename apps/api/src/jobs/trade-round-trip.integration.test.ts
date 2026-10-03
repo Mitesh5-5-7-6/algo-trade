@@ -2,10 +2,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   connectMongo,
   ensureIndexes,
+  OrdersRepository,
+  PositionsRepository,
   TradesRepository,
   type MongoConnection,
 } from "@neelkanth/db";
-import { TradeEngine } from "@neelkanth/engines";
+import { OrderManager, PositionEngine, TradeEngine } from "@neelkanth/engines";
+import { ScriptedFakeBroker } from "@neelkanth/broker";
+import type { Signal } from "@neelkanth/core";
 import type { EventPayload } from "@neelkanth/contracts";
 import { STRICT } from "../test-support/infra.js";
 
@@ -48,7 +52,7 @@ beforeAll(async () => {
         `trade round trip: MongoDB unreachable and REQUIRE_INTEGRATION=1 — ${reason}`,
       );
     process.stderr.write(
-      `\n  SKIPPING trade round-trip integration (7 tests)\n` +
+      `\n  SKIPPING trade round-trip integration (8 tests)\n` +
         `  reason: ${reason}\n  NOTE:   skipped is not passed.\n\n`,
     );
   }
@@ -59,8 +63,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  if (connection !== undefined)
-    await connection.db.collection("trades").deleteMany({});
+  if (connection === undefined) return;
+  for (const name of ["trades", "orders", "positions"])
+    await connection.db.collection(name).deleteMany({});
 });
 
 /** A Trade Engine over the real repository, as the runtime wires it. */
@@ -281,5 +286,203 @@ describe("a completed position produces exactly one complete Trade (§2.7)", () 
     expect(opened?.quantity).toBe(30);
     // 62.5% / 37.5% of one order's cost, summing to what was charged.
     expect((closed?.charges ?? 0) + (opened?.charges ?? 0)).toBeCloseTo(100, 6);
+  });
+});
+
+/**
+ * Task 2.7, from the SIGNAL rather than the fill (design §7).
+ *
+ * The suite above starts at `ORDER_FILLED`, so it cannot see whether the
+ * fields the Trade needs survive the road that produces the fill: signal →
+ * order persisted in Mongo → broker → fill published from the order →
+ * Position Engine → Trade Engine. Each component here is the real one, over
+ * the real repositories, delivering fills in the runtime's order — position
+ * first, so the trade can name the position the same fill just built.
+ *
+ * The entry signal is shaped as the Strategy Runner emits it; the exit as the
+ * Exit Engine does on a stop. Each of those stamps is unit-tested at its
+ * source; what is under test here is everything in between.
+ */
+describe("a round trip from the signal produces exactly one complete Trade (§2.7)", () => {
+  it("records one CLOSED trade carrying everything the decision stamped", async (ctx) => {
+    if (!reachable || connection === undefined) return ctx.skip();
+    const db = connection.db;
+    const ordersRepo = new OrdersRepository(db);
+    const positionsRepo = new PositionsRepository(db);
+    const tradesRepo = new TradesRepository(db);
+    const errors: Record<string, unknown>[] = [];
+    const onError = (_error: unknown, context: Record<string, unknown>) => {
+      errors.push(context);
+    };
+
+    const positions = new PositionEngine({
+      ports: {
+        writePosition: (position) => positionsRepo.upsert(position),
+        publish: () => Promise.resolve(),
+      },
+      nextPositionId: () => "pos_signal",
+      now: () => 1_000,
+      onError,
+    });
+    const tradePorts = {
+      saveTrade: (trade: Parameters<TradesRepository["save"]>[0]) =>
+        tradesRepo.save(trade),
+      loadOpenTrades: () => tradesRepo.findAllOpen(),
+      findTradeByOrderId: (orderId: string) =>
+        tradesRepo.findByOrderId(orderId),
+      resolvePositionId: (strategyId: string, symbol: string) =>
+        positions.getPosition(strategyId, symbol)?.positionId ?? null,
+    };
+    const trades = new TradeEngine({
+      ports: tradePorts,
+      nextTradeId: () => "trd_signal",
+      onError,
+    });
+
+    const fills: EventPayload<"ORDER_FILLED">[] = [];
+    const broker = new ScriptedFakeBroker();
+    broker.scriptExecution("ord_1", {
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 100,
+        filledQty: 10,
+        slippage: 0.5,
+        charges: 12,
+        filledAt: 1_000,
+      },
+    });
+    broker.scriptExecution("ord_2", {
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_2",
+        filledPrice: 95,
+        filledQty: 10,
+        slippage: 0.25,
+        charges: 11,
+        filledAt: 2_000,
+      },
+    });
+    let orderSeq = 0;
+    const manager = new OrderManager({
+      broker,
+      ports: {
+        readTradingEnabled: () => Promise.resolve(true),
+        persistOrder: (order) => ordersRepo.insert(order),
+        updateOrder: (orderId, patch) => ordersRepo.update(orderId, patch),
+        readOrder: (orderId) => ordersRepo.findByOrderId(orderId),
+        publish: async (name, payload) => {
+          if (name !== "ORDER_FILLED") return;
+          const fill = payload as EventPayload<"ORDER_FILLED">;
+          fills.push(fill);
+          await positions.onOrderFilled(fill); // position first, as the runtime does
+          await trades.onOrderFilled(fill);
+        },
+      },
+      mode: "paper",
+      nextOrderId: () => {
+        orderSeq += 1;
+        return `ord_${String(orderSeq)}`;
+      },
+      now: () => 1_000,
+      onError,
+    });
+
+    const context = (price: number) => ({
+      price,
+      indicators: {},
+      session: "open" as const,
+      sentiment: 0,
+    });
+    const entry: Signal = {
+      signalId: "sig_entry",
+      strategyId: STRATEGY,
+      strategyVersion: "v3",
+      symbol: SYMBOL,
+      side: "BUY",
+      confidence: 0.9,
+      qtyProposal: 10,
+      stopLoss: 96,
+      reason: "breakout",
+      contextSnapshot: context(100),
+      dataProvenance: {
+        symbol: SYMBOL,
+        interval: "5m",
+        barTs: 900,
+        source: "LIVE_TICK",
+      },
+      marketContext: { volumeQuality: "REAL" },
+      ts: 1_000,
+    };
+    const stop: Signal = {
+      signalId: "sig_exit",
+      strategyId: STRATEGY,
+      symbol: SYMBOL,
+      side: "SELL",
+      confidence: 1,
+      qtyProposal: 10,
+      reason: "exit: stop",
+      exitReason: "STOP_LOSS",
+      contextSnapshot: context(95),
+      ts: 2_000,
+    };
+
+    expect((await manager.place(entry, { decision: "approved" })).status).toBe(
+      "filled",
+    );
+    expect((await manager.place(stop, { decision: "approved" })).status).toBe(
+      "filled",
+    );
+
+    expect(errors).toEqual([]);
+    const stored = await tradesRepo.findRecent(10);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({
+      tradeId: "trd_signal",
+      status: "CLOSED",
+      side: "LONG",
+      strategyVersion: "v3",
+      // Linkage, both ways round the decision (2.5).
+      entryOrderId: "ord_1",
+      exitOrderId: "ord_2",
+      entrySignalId: "sig_entry",
+      exitSignalId: "sig_exit",
+      positionId: "pos_signal",
+      orderIds: ["ord_1", "ord_2"],
+      // The outcome, checkable by hand.
+      entryPrice: 100,
+      exitPrice: 95,
+      quantity: 10,
+      openQuantity: 0,
+      exitReason: "STOP_LOSS",
+      grossPnl: -50, // (95 − 100) × 10
+      charges: 23, // 12 + 11, beside the result rather than folded in
+      slippage: 0.75,
+      netPnl: -73,
+      // What the entry stood on (2.1).
+      dataProvenance: entry.dataProvenance,
+      marketContext: { volumeQuality: "REAL" },
+    });
+    // The trade's positionId resolves to a real stored position.
+    expect(
+      await db
+        .collection("positions")
+        .countDocuments({ positionId: "pos_signal" }),
+    ).toBe(1);
+
+    // Replaying every fill changes nothing — in this process, and in a new one
+    // hydrated from Mongo, where the in-memory guard is empty (design §7).
+    const before = await tradesRepo.findRecent(10);
+    for (const fill of fills) await trades.onOrderFilled(fill);
+    const restarted = new TradeEngine({
+      ports: tradePorts,
+      nextTradeId: () => "trd_phantom",
+      onError,
+    });
+    await restarted.hydrate();
+    for (const fill of fills) await restarted.onOrderFilled(fill);
+
+    expect(errors).toEqual([]);
+    expect(await tradesRepo.findRecent(10)).toEqual(before);
   });
 });

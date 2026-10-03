@@ -37,6 +37,8 @@ export class TradeEngine {
   private readonly open = new Map<string, Trade>();
   /** Fills already folded in, so a redelivery is a no-op. */
   private readonly applied = new Set<string>();
+  /** The last fill queued; the next one starts only when it has finished. */
+  private tail: Promise<void> = Promise.resolve();
 
   constructor(deps: TradeEngineDeps) {
     this.ports = deps.ports;
@@ -79,7 +81,23 @@ export class TradeEngine {
     return this.open.get(TradeEngine.key(strategyId, symbol)) ?? null;
   }
 
-  async onOrderFilled(payload: EventPayload<"ORDER_FILLED">): Promise<void> {
+  /**
+   * Fold one fill in — one at a time, in the order delivered (§2.7).
+   *
+   * The bus does not await its handlers, so fills can arrive while an earlier
+   * one is still being applied, and applying awaits a durable lookup first.
+   * Run concurrently, whichever lookup returned first applied first: a BUY
+   * then SELL round trip was recorded as a SHORT entered on the SELL, and one
+   * fill delivered twice at once slipped past the in-memory guard twice.
+   * Never rejects, so one failed fill cannot stall the queue behind it.
+   */
+  onOrderFilled(payload: EventPayload<"ORDER_FILLED">): Promise<void> {
+    const run = this.tail.then(() => this.apply(payload));
+    this.tail = run;
+    return run;
+  }
+
+  private async apply(payload: EventPayload<"ORDER_FILLED">): Promise<void> {
     try {
       if (this.applied.has(payload.orderId)) return;
       // Memory does not know it — but a previous lifetime might have. One

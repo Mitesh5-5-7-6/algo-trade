@@ -788,16 +788,35 @@ export async function startEngineRuntime(deps: {
   await bus.subscribe("INDICATORS_UPDATED", (event) =>
     runner.onIndicatorsUpdated(event.payload),
   );
-  await bus.subscribe("ORDER_FILLED", async (event) => {
-    // Position first: the system's view of what it holds is the thing that
-    // must never be wrong. It also has to land before the Trade Engine, which
-    // reads the position it just built to record `positionId`.
-    await positionEngine.onOrderFilled(event.payload);
-    // Then the outcome record. Its own failures are swallowed into onError, so
-    // a lost trade row cannot take the position projection down with it.
-    await tradeEngine.onOrderFilled(event.payload);
-    // And the strategy learns its proposal became a trade (§0.5.5).
-    runner.onOrderFilled(event.payload);
+  // Fills are projected one at a time, in the order published (§2.7). The bus
+  // does not await its handlers, so two fills in flight interleaved at every
+  // await below: the Trade Engine was reached in the order the POSITION
+  // WRITES returned, and a round trip whose exit was published while its entry
+  // was still persisting was recorded backwards — a SHORT entered on the SELL.
+  // Chained, each fill finishes before the next starts, so "position before
+  // trade" holds per fill and a slow write can never be overtaken.
+  let fillChain: Promise<void> = Promise.resolve();
+  await bus.subscribe("ORDER_FILLED", (event) => {
+    fillChain = fillChain
+      .then(async () => {
+        // Position first: the system's view of what it holds is the thing
+        // that must never be wrong. It also has to land before the Trade
+        // Engine, which reads the position it just built for `positionId`.
+        await positionEngine.onOrderFilled(event.payload);
+        // Then the outcome record. Its own failures are swallowed into
+        // onError, so a lost trade row cannot take the position down with it.
+        await tradeEngine.onOrderFilled(event.payload);
+        // And the strategy learns its proposal became a trade (§0.5.5).
+        runner.onOrderFilled(event.payload);
+      })
+      // A failure must not stall every fill queued behind it.
+      .catch((error: unknown) => {
+        onError(error, {
+          where: "ORDER_FILLED",
+          orderId: event.payload.orderId,
+        });
+      });
+    return fillChain;
   });
   // The rest of the signal-outcome loop. Without these a one-shot strategy
   // that was blocked or rejected would sit on a spent latch for the session.

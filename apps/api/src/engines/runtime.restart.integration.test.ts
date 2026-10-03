@@ -217,6 +217,7 @@ beforeEach(async (ctx) => {
   }
   await redis?.client.del(riskDailyLossKey(istDateKey(Date.now())));
   await mongo?.db.collection("positions").deleteMany({});
+  await mongo?.db.collection("trades").deleteMany({});
 });
 
 describe("the day's risk state survives a restart (§0.8)", () => {
@@ -312,6 +313,94 @@ describe("the day's risk state survives a restart (§0.8)", () => {
       } finally {
         await second.shutdown();
       }
+    },
+    RESTART_TIMEOUT_MS,
+  );
+});
+
+/**
+ * Task 2.7 — the RUNTIME records the trade, not just the engine in a harness.
+ *
+ * Every other trade test builds a `TradeEngine` itself. None proves that
+ * `startEngineRuntime` constructs one, subscribes it to `ORDER_FILLED` AFTER
+ * the Position Engine (or `positionId` resolves to nothing), saves through the
+ * real repository, and hydrates it on boot. A wiring slip there — a missing
+ * subscription — would pass every one of them while no trade was ever written.
+ */
+describe("the runtime records exactly one trade per round trip (§2.7)", () => {
+  it(
+    "writes one CLOSED trade, linked to both orders and the position",
+    async () => {
+      const runtime = await boot();
+      try {
+        await roundTrip(runtime, 100, 110, 10); // +100 gross
+      } finally {
+        await runtime.shutdown();
+      }
+
+      const trades = await mongo?.db
+        .collection("trades")
+        .find({}, { projection: { _id: 0 } })
+        .toArray();
+      expect(trades).toHaveLength(1);
+      expect(trades?.[0]).toMatchObject({
+        strategyId: STRATEGY,
+        symbol: SYMBOL,
+        side: "LONG",
+        status: "CLOSED",
+        entryOrderId: "ord_restart_in",
+        exitOrderId: "ord_restart_out",
+        orderIds: ["ord_restart_in", "ord_restart_out"],
+        grossPnl: 100,
+      });
+      // Resolved from the Position Engine the runtime awaits first.
+      const position = await mongo?.db
+        .collection("positions")
+        .findOne({ strategyId: STRATEGY, symbol: SYMBOL });
+      expect(position?.["positionId"]).toBeDefined();
+      expect(trades?.[0]?.["positionId"]).toBe(position?.["positionId"]);
+    },
+    RESTART_TIMEOUT_MS,
+  );
+
+  /**
+   * A broker repeats the closing update after the process restarted. The
+   * trade has left memory by then; only the durable check knows the fill was
+   * already folded in, and without it this records a SHORT never entered.
+   */
+  it(
+    "records no second trade when the closing fill is redelivered after a restart",
+    async () => {
+      const first = await boot();
+      try {
+        await roundTrip(first, 100, 110, 10);
+      } finally {
+        await first.shutdown();
+      }
+
+      const second = await boot();
+      try {
+        await second.bus.publish("ORDER_FILLED", {
+          orderId: "ord_restart_out",
+          strategyId: STRATEGY,
+          symbol: SYMBOL,
+          side: "SELL",
+          qty: 10,
+          filledPrice: 110,
+          slippage: 0,
+          charges: 0,
+          filledAt: 2,
+          mode: "paper",
+          ts: 2,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      } finally {
+        await second.shutdown();
+      }
+
+      const trades = await mongo?.db.collection("trades").find({}).toArray();
+      expect(trades).toHaveLength(1);
+      expect(trades?.[0]?.["status"]).toBe("CLOSED");
     },
     RESTART_TIMEOUT_MS,
   );
