@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  DataProvenanceSchema,
+  EntryMarketContextSchema,
   ExitReasonSchema,
   CandleSchema,
   ContextSnapshotSchema,
@@ -157,6 +159,14 @@ export const EVENT_PAYLOAD_SCHEMAS = {
      * events.
      */
     exitReason: ExitReasonSchema.optional(),
+    /**
+     * What the entry decision stood on (design §2, drifts 1 and 3) — the
+     * decision bar and whether its volume could be trusted. On the fill for
+     * the same reason as `exitReason`: the Trade Engine reads this event and
+     * nothing else. It stamps them only when the fill OPENS a trade.
+     */
+    dataProvenance: DataProvenanceSchema.optional(),
+    marketContext: EntryMarketContextSchema.optional(),
     filledAt: TimestampSchema,
     mode: TradeModeSchema,
     ts: TimestampSchema,

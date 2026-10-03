@@ -48,7 +48,7 @@ beforeAll(async () => {
         `trade round trip: MongoDB unreachable and REQUIRE_INTEGRATION=1 — ${reason}`,
       );
     process.stderr.write(
-      `\n  SKIPPING trade round-trip integration (6 tests)\n` +
+      `\n  SKIPPING trade round-trip integration (7 tests)\n` +
         `  reason: ${reason}\n  NOTE:   skipped is not passed.\n\n`,
     );
   }
@@ -143,6 +143,37 @@ describe("a completed position produces exactly one complete Trade (§2.7)", () 
       entryPrice: 100,
       exitPrice: 110,
     });
+  });
+
+  /**
+   * What the entry stood on (§2.1, design §2 drifts 1 and 3), as a structured
+   * reference that survives Mongo — not prose a later study would have to
+   * parse, and not flattened by the round trip through the repository.
+   */
+  it("stores the entry's bar and volume quality as a structured reference", async (ctx) => {
+    if (!reachable || connection === undefined) return ctx.skip();
+    const repo = new TradesRepository(connection.db);
+    const { engine, errors } = engineOver(repo);
+    const bar = {
+      symbol: SYMBOL,
+      interval: "5m" as const,
+      barTs: 900,
+      source: "BROKER_HISTORICAL" as const,
+      ingestionVersion: 1,
+    };
+
+    await engine.onOrderFilled(
+      fill({
+        dataProvenance: bar,
+        marketContext: { volumeQuality: "SUSPECT" },
+      }),
+    );
+    await engine.onOrderFilled(exitFill());
+
+    expect(errors).toEqual([]);
+    const [stored] = await repo.findRecent(1);
+    expect(stored?.dataProvenance).toEqual(bar);
+    expect(stored?.marketContext).toEqual({ volumeQuality: "SUSPECT" });
   });
 
   /**

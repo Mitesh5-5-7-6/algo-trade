@@ -459,3 +459,85 @@ describe("strategyVersion travels with the decision (§2.8, Q4)", () => {
     expect(h.handoffs[0]?.strategyVersion).toBe("v1");
   });
 });
+
+describe("the decision's bar travels with it (§2.1, design §2 drifts 1 and 3)", () => {
+  /**
+   * The Trade records what its entry decision stood on. The runner is the
+   * only component that holds the bar at decision time, so it stamps it, and
+   * everything downstream copies it forward — the same road as the version.
+   */
+  it("stamps the bar's key and source onto the signal", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    await fireBar(h, 150, {}, 1000);
+
+    expect(h.handoffs[0]?.dataProvenance).toEqual({
+      symbol: "NSE:X-EQ",
+      interval: "5m",
+      barTs: 1000,
+      source: "LIVE_TICK",
+    });
+  });
+
+  it("copies the bar's ingestion and volume flags exactly", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    h.runner.onCandleClosed({
+      ...candle(150),
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 2,
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    });
+    await h.runner.onIndicatorsUpdated(indicators({}));
+
+    expect(h.handoffs[0]?.dataProvenance).toMatchObject({
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 2,
+    });
+    expect(h.handoffs[0]?.marketContext).toEqual({
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    });
+  });
+
+  /**
+   * A bar that says nothing about its volume yields an EMPTY context, not a
+   * defaulted one. Writing "REAL" here would be a claim no component made;
+   * absent keeps the candle's own meaning, and `{}` still says "captured".
+   */
+  it("records an empty context rather than inventing volume flags", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.marketContext).toEqual({});
+  });
+
+  /**
+   * A derivative decision is made on the underlying's bar. Provenance names
+   * THAT bar — the data the decision rested on — never the traded contract,
+   * which has no bar at the decision timestamp to point at.
+   */
+  it("names the analysed bar, not the traded contract, for a derivative", async () => {
+    const h = harness();
+    h.setContract(
+      {
+        symbol: "NSE:NIFTY26SEP25000CE",
+        kind: "OPTION",
+        lotSize: 65,
+        tickSize: 0.05,
+        underlying: "NIFTY",
+        expiry: 4_000_000_000_000,
+        strike: 25_000,
+        optionType: "CE",
+      },
+      150,
+    );
+    await h.runner.enable(config("OPTION_BUYER"));
+    await fireBar(h, 25_012);
+
+    expect(h.signals[0]?.symbol).toBe("NSE:NIFTY26SEP25000CE");
+    expect(h.signals[0]?.dataProvenance?.symbol).toBe("NSE:X-EQ");
+  });
+});

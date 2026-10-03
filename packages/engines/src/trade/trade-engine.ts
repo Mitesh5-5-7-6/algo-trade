@@ -124,6 +124,14 @@ export class TradeEngine {
           ...(payload.strategyVersion === undefined
             ? {}
             : { strategyVersion: payload.strategyVersion }),
+          // Used only when this pass OPENS a trade — including a reversal's
+          // remainder, whose entry decision is this very order (§2.1).
+          ...(payload.dataProvenance === undefined
+            ? {}
+            : { dataProvenance: payload.dataProvenance }),
+          ...(payload.marketContext === undefined
+            ? {}
+            : { marketContext: payload.marketContext }),
         });
 
         if (result.trade.status === "CLOSED") {

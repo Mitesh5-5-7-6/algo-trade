@@ -120,6 +120,13 @@ export class OrderManager {
         type: "MARKET",
         ...(signal.stopLoss !== undefined ? { stopLoss: signal.stopLoss } : {}),
         ...(signal.target !== undefined ? { takeProfit: signal.target } : {}),
+        // What the entry decision stood on, for the Trade (§2.1).
+        ...(signal.dataProvenance === undefined
+          ? {}
+          : { dataProvenance: signal.dataProvenance }),
+        ...(signal.marketContext === undefined
+          ? {}
+          : { marketContext: signal.marketContext }),
         // The exit reason travels with the instruction, so the fill can state
         // it without a join back to the signal (D6).
         ...(signal.exitReason === undefined
@@ -376,7 +383,15 @@ export class OrderManager {
   private static protective(
     order: Order,
   ): Partial<
-    Pick<Order, "stopLoss" | "takeProfit" | "exitReason" | "strategyVersion">
+    Pick<
+      Order,
+      | "stopLoss"
+      | "takeProfit"
+      | "exitReason"
+      | "strategyVersion"
+      | "dataProvenance"
+      | "marketContext"
+    >
   > {
     return {
       ...(order.stopLoss === undefined ? {} : { stopLoss: order.stopLoss }),
@@ -392,6 +407,12 @@ export class OrderManager {
       ...(order.strategyVersion === undefined
         ? {}
         : { strategyVersion: order.strategyVersion }),
+      ...(order.dataProvenance === undefined
+        ? {}
+        : { dataProvenance: order.dataProvenance }),
+      ...(order.marketContext === undefined
+        ? {}
+        : { marketContext: order.marketContext }),
     };
   }
 

@@ -3,6 +3,7 @@ import {
   applyTradeFill,
   grossPnlFor,
   netPnlFor,
+  TradeSchema,
   type Trade,
   type TradeFill,
 } from "./trade.js";
@@ -313,5 +314,63 @@ describe("the closed-trade invariants (§5.3)", () => {
     // The opening leg paid its share; it did not enter for free.
     expect(opened.charges).toBeCloseTo(37.5, 2);
     expect(trade.charges + opened.charges).toBeCloseTo(100, 6);
+  });
+});
+
+/**
+ * Task 2.1, the audit's drifts 1 and 3 (design §2).
+ *
+ * What the entry decision stood on: which bar, from which source, and whether
+ * its volume could be trusted. Stamped once, at the entry fill, because that
+ * is the decision the trade measures — a closing fill made on a different bar
+ * must not restate it.
+ */
+describe("entry provenance and market context (§2 drifts 1 and 3)", () => {
+  const PROVENANCE = {
+    symbol: "NSE:NIFTY50-INDEX",
+    interval: "5m" as const,
+    barTs: 900,
+    source: "BROKER_HISTORICAL" as const,
+    ingestionVersion: 1,
+  };
+
+  it("stamps both onto the trade at the entry fill", () => {
+    const trade = applyTradeFill(null, fill(), {
+      ...CONTEXT,
+      dataProvenance: PROVENANCE,
+      marketContext: { volumeQuality: "SUSPECT" },
+    }).trade;
+
+    expect(trade.dataProvenance).toEqual(PROVENANCE);
+    expect(trade.marketContext).toEqual({ volumeQuality: "SUSPECT" });
+  });
+
+  it("is not rewritten by the fill that closes the trade", () => {
+    const opened = applyTradeFill(null, fill(), {
+      ...CONTEXT,
+      dataProvenance: PROVENANCE,
+      marketContext: { volumeQuality: "SUSPECT" },
+    }).trade;
+    const closed = applyTradeFill(
+      opened,
+      fill({ orderId: "ord_2", side: "SELL", price: 110, filledAt: 2_000 }),
+      {
+        ...CONTEXT,
+        dataProvenance: { ...PROVENANCE, barTs: 1_900, source: "LIVE_TICK" },
+        marketContext: { volumeQuality: "REAL" },
+      },
+    ).trade;
+
+    expect(closed.status).toBe("CLOSED");
+    expect(closed.dataProvenance).toEqual(PROVENANCE);
+    expect(closed.marketContext).toEqual({ volumeQuality: "SUSPECT" });
+  });
+
+  it("refuses provenance written as prose", () => {
+    const parsed = TradeSchema.safeParse({
+      ...openLong(),
+      dataProvenance: "LIVE_TICK candles from the FYERS feed",
+    });
+    expect(parsed.success).toBe(false);
   });
 });

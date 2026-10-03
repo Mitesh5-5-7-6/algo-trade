@@ -197,14 +197,15 @@ describe("TradeEngine — partial exits and adds", () => {
    */
   it("splits a reversal into a closed trade and a new one", async () => {
     const h = harness();
-    await h.engine.onOrderFilled(fill({ qty: 10, charges: 0 }));
+    await h.engine.onOrderFilled(fill({ qty: 10, charges: 0, slippage: 0 }));
     await h.engine.onOrderFilled(
       fill({
         orderId: "ord_2",
         side: "SELL",
         qty: 15,
         filledPrice: 110,
-        charges: 0,
+        charges: 30,
+        slippage: 1.5,
         filledAt: 2_000,
       }),
     );
@@ -220,9 +221,41 @@ describe("TradeEngine — partial exits and adds", () => {
       entryPrice: 110,
       quantity: 5,
     });
-    // Charges were consumed by the closing leg; counting them twice would
-    // overstate the cost of the reversal.
-    expect(h.latest("trd_2")?.charges).toBe(0);
+  });
+
+  /**
+   * The engine must pass the order's cost through the pro-rata split (design
+   * §5.1 Q1), not around it. Charging the whole order to the closing leg —
+   * the ported behaviour — makes the closing trade pay for an entry it never
+   * made and the new trade appear to enter for free.
+   */
+  it("splits a reversing order's cost across both trades by quantity", async () => {
+    const h = harness();
+    await h.engine.onOrderFilled(fill({ qty: 10, charges: 0, slippage: 0 }));
+    await h.engine.onOrderFilled(
+      fill({
+        orderId: "ord_2",
+        side: "SELL",
+        qty: 15,
+        filledPrice: 110,
+        charges: 30,
+        slippage: 1.5,
+        filledAt: 2_000,
+      }),
+    );
+
+    // 10 of 15 closes the long, 5 of 15 opens the short.
+    expect(h.latest("trd_1")).toMatchObject({
+      charges: 20,
+      slippage: 1,
+      netPnl: 80,
+    });
+    expect(h.latest("trd_2")).toMatchObject({ charges: 10, slippage: 0.5 });
+    // The two legs reconcile to what the broker charged — nothing lost or
+    // counted twice.
+    expect(
+      (h.latest("trd_1")?.charges ?? 0) + (h.latest("trd_2")?.charges ?? 0),
+    ).toBe(30);
   });
 });
 
@@ -287,5 +320,81 @@ describe("TradeEngine — failures stay contained", () => {
 
     await expect(engine.onOrderFilled(fill())).resolves.toBeUndefined();
     expect(errors).toHaveLength(1);
+  });
+});
+
+/**
+ * What the entry stood on reaches the trade (§2.1, design §2 drifts 1 and 3).
+ *
+ * The engine reads `ORDER_FILLED` and nothing else, so it can only record what
+ * the fill carries — and it must take it from the fill that OPENED the trade.
+ */
+describe("TradeEngine — what the entry stood on (§2.1)", () => {
+  const BAR_A = {
+    symbol: "NSE:X-EQ",
+    interval: "5m" as const,
+    barTs: 900,
+    source: "LIVE_TICK" as const,
+  };
+  const BAR_B = {
+    ...BAR_A,
+    barTs: 1_900,
+    source: "BROKER_HISTORICAL" as const,
+  };
+
+  it("stamps the entry fill's provenance and market context", async () => {
+    const h = harness();
+    await h.engine.onOrderFilled(
+      fill({
+        dataProvenance: BAR_A,
+        marketContext: { volumeQuality: "SUSPECT" },
+      }),
+    );
+
+    expect(h.latest("trd_1")).toMatchObject({
+      dataProvenance: BAR_A,
+      marketContext: { volumeQuality: "SUSPECT" },
+    });
+  });
+
+  it("keeps the entry's when a fill made on another bar closes the trade", async () => {
+    const h = harness();
+    await h.engine.onOrderFilled(fill({ dataProvenance: BAR_A }));
+    await h.engine.onOrderFilled(
+      fill({
+        orderId: "ord_2",
+        side: "SELL",
+        filledPrice: 110,
+        filledAt: 2_000,
+        dataProvenance: BAR_B,
+      }),
+    );
+
+    expect(h.latest("trd_1")).toMatchObject({
+      status: "CLOSED",
+      dataProvenance: BAR_A,
+    });
+  });
+
+  /**
+   * The reversing order is the decision that opened the new trade, so the new
+   * trade stands on THAT order's bar — not the one the closed trade entered on.
+   */
+  it("gives a reversal's new trade the reversing order's provenance", async () => {
+    const h = harness();
+    await h.engine.onOrderFilled(fill({ qty: 10, dataProvenance: BAR_A }));
+    await h.engine.onOrderFilled(
+      fill({
+        orderId: "ord_2",
+        side: "SELL",
+        qty: 15,
+        filledPrice: 110,
+        filledAt: 2_000,
+        dataProvenance: BAR_B,
+      }),
+    );
+
+    expect(h.latest("trd_1")?.dataProvenance).toEqual(BAR_A);
+    expect(h.latest("trd_2")?.dataProvenance).toEqual(BAR_B);
   });
 });

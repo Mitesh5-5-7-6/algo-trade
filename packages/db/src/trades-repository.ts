@@ -98,7 +98,6 @@ export class TradesRepository {
     return docs.map((doc) => TradeSchema.parse(doc));
   }
 
-  /** The most recent trades, newest first — the operator's read model. */
   /**
    * The trade a given order's fill was folded into, entry side or exit.
    *
@@ -118,6 +117,8 @@ export class TradesRepository {
     );
     return doc === null ? null : TradeSchema.parse(doc);
   }
+
+  /** The most recent trades, newest first — the operator's read model. */
   async findRecent(limit: number): Promise<Trade[]> {
     const docs = await this.collection
       .find({}, { projection: { _id: 0 } })

@@ -664,6 +664,29 @@ export class StrategyRunner {
         session: context.session.phase,
         sentiment: context.sentiment,
       },
+      // What the decision stood on, for the Trade it may become (§2.1). The
+      // ANALYSED bar: for a derivative that is the underlying's, the data the
+      // decision rested on, never the traded contract's.
+      dataProvenance: {
+        symbol: context.candle.symbol,
+        interval: context.candle.interval,
+        barTs: context.candle.ts,
+        source: context.candle.source,
+        ...(context.candle.ingestionVersion === undefined
+          ? {}
+          : { ingestionVersion: context.candle.ingestionVersion }),
+      },
+      // Copied, never defaulted: a bar silent about its volume yields `{}`,
+      // and absent keeps the candle's own meaning rather than a claim that
+      // nothing here ever made.
+      marketContext: {
+        ...(context.candle.volumeAvailable === undefined
+          ? {}
+          : { volumeAvailable: context.candle.volumeAvailable }),
+        ...(context.candle.volumeQuality === undefined
+          ? {}
+          : { volumeQuality: context.candle.volumeQuality }),
+      },
       ts,
     };
   }

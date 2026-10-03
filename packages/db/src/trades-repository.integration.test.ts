@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it, beforeEach } from "vitest";
 import { applyTradeFill, type Trade, type TradeFill } from "@neelkanth/core";
 import {
-  connectMongo,
+  closeProbe,
+  probeMongo,
+  type MongoProbe,
+} from "./test-support/infra.js";
+import {
   ensureIndexes,
   TradesRepository,
   type MongoConnection,
@@ -19,16 +23,30 @@ import {
 const MONGO_URI =
   process.env["MONGO_URI"] ?? "mongodb://localhost:27017/neelkanth_trades_test";
 
+let probe: MongoProbe | undefined;
 let connection: MongoConnection;
 
+/**
+ * Through the §0.4 probe, like every other suite here.
+ *
+ * Ported from a branch written before the probe existed, this suite connected
+ * unconditionally — so with no database it failed `pnpm test` outright, and
+ * the failure stopped turbo before the engines and api suites had run at all.
+ */
 beforeAll(async () => {
-  connection = await connectMongo(MONGO_URI, "neelkanth_it_trades");
+  probe = await probeMongo(
+    MONGO_URI,
+    "neelkanth_it_trades",
+    "packages/db/src/trades-repository.integration.test.ts",
+  );
+  if (!probe.reachable) return;
+  connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 });
 
 /**
- * Per test, not just per suite.
+ * Skip when unreachable, then clean — per test, not just per suite.
  *
  * The suite dropped the database once in `beforeAll` and shared it across
  * every test, so `findRecent(1)` could return a trade an earlier test had
@@ -36,12 +54,16 @@ beforeAll(async () => {
  * the winner arbitrary — it passed on the branch this was ported from by
  * luck, not by design.
  */
-beforeEach(async () => {
+beforeEach(async (ctx) => {
+  if (probe?.reachable !== true) {
+    ctx.skip();
+    return;
+  }
   await connection.db.collection("trades").deleteMany({});
 });
 
 afterAll(async () => {
-  await connection.close();
+  await closeProbe(probe);
 });
 
 const context = (tradeId: string, symbol = "NSE:TRADE-EQ") => ({

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  CandleIntervalSchema,
   EntityIdSchema,
   PriceSchema,
   QuantitySchema,
@@ -7,6 +8,7 @@ import {
   TimestampSchema,
   TradeModeSchema,
 } from "./primitives.js";
+import { CandleSourceSchema, VolumeQualitySchema } from "./market.js";
 import { PositionSideSchema } from "./position.js";
 
 /**
@@ -27,6 +29,47 @@ export const ExitReasonSchema = z.enum([
   "BROKER_RECONCILIATION",
 ]);
 export type ExitReason = z.infer<typeof ExitReasonSchema>;
+
+/**
+ * The bar an entry decision was made on (design §2, drift 1).
+ *
+ * A reference, not prose: `(symbol, interval, barTs)` is the candle store's
+ * unique key, so the bar can be read back. For a derivative strategy `symbol`
+ * is the analysed underlying, not the traded contract — the data the decision
+ * actually rested on.
+ *
+ * `source` is snapshotted rather than left to that read-back. The candle store
+ * lets a higher-ranked source overwrite a lower one, so a backfill can later
+ * replace the LIVE_TICK bar a live decision saw with the broker's record. The
+ * key would then resolve to a bar the decision never saw; only the snapshot
+ * still says what it did.
+ */
+export const DataProvenanceSchema = z.object({
+  symbol: SymbolSchema,
+  interval: CandleIntervalSchema,
+  barTs: TimestampSchema,
+  source: CandleSourceSchema,
+  ingestionVersion: z.number().int().positive().optional(),
+});
+export type DataProvenance = z.infer<typeof DataProvenanceSchema>;
+
+/**
+ * The market at entry, as far as Phase 2 can know it (design §2, drift 3).
+ *
+ * Only whether the decision bar's volume could be trusted — otherwise a later
+ * study treats SUSPECT volume as fact (ARCHITECTURE_DECISION §20.6). Trend,
+ * volatility and VWAP position belong to the pattern and research phases that
+ * compute them.
+ *
+ * Copied from the bar exactly, never defaulted: an absent field carries the
+ * candle's own meaning (`CandleSchema`), and an absent `marketContext` means
+ * nothing was captured at all.
+ */
+export const EntryMarketContextSchema = z.object({
+  volumeAvailable: z.boolean().optional(),
+  volumeQuality: VolumeQualitySchema.optional(),
+});
+export type EntryMarketContext = z.infer<typeof EntryMarketContextSchema>;
 
 /**
  * The completed Trade — the canonical outcome primitive.
@@ -111,10 +154,10 @@ export const TradeSchema = z.object({
   // --- Research linkage (populated as later phases land). ---
   /** The pattern active at entry, with the detector version that found it. */
   entryPatternId: z.string().min(1).optional(),
-  /** Regime, volatility and news context at entry. */
-  marketContext: z.record(z.string(), z.unknown()).optional(),
-  /** Where the candles behind this trade came from. */
-  dataProvenance: z.string().min(1).optional(),
+  /** The market at entry — today, whether its volume was trustworthy. */
+  marketContext: EntryMarketContextSchema.optional(),
+  /** The bar the entry decision was made on, and where it came from. */
+  dataProvenance: DataProvenanceSchema.optional(),
 
   openedAt: TimestampSchema,
   closedAt: TimestampSchema.optional(),
@@ -201,6 +244,9 @@ export function applyTradeFill(
     positionId?: string;
     /** Stamped at open so a later strategy edit cannot restate history (Q4). */
     strategyVersion?: string;
+    /** Stamped at open, like the version: the ENTRY decision's bar. */
+    dataProvenance?: DataProvenance;
+    marketContext?: EntryMarketContext;
   },
 ): TradeFillResult {
   const open = current !== null && current.status === "OPEN" ? current : null;
@@ -226,6 +272,12 @@ export function applyTradeFill(
         ...(context.strategyVersion === undefined
           ? {}
           : { strategyVersion: context.strategyVersion }),
+        ...(context.dataProvenance === undefined
+          ? {}
+          : { dataProvenance: context.dataProvenance }),
+        ...(context.marketContext === undefined
+          ? {}
+          : { marketContext: context.marketContext }),
         quantity: fill.qty,
         openQuantity: fill.qty,
         status: "OPEN",

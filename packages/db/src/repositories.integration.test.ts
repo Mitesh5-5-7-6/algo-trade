@@ -96,6 +96,37 @@ describe("OrdersRepository (plan/12 §6)", () => {
     const placed = await repo.findByStatus(["PLACED", "PENDING"]);
     expect(placed.map((o) => o.orderId)).toEqual(["o3"]);
   });
+
+  /**
+   * A live fill is published from the order AS STORED, possibly after a
+   * restart, so the entry decision's bar must survive the round trip through
+   * Mongo — or the Trade loses it on exactly the path a live trade takes
+   * (§2.1, design §2 drifts 1 and 3).
+   */
+  it("round-trips the entry decision's bar and volume flags", async () => {
+    const repo = new OrdersRepository(connection.db);
+    const dataProvenance = {
+      symbol: "NSE:X-EQ",
+      interval: "5m" as const,
+      barTs: 900,
+      source: "LIVE_TICK" as const,
+    };
+    await repo.insert(
+      order({
+        orderId: "o_prov",
+        signalId: "s_prov",
+        dataProvenance,
+        marketContext: { volumeAvailable: false, volumeQuality: "UNAVAILABLE" },
+      }),
+    );
+
+    const stored = await repo.findByOrderId("o_prov");
+    expect(stored?.dataProvenance).toEqual(dataProvenance);
+    expect(stored?.marketContext).toEqual({
+      volumeAvailable: false,
+      volumeQuality: "UNAVAILABLE",
+    });
+  });
 });
 
 describe("PositionsRepository (plan/13 §8)", () => {

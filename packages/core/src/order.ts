@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { ExitReasonSchema } from "./trade.js";
+import {
+  DataProvenanceSchema,
+  EntryMarketContextSchema,
+  ExitReasonSchema,
+} from "./trade.js";
 import {
   EntityIdSchema,
   PriceSchema,
@@ -63,6 +67,13 @@ export const OrderSchema = z.object({
   stopLoss: PriceSchema.optional(),
   /** Take profit target price (if a bracket order). */
   takeProfit: PriceSchema.optional(),
+  /**
+   * The entry decision's bar and its volume flags, copied from the signal
+   * (design §2, drifts 1 and 3). Persisted, not just forwarded: a live fill
+   * is published from the stored order, possibly after a restart.
+   */
+  dataProvenance: DataProvenanceSchema.optional(),
+  marketContext: EntryMarketContextSchema.optional(),
   /** Copied from the signal, so the fill can report it without a join. */
   exitReason: ExitReasonSchema.optional(),
   status: OrderStatusSchema,

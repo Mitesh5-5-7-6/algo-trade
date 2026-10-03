@@ -518,3 +518,91 @@ describe("the decision price reaches the broker (plan/19 §5)", () => {
     });
   });
 });
+
+/**
+ * The entry decision's bar travels with the instruction (§2.1, design §2
+ * drifts 1 and 3), so the Trade Engine — which reads `ORDER_FILLED` and
+ * nothing else — can record what the trade stood on without a join.
+ *
+ * Every fill path matters, not just the synchronous one: a live fill arrives
+ * on the broker stream, possibly after a restart, and is published from the
+ * PERSISTED order. A field that only lived on the in-flight signal would be
+ * lost on exactly the path a live trade takes.
+ */
+describe("the decision's bar travels with the order (§2.1)", () => {
+  const PROVENANCE = {
+    symbol: "NSE:RELIANCE-EQ",
+    interval: "5m" as const,
+    barTs: 900,
+    source: "LIVE_TICK" as const,
+  };
+  const MARKET = { volumeQuality: "SUSPECT" as const };
+
+  it("persists both on the order", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ dataProvenance: PROVENANCE, marketContext: MARKET }),
+      approved,
+    );
+
+    expect(h.orders.get("ord_1")).toMatchObject({
+      dataProvenance: PROVENANCE,
+      marketContext: MARKET,
+    });
+  });
+
+  it("forwards both on a synchronous fill", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ dataProvenance: PROVENANCE, marketContext: MARKET }),
+      approved,
+    );
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).toMatchObject({
+      dataProvenance: PROVENANCE,
+      marketContext: MARKET,
+    });
+  });
+
+  it("forwards both on a fill that arrives later on the broker stream", async () => {
+    const broker = new ScriptedFakeBroker({ pendingByDefault: true });
+    const h = harness({ broker, mode: "live" });
+    broker.onOrderUpdate((u) => {
+      void h.manager.onBrokerUpdate(u);
+    });
+    await h.manager.place(
+      signal({ dataProvenance: PROVENANCE, marketContext: MARKET }),
+      approved,
+    );
+    broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 101.5,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.events).toHaveLength(2);
+    });
+
+    expect(h.events[1]?.payload).toMatchObject({
+      dataProvenance: PROVENANCE,
+      marketContext: MARKET,
+    });
+  });
+
+  it("leaves both absent when the signal carried neither", async () => {
+    const h = harness();
+    await h.manager.place(signal(), approved);
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).not.toHaveProperty("dataProvenance");
+    expect(filled?.payload).not.toHaveProperty("marketContext");
+    expect(h.orders.get("ord_1")).not.toHaveProperty("dataProvenance");
+  });
+});

@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { ExitReasonSchema } from "./trade.js";
+import {
+  DataProvenanceSchema,
+  EntryMarketContextSchema,
+  ExitReasonSchema,
+} from "./trade.js";
 import {
   ConfidenceSchema,
   EntityIdSchema,
@@ -104,6 +108,17 @@ export const SignalSchema = z.object({
   target: PriceSchema.optional(),
   reason: z.string().min(1),
   contextSnapshot: ContextSnapshotSchema,
+  /**
+   * The bar this decision was made on (design §2, drift 1).
+   *
+   * Stamped by the Strategy Runner, the only component holding the bar at
+   * decision time, and copied forward — Order, `ORDER_FILLED`, Trade — the
+   * same road as `strategyVersion`. Optional: every signal already stored
+   * predates it, and an Exit Engine decision is not an entry.
+   */
+  dataProvenance: DataProvenanceSchema.optional(),
+  /** Whether that bar's volume could be trusted (design §2, drift 3). */
+  marketContext: EntryMarketContextSchema.optional(),
   outcome: SignalOutcomeSchema.optional(),
   rejectReason: z.string().optional(),
   ts: TimestampSchema,
