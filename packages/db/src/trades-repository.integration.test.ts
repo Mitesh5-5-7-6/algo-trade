@@ -201,3 +201,54 @@ describe("TradesRepository — persistence", () => {
     expect(await repo.findRange(3_000, 1_000)).toEqual([]);
   });
 });
+
+/**
+ * Limit L1 (design §5.7): the durable idempotency lookup recognises every
+ * leg of a trade, not only its entry and latest exit.
+ */
+describe("TradesRepository — findByOrderId sees every leg (§2.4, L1)", () => {
+  it("finds a trade by an add leg and by an earlier exit leg", async () => {
+    const repo = new TradesRepository(connection.db);
+    let trade = openTrade("trd_legs");
+    for (const leg of [
+      entry({ orderId: "o_add", qty: 5, price: 105, filledAt: 11_000 }),
+      entry({
+        orderId: "o_out1",
+        side: "SELL",
+        qty: 8,
+        price: 110,
+        filledAt: 12_000,
+      }),
+      entry({
+        orderId: "o_out2",
+        side: "SELL",
+        qty: 7,
+        price: 112,
+        filledAt: 13_000,
+      }),
+    ]) {
+      trade = applyTradeFill(trade, leg, context("trd_legs")).trade;
+    }
+    expect(trade.status).toBe("CLOSED");
+    await repo.save(trade);
+
+    expect((await repo.findByOrderId("o_add"))?.tradeId).toBe("trd_legs");
+    expect((await repo.findByOrderId("o_out1"))?.tradeId).toBe("trd_legs");
+    expect(await repo.findByOrderId("o_never")).toBeNull();
+  });
+
+  /**
+   * A trade written before `orderIds` existed has only its entry and latest
+   * exit to match on, and must still be found by them.
+   */
+  it("still finds a trade stored before orderIds existed", async () => {
+    const repo = new TradesRepository(connection.db);
+    const legacy: Record<string, unknown> = { ...openTrade("trd_legacy") };
+    delete legacy["orderIds"];
+    await connection.db.collection("trades").insertOne(legacy);
+
+    const found = await repo.findByOrderId("ord_in");
+    expect(found?.tradeId).toBe("trd_legacy");
+    expect(found?.orderIds).toEqual([]);
+  });
+});

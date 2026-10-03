@@ -102,17 +102,23 @@ export class TradesRepository {
    * The trade a given order's fill was folded into, entry side or exit.
    *
    * Backs the Trade Engine's restart-durable idempotency (D5). Served by
-   * the `entryOrderId` and `exitOrderId` indexes rather than a scan,
-   * because it runs once per fill the process has not seen before.
+   * indexes rather than a scan, because it runs once per fill the process
+   * has not seen before.
    *
-   * **Known limit:** only the entry and the LATEST exit leg are stored on
-   * a trade, so an intermediate partial-exit leg cannot be recognised this
-   * way. Nothing produces partial exits yet (Phase 3); when something
-   * does, this needs the leg's order id recorded with it.
+   * Matches ANY order folded into the trade — entry, adds, every exit leg —
+   * through `orderIds` (L1). Before that field, only the entry and the latest
+   * exit were stored, so a redelivered add or earlier exit leg was folded in
+   * twice; the two named fields are still matched for trades written then.
    */
   async findByOrderId(orderId: string): Promise<Trade | null> {
     const doc = await this.collection.findOne(
-      { $or: [{ entryOrderId: orderId }, { exitOrderId: orderId }] },
+      {
+        $or: [
+          { orderIds: orderId },
+          { entryOrderId: orderId },
+          { exitOrderId: orderId },
+        ],
+      },
       { projection: { _id: 0 } },
     );
     return doc === null ? null : TradeSchema.parse(doc);

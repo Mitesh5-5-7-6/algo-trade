@@ -119,6 +119,10 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.trades)
       .createIndex({ status: 1, strategyId: 1, symbol: 1 }),
+    // Every order folded into a trade (multikey), so an add or an earlier
+    // exit leg is recognised after a restart too — not just the two below,
+    // which still serve trades written before `orderIds` existed (L1).
+    db.collection(COLLECTIONS.trades).createIndex({ orderIds: 1 }),
     // Restart-durable fill idempotency: find the trade an order's fill
     // already landed in, without scanning the research dataset.
     db.collection(COLLECTIONS.trades).createIndex({ entryOrderId: 1 }),

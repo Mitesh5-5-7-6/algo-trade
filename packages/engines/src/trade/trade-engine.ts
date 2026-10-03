@@ -61,7 +61,10 @@ export class TradeEngine {
         this.open.set(TradeEngine.key(trade.strategyId, trade.symbol), trade);
         // Pre-seed the guard. Not needed for correctness — the durable
         // lookup below would catch a redelivery anyway — but it saves that
-        // read, and redeliveries cluster right after a restart.
+        // read, and redeliveries cluster right after a restart. Every leg,
+        // not just the entry and latest exit (L1); the two named fields
+        // still count for a trade written before `orderIds` existed.
+        for (const orderId of trade.orderIds) this.applied.add(orderId);
         this.applied.add(trade.entryOrderId);
         if (trade.exitOrderId !== undefined)
           this.applied.add(trade.exitOrderId);

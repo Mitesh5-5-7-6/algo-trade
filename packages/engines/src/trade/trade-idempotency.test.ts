@@ -34,10 +34,15 @@ function store() {
     // The runtime resolves this from the Position Engine after it has
     // applied the same fill; here a stable stand-in is enough.
     resolvePositionId: () => "pos_idem",
+    // Mirrors `TradesRepository.findByOrderId`: any folded order, plus the
+    // entry and latest exit for trades written before `orderIds` existed.
     findTradeByOrderId: (orderId) =>
       Promise.resolve(
         [...rows.values()].find(
-          (t) => t.entryOrderId === orderId || t.exitOrderId === orderId,
+          (t) =>
+            t.orderIds.includes(orderId) ||
+            t.entryOrderId === orderId ||
+            t.exitOrderId === orderId,
         ) ?? null,
       ),
   };
@@ -446,5 +451,95 @@ describe("exitReason is recorded, never inferred (§2.6, D6)", () => {
     );
 
     expect([...shared.rows.values()][0]?.exitReason).toBeUndefined();
+  });
+});
+
+/**
+ * Limit L1 (design §5.7): every leg is recognised after a restart, not just
+ * the entry and the latest exit.
+ */
+describe("every leg of a trade is recognised after a restart (§2.4, L1)", () => {
+  /**
+   * An add redelivered after a restart was unrecognisable — not the entry, not
+   * an exit — and was folded in again: a position the system never held.
+   */
+  it("does not fold a redelivered ADD fill in twice", async () => {
+    const shared = store();
+    const first = lifetime(shared);
+    await first.engine.onOrderFilled(fill());
+    await first.engine.onOrderFilled(
+      fill({ orderId: "ord_add", qty: 50, filledPrice: 110, filledAt: 1_500 }),
+    );
+
+    const second = lifetime(shared);
+    await second.engine.hydrate();
+    await second.engine.onOrderFilled(
+      fill({ orderId: "ord_add", qty: 50, filledPrice: 110, filledAt: 1_500 }),
+    );
+
+    const open = second.engine.getOpen(STRATEGY, SYMBOL);
+    expect(open?.quantity).toBe(150);
+    expect(open?.openQuantity).toBe(150);
+    expect(open?.entryPrice).toBeCloseTo((100 * 100 + 50 * 110) / 150, 9);
+  });
+
+  /**
+   * The phantom again, by a different road. The trade is CLOSED, so it is not
+   * hydrated, and its middle exit leg is no longer its `exitOrderId`. That leg
+   * redelivered found nothing, and opened a SHORT that was never entered.
+   */
+  it("does not open a phantom from a closed trade's earlier exit leg", async () => {
+    const shared = store();
+    const first = lifetime(shared);
+    await first.engine.onOrderFilled(fill());
+    await first.engine.onOrderFilled(
+      fill({ orderId: "ord_out1", side: "SELL", qty: 50, filledAt: 2_000 }),
+    );
+    await first.engine.onOrderFilled(
+      fill({ orderId: "ord_out2", side: "SELL", qty: 50, filledAt: 3_000 }),
+    );
+    expect([...shared.rows.values()][0]?.status).toBe("CLOSED");
+
+    const second = lifetime(shared);
+    await second.engine.hydrate();
+    await second.engine.onOrderFilled(
+      fill({ orderId: "ord_out1", side: "SELL", qty: 50, filledAt: 2_000 }),
+    );
+
+    expect(shared.rows.size).toBe(1);
+    expect(second.engine.getOpen(STRATEGY, SYMBOL)).toBeNull();
+  });
+
+  /**
+   * Hydration already holds every open trade's legs, so a redelivered add —
+   * and redeliveries cluster right after a restart — costs no read.
+   */
+  it("pre-seeds every leg of an open trade at hydration", async () => {
+    const shared = store();
+    const first = lifetime(shared);
+    await first.engine.onOrderFilled(fill());
+    await first.engine.onOrderFilled(
+      fill({ orderId: "ord_add", qty: 50, filledAt: 1_500 }),
+    );
+
+    let lookups = 0;
+    const counted: TradePorts = {
+      ...shared.ports,
+      findTradeByOrderId: (orderId) => {
+        lookups += 1;
+        return shared.ports.findTradeByOrderId(orderId);
+      },
+    };
+    const engine = new TradeEngine({
+      ports: counted,
+      nextTradeId: () => "trd_unused",
+      onError: () => undefined,
+    });
+    await engine.hydrate();
+    await engine.onOrderFilled(
+      fill({ orderId: "ord_add", qty: 50, filledAt: 1_500 }),
+    );
+
+    expect(lookups).toBe(0);
   });
 });

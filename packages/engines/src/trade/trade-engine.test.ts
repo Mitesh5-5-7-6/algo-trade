@@ -273,6 +273,7 @@ describe("TradeEngine — restart", () => {
       side: "LONG",
       mode: "paper",
       entryOrderId: "ord_old",
+      orderIds: ["ord_old"],
       entryTime: 500,
       entryPrice: 100,
       quantity: 10,
@@ -396,5 +397,60 @@ describe("TradeEngine — what the entry stood on (§2.1)", () => {
 
     expect(h.latest("trd_1")?.dataProvenance).toEqual(BAR_A);
     expect(h.latest("trd_2")?.dataProvenance).toEqual(BAR_B);
+  });
+});
+
+/**
+ * Limit L2 (design §5.7), settled: memory moving ahead of Mongo is deliberate.
+ *
+ * Every save writes the WHOLE trade, so a failed save is healed by the next
+ * save of the same trade. The tempting "fix" — advance memory only after the
+ * write lands — is the bug: a lost entry save would leave no open trade, and
+ * the closing fill would open a phantom on the other side.
+ */
+describe("TradeEngine — a failed save is healed by the next one (§2.4, L2)", () => {
+  it("records the full round trip after the entry save failed", async () => {
+    const saved: Trade[] = [];
+    let failNext = true;
+    const errors: unknown[] = [];
+    const engine = new TradeEngine({
+      ports: {
+        saveTrade: (trade) => {
+          if (failNext) {
+            failNext = false;
+            return Promise.reject(new Error("mongo blip"));
+          }
+          saved.push(trade);
+          return Promise.resolve();
+        },
+        loadOpenTrades: () => Promise.resolve([]),
+        findTradeByOrderId: () => Promise.resolve(null),
+        resolvePositionId: () => "pos_1",
+      },
+      nextTradeId: () => `trd_${String(saved.length + errors.length + 1)}`,
+      onError: (error) => errors.push(error),
+    });
+
+    await engine.onOrderFilled(fill());
+    expect(errors).toHaveLength(1); // the blip was reported, not swallowed
+    await engine.onOrderFilled(
+      fill({
+        orderId: "ord_2",
+        side: "SELL",
+        filledPrice: 110,
+        filledAt: 2_000,
+      }),
+    );
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      tradeId: "trd_1",
+      side: "LONG",
+      status: "CLOSED",
+      entryOrderId: "ord_1",
+      entryPrice: 100,
+      exitOrderId: "ord_2",
+      orderIds: ["ord_1", "ord_2"],
+    });
   });
 });

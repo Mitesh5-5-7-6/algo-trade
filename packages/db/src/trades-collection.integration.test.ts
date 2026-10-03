@@ -91,6 +91,7 @@ describe("the trades collection (§2.3)", () => {
       { status: 1, strategyId: 1, symbol: 1 }, // the open trade a fill belongs to
       { entryOrderId: 1 }, // restart-durable idempotency (D5)
       { exitOrderId: 1 },
+      { orderIds: 1 }, // every leg, for the same lookup (L1)
     ]) {
       expect(byKey.has(JSON.stringify(key))).toBe(true);
     }

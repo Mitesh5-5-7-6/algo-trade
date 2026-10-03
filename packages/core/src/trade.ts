@@ -101,6 +101,17 @@ export const TradeSchema = z.object({
 
   // --- Entry: always present. A trade exists because something filled. ---
   entryOrderId: EntityIdSchema,
+  /**
+   * Every order folded into this trade — entry, adds, each exit leg — in the
+   * order applied (design §5.7, L1).
+   *
+   * Idempotency keys for the restart-durable fill check (D5), not execution
+   * detail: no price or quantity per leg, which §5.1 declines to model. With
+   * only the entry and the latest exit stored, an add or an earlier exit leg
+   * redelivered after a restart could not be recognised, and was folded in
+   * twice. Defaulted, so a trade written before it existed still parses.
+   */
+  orderIds: z.array(EntityIdSchema).default([]),
   entrySignalId: EntityIdSchema.optional(),
   entryTime: TimestampSchema,
   entryPrice: PriceSchema,
@@ -261,6 +272,7 @@ export function applyTradeFill(
         mode: context.mode,
         side: fill.side === "BUY" ? "LONG" : "SHORT",
         entryOrderId: fill.orderId,
+        orderIds: [fill.orderId],
         ...(fill.signalId === undefined
           ? {}
           : { entrySignalId: fill.signalId }),
@@ -302,6 +314,7 @@ export function applyTradeFill(
       trade: TradeSchema.parse({
         ...open,
         entryPrice: (open.entryPrice * held + fill.price * fill.qty) / newHeld,
+        orderIds: [...open.orderIds, fill.orderId],
         quantity: Math.max(open.quantity, newHeld),
         openQuantity: newHeld,
         charges: open.charges + fill.charges,
@@ -344,6 +357,7 @@ export function applyTradeFill(
 
   const trade = TradeSchema.parse({
     ...open,
+    orderIds: [...open.orderIds, fill.orderId],
     openQuantity: remainingQty,
     grossPnl,
     charges,

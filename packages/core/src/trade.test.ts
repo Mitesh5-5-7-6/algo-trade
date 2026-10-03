@@ -374,3 +374,64 @@ describe("entry provenance and market context (§2 drifts 1 and 3)", () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+/**
+ * Task 2.4, limit L1 (design §5.7): every order folded into a trade is
+ * recorded on it.
+ *
+ * Restart-durable idempotency looks a fill up by its order id. Only the entry
+ * and the LATEST exit leg used to be stored, so an add or an intermediate exit
+ * leg, redelivered after a restart, was unrecognisable and folded in twice.
+ * These are idempotency keys, not execution detail — no price or quantity per
+ * leg, which §5.1 deliberately declines to model.
+ */
+describe("every order folded into a trade is recorded (§2.4, L1)", () => {
+  it("records entry, add and each exit leg, in order", () => {
+    let trade = applyTradeFill(null, fill({ orderId: "o_in" }), CONTEXT).trade;
+    trade = applyTradeFill(
+      trade,
+      fill({ orderId: "o_add", qty: 50, price: 110 }),
+      CONTEXT,
+    ).trade;
+    trade = applyTradeFill(
+      trade,
+      fill({ orderId: "o_out1", side: "SELL", qty: 75, price: 120 }),
+      CONTEXT,
+    ).trade;
+    trade = applyTradeFill(
+      trade,
+      fill({ orderId: "o_out2", side: "SELL", qty: 75, price: 125 }),
+      CONTEXT,
+    ).trade;
+
+    expect(trade.status).toBe("CLOSED");
+    expect(trade.orderIds).toEqual(["o_in", "o_add", "o_out1", "o_out2"]);
+  });
+
+  it("puts a reversing order on both of the trades it touched", () => {
+    const long = applyTradeFill(
+      null,
+      fill({ orderId: "o_in", qty: 50 }),
+      CONTEXT,
+    ).trade;
+    const { trade, remainder } = applyTradeFill(
+      long,
+      fill({ orderId: "o_rev", side: "SELL", qty: 80, price: 110 }),
+      CONTEXT,
+    );
+    const opened = applyTradeFill(null, remainder as TradeFill, {
+      ...CONTEXT,
+      tradeId: "trd_2",
+    }).trade;
+
+    expect(trade.orderIds).toEqual(["o_in", "o_rev"]);
+    expect(opened.orderIds).toEqual(["o_rev"]);
+  });
+
+  /** A trade stored before the field existed still parses. */
+  it("defaults to empty for a trade written before it existed", () => {
+    const legacy: Record<string, unknown> = { ...openLong() };
+    delete legacy["orderIds"];
+    expect(TradeSchema.parse(legacy).orderIds).toEqual([]);
+  });
+});
