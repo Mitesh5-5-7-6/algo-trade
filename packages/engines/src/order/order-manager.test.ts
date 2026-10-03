@@ -606,3 +606,39 @@ describe("the decision's bar travels with the order (§2.1)", () => {
     expect(h.orders.get("ord_1")).not.toHaveProperty("dataProvenance");
   });
 });
+
+/** Task 2.5, limit L4: every fill names the signal that produced its order. */
+describe("a fill names its signal (§2.5)", () => {
+  it("on a synchronous fill", async () => {
+    const h = harness();
+    await h.manager.place(signal({ signalId: "sig_42" }), approved);
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).toMatchObject({ signalId: "sig_42" });
+  });
+
+  it("on a fill that arrives later on the broker stream", async () => {
+    const broker = new ScriptedFakeBroker({ pendingByDefault: true });
+    const h = harness({ broker, mode: "live" });
+    broker.onOrderUpdate((u) => {
+      void h.manager.onBrokerUpdate(u);
+    });
+    await h.manager.place(signal({ signalId: "sig_42" }), approved);
+    broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 101.5,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.events).toHaveLength(2);
+    });
+
+    expect(h.events[1]?.payload).toMatchObject({ signalId: "sig_42" });
+  });
+});

@@ -104,9 +104,10 @@ export class StrategyRunner {
   /**
    * signalId → the instance that emitted it, for signals awaiting a verdict.
    *
-   * ORDER_FILLED does not carry a signalId — only an orderId — so the chain is
-   * two hops: ORDER_PLACED links the two, and the fill is looked up through
-   * it. Both maps are erased the moment a signal resolves.
+   * The fill is attributed in two hops: ORDER_PLACED links order to signal,
+   * and the fill is looked up through it. ORDER_FILLED now names its signal
+   * too (§2.5), but it is optional there, and fills published before it
+   * existed lack it. Both maps are erased the moment a signal resolves.
    */
   private readonly pendingSignals = new Map<string, PendingSignal>();
   private readonly orderToSignal = new Map<string, string>();
@@ -535,8 +536,9 @@ export class StrategyRunner {
   /**
    * An order reached the broker — remember which signal it came from.
    *
-   * `ORDER_FILLED` carries an orderId and no signalId, so without this link
-   * a fill cannot be attributed to the proposal it confirms.
+   * The runner attributes a fill through this link rather than the fill's own
+   * optional `signalId`, which older fills lack — without it a fill could not
+   * always be attributed to the proposal it confirms.
    */
   onOrderPlaced(payload: EventPayload<"ORDER_PLACED">): void {
     if (!this.pendingSignals.has(payload.signalId)) return;

@@ -543,3 +543,49 @@ describe("every leg of a trade is recognised after a restart (§2.4, L1)", () =>
     expect(lookups).toBe(0);
   });
 });
+
+/**
+ * Task 2.5, limit L4: the trade names the signals that entered and exited it,
+ * so `Signal → Trade` does not depend on an order row surviving.
+ */
+describe("the trade names its entry and exit signals (§2.5, L4)", () => {
+  it("records both across a round trip", async () => {
+    const shared = store();
+    const { engine } = lifetime(shared);
+    await engine.onOrderFilled(fill({ signalId: "sig_in" }));
+    await engine.onOrderFilled(
+      fill({
+        orderId: "ord_exit",
+        signalId: "sig_out",
+        side: "SELL",
+        filledAt: 2_000,
+      }),
+    );
+
+    expect([...shared.rows.values()][0]).toMatchObject({
+      status: "CLOSED",
+      entrySignalId: "sig_in",
+      exitSignalId: "sig_out",
+    });
+  });
+
+  /** One reversing order: its signal exits the old trade and enters the new. */
+  it("gives a reversal's signal to both trades it touched", async () => {
+    const shared = store();
+    const { engine } = lifetime(shared);
+    await engine.onOrderFilled(fill({ qty: 50, signalId: "sig_in" }));
+    await engine.onOrderFilled(
+      fill({
+        orderId: "ord_rev",
+        signalId: "sig_rev",
+        side: "SELL",
+        qty: 80,
+        filledAt: 2_000,
+      }),
+    );
+
+    const [closed, opened] = [...shared.rows.values()];
+    expect(closed).toMatchObject({ status: "CLOSED", exitSignalId: "sig_rev" });
+    expect(opened).toMatchObject({ status: "OPEN", entrySignalId: "sig_rev" });
+  });
+});

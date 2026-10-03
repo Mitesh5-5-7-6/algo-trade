@@ -391,9 +391,12 @@ export class OrderManager {
       | "strategyVersion"
       | "dataProvenance"
       | "marketContext"
+      | "signalId"
     >
   > {
     return {
+      // Every fill names the signal behind its order (§2.5, L4).
+      signalId: order.signalId,
       ...(order.stopLoss === undefined ? {} : { stopLoss: order.stopLoss }),
       ...(order.takeProfit === undefined
         ? {}

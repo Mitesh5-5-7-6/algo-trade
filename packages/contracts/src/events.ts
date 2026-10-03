@@ -131,6 +131,13 @@ export const EVENT_PAYLOAD_SCHEMAS = {
 
   ORDER_FILLED: z.object({
     orderId: EntityIdSchema,
+    /**
+     * The signal behind the order (design §5.7, L4). Optional for fills
+     * published before it existed. Lets the Trade name the signals that
+     * entered and exited it without a join through an order that may be
+     * pruned — the reason Q4 copies `strategyVersion` forward too.
+     */
+    signalId: EntityIdSchema.optional(),
     /** Attributes the fill to its (strategy, symbol) position (plan/13 §3). */
     strategyId: EntityIdSchema,
     symbol: SymbolSchema,

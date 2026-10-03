@@ -93,6 +93,10 @@ export class TradeEngine {
       const key = TradeEngine.key(payload.strategyId, payload.symbol);
       let fill: TradeFill | null = {
         orderId: payload.orderId,
+        // Becomes `entrySignalId` / `exitSignalId` (§2.5, L4).
+        ...(payload.signalId === undefined
+          ? {}
+          : { signalId: payload.signalId }),
         side: payload.side,
         qty: payload.qty,
         price: payload.filledPrice,
