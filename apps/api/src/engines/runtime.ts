@@ -686,8 +686,23 @@ export async function startEngineRuntime(deps: {
       readOpenPositions: () => positionEngine.getOpenPositions(),
       readSession: () => Promise.resolve(state.session),
       persistSignal: (signal) => signals.insert(signal),
+      // Durable half of the exit guard (Phase 3 D3). The in-memory Set dies
+      // with the process, and the window it protects — handed off, fill not
+      // back — is exactly the one a restart lands in.
+      hasExitInFlight: (positionId) => orders.hasExitInFlight(positionId),
     },
-    handoff, // the same risk→order road a strategy signal takes (plan/12 §1)
+    // The same risk→order road a strategy signal takes (plan/12 §1), saying
+    // whether an order came of it (audit A7): a blocked or rejected exit
+    // leaves nothing live, so the engine must try again rather than skip
+    // the position until a restart.
+    handoff: async (signal) => {
+      const decision = await risk.validate(signal);
+      if (decision.decision !== "approved") return { placed: false };
+      const result = await orderManager.place(signal, decision);
+      return {
+        placed: result.status !== "rejected" && result.status !== "halted",
+      };
+    },
     nextSignalId: () => `sig_${crypto.randomUUID()}`,
     onError,
   });

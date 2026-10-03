@@ -128,6 +128,9 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db.collection(COLLECTIONS.trades).createIndex({ entryOrderId: 1 }),
     db.collection(COLLECTIONS.trades).createIndex({ exitOrderId: 1 }),
 
+    // orders — the Exit Engine's durable in-flight check (Phase 3 D3).
+    db.collection(COLLECTIONS.orders).createIndex({ positionId: 1, status: 1 }),
+
     // strategy_state — one row per instance; the key IS the identity.
     db
       .collection(COLLECTIONS.strategyState)

@@ -103,6 +103,43 @@ describe("OrdersRepository (plan/12 §6)", () => {
    * Mongo — or the Trade loses it on exactly the path a live trade takes
    * (§2.1, design §2 drifts 1 and 3).
    */
+  /**
+   * The Exit Engine's durable in-flight check (Phase 3 D3). Live means
+   * PLACED or PENDING: a FILLED exit is represented by the position being
+   * gone, and a REJECTED one left nothing in flight — so it must not block
+   * the retry that A7 depends on.
+   */
+  it("knows when an exit for a position is in flight, and only then", async () => {
+    const repo = new OrdersRepository(connection.db);
+    await repo.insert(
+      order({ orderId: "x_placed", signalId: "s_x1", positionId: "pos_a" }),
+    );
+    await repo.insert(
+      order({
+        orderId: "x_rejected",
+        signalId: "s_x2",
+        positionId: "pos_b",
+        status: "REJECTED",
+      }),
+    );
+    await repo.insert(
+      order({
+        orderId: "x_filled",
+        signalId: "s_x3",
+        positionId: "pos_c",
+        status: "FILLED",
+      }),
+    );
+
+    expect(await repo.hasExitInFlight("pos_a")).toBe(true);
+    expect(await repo.hasExitInFlight("pos_b")).toBe(false);
+    expect(await repo.hasExitInFlight("pos_c")).toBe(false);
+    expect(await repo.hasExitInFlight("pos_none")).toBe(false);
+
+    await repo.update("x_placed", { status: "PENDING" });
+    expect(await repo.hasExitInFlight("pos_a")).toBe(true);
+  });
+
   it("round-trips the entry decision's bar and volume flags", async () => {
     const repo = new OrdersRepository(connection.db);
     const dataProvenance = {

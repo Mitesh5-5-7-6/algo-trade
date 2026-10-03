@@ -13,6 +13,14 @@ export interface ExitPorts {
   readSession(): Promise<SessionContext>;
   /** Persist the exit decision to `signals` — the same audit trail (plan/07). */
   persistSignal(signal: Signal): Promise<void>;
+  /**
+   * Whether an exit order for this position is already live (D3).
+   *
+   * Consulted only when the in-memory guard does not already know, so a
+   * warm session pays nothing. After a restart it is the only thing that
+   * knows an exit was already sent.
+   */
+  hasExitInFlight(positionId: string): Promise<boolean>;
 }
 
 /** Why the Exit Engine decided to flatten — recorded on the signal's reason. */

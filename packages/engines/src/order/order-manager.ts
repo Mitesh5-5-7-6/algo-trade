@@ -132,6 +132,9 @@ export class OrderManager {
         ...(signal.exitReason === undefined
           ? {}
           : { exitReason: signal.exitReason }),
+        ...(signal.positionId === undefined
+          ? {}
+          : { positionId: signal.positionId }),
         status: "PLACED",
         mode: this.mode,
         createdAt: this.now(),

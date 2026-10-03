@@ -1,7 +1,6 @@
 import type { Position, Signal } from "@neelkanth/core";
 import type { ExitReason } from "@neelkanth/core";
 import type { EventPayload } from "@neelkanth/contracts";
-import type { RiskHandoff } from "../strategy/ports.js";
 import type { ExitPorts, ExitTrigger } from "./ports.js";
 
 /**
@@ -19,10 +18,25 @@ const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
   square_off: "SESSION_CLOSE",
 };
 
+/**
+ * What became of an exit handed to risk → order (audit A7).
+ *
+ * `placed: false` means no order exists — risk blocked it, or placement was
+ * halted — so nothing is in flight and the exit must be tried again. A
+ * handoff that reports nothing is read as placed: retrying on silence could
+ * send a second closing order while the first is live.
+ */
+export interface ExitHandoffOutcome {
+  readonly placed: boolean;
+}
+
 export interface ExitEngineDeps {
   ports: ExitPorts;
-  /** The same synchronous risk→order path a strategy signal takes (plan/14 §2). */
-  handoff: RiskHandoff;
+  /**
+   * The same synchronous risk→order path a strategy signal takes (plan/14 §2),
+   * optionally saying whether an order came of it.
+   */
+  handoff: (signal: Signal) => Promise<ExitHandoffOutcome | undefined>;
   nextSignalId: () => string;
   /** Confidence stamped on an exit — protective, so deliberately high. */
   exitConfidence?: number;
@@ -95,7 +109,7 @@ export class ExitEngine {
       this.prune(open);
       for (const position of open) {
         if (position.symbol !== candle.symbol) continue;
-        if (this.exiting.has(position.positionId)) continue;
+        if (await this.alreadyExiting(position.positionId)) continue;
         const trigger = ExitEngine.breach(position, candle);
         if (trigger === null) continue;
         await this.exit(position, trigger, candle.close, candle.ts);
@@ -119,12 +133,30 @@ export class ExitEngine {
       const open = this.deps.ports.readOpenPositions();
       this.prune(open);
       for (const position of open) {
-        if (this.exiting.has(position.positionId)) continue;
+        if (await this.alreadyExiting(position.positionId)) continue;
         await this.exit(position, "square_off", position.avgEntryPrice, now);
       }
     } catch (error) {
       this.deps.onError(error, { where: "onSessionTick" });
     }
+  }
+
+  /**
+   * Whether an exit for this position is already on its way.
+   *
+   * Memory first — a warm session answers without a read. On a miss the
+   * durable check runs, because the in-memory Set is empty after a restart
+   * and the window it guards (handed off, not yet filled) is exactly the one
+   * a restart lands in. A second exit would be a REVERSAL under Phase 2's
+   * model, opening a phantom position rather than closing anything.
+   */
+  private async alreadyExiting(positionId: string): Promise<boolean> {
+    if (this.exiting.has(positionId)) return true;
+    if (await this.deps.ports.hasExitInFlight(positionId)) {
+      this.exiting.add(positionId);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -163,6 +195,9 @@ export class ExitEngine {
       qtyProposal: position.qty,
       reason: `exit: ${trigger}`,
       exitReason: EXIT_REASON[trigger],
+      // Carried so the order can be found again by position — the durable
+      // guard has nothing to match on otherwise (D3).
+      positionId: position.positionId,
       contextSnapshot: {
         price,
         indicators: {},
@@ -174,6 +209,10 @@ export class ExitEngine {
     // Persisted before it is acted on, like every other decision (plan/07):
     // an exit that fails downstream must still be visible as having been made.
     await this.deps.ports.persistSignal(signal);
-    await this.deps.handoff(signal);
+    const outcome = await this.deps.handoff(signal);
+    // No order came of it (risk blocked it), so nothing is in flight: clear
+    // the mark, or every later bar skips the position and it stays open with
+    // no exit coming until a restart — the orphan §7 forbids (audit A7).
+    if (outcome?.placed === false) this.exiting.delete(position.positionId);
   }
 }

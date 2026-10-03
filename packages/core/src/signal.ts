@@ -91,6 +91,16 @@ export const SignalSchema = z.object({
    * did not have.
    */
   exitReason: ExitReasonSchema.optional(),
+  /**
+   * The position this signal closes, when it closes one (Phase 3 D3).
+   *
+   * Set by whoever decided to exit, and carried onto the order so the
+   * durable in-flight check has something to match on. Without it, the
+   * only record that an exit was already sent is an in-memory Set that a
+   * restart erases — and the second exit is a REVERSAL under Phase 2's
+   * model, so it opens a phantom trade rather than merely duplicating.
+   */
+  positionId: EntityIdSchema.optional(),
   symbol: SymbolSchema,
   /**
    * What the strategy ANALYSED, when that differs from what it trades.

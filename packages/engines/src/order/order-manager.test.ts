@@ -715,3 +715,26 @@ describe("exit reason and strategy version travel with the order (§2.6, §2.8)"
     expect(filled?.payload).not.toHaveProperty("exitReason");
   });
 });
+
+/**
+ * Task 3.1 (D3): an exit order names the position it closes, so the Exit
+ * Engine's durable in-flight check can find it after a restart.
+ */
+describe("an exit order names its position (§3.1, D3)", () => {
+  it("persists positionId from the signal", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ side: "SELL", exitReason: "STOP_LOSS", positionId: "pos_9" }),
+      approved,
+    );
+
+    expect(h.orders.get("ord_1")?.positionId).toBe("pos_9");
+  });
+
+  it("leaves it absent on an entry", async () => {
+    const h = harness();
+    await h.manager.place(signal(), approved);
+
+    expect(h.orders.get("ord_1")).not.toHaveProperty("positionId");
+  });
+});

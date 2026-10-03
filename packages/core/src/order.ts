@@ -76,6 +76,8 @@ export const OrderSchema = z.object({
   marketContext: EntryMarketContextSchema.optional(),
   /** Copied from the signal, so the fill can report it without a join. */
   exitReason: ExitReasonSchema.optional(),
+  /** The position this order closes, when it closes one (Phase 3 D3). */
+  positionId: EntityIdSchema.optional(),
   status: OrderStatusSchema,
   mode: TradeModeSchema,
   brokerOrderId: z.string().optional(),
