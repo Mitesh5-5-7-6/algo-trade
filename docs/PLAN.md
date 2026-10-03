@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | READY    |
-| 4     | Deterministic replay               | READY    |
-| 5     | Pattern vocabulary                 | READY    |
-| 6     | Counterfactual strategy evaluation | READY    |
-| 7     | Statistical validation             | READY    |
-| 8     | Daily research                     | READY    |
-| 9     | Periodic research                  | READY    |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | IN PROGRESS |
+| 4     | Deterministic replay               | READY       |
+| 5     | Pattern vocabulary                 | READY       |
+| 6     | Counterfactual strategy evaluation | READY       |
+| 7     | Statistical validation             | READY       |
+| 8     | Daily research                     | READY       |
+| 9     | Periodic research                  | READY       |
+| 10    | Research knowledge base            | READY       |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -329,7 +329,7 @@ Every completed position produces exactly one complete Trade.
 
 ## 8. Phase 3 — Exit lifecycle
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -339,6 +339,33 @@ Every entry must be capable of reaching a deterministic outcome.
 
 `STOP_LOSS`, `TAKE_PROFIT`, `STRATEGY_EXIT`, `TIME_EXIT`, `SESSION_CLOSE`,
 `MANUAL_EMERGENCY`, `BROKER_RECONCILIATION`.
+
+### Tasks
+
+Structured around the decisions in
+[PHASE_3_EXIT_LIFECYCLE.md](design/PHASE_3_EXIT_LIFECYCLE.md), which is the
+detailed design for this phase and keeps each task's dependencies. Q1 and Q3
+are settled there (§5.1); Q2 and Q4 are open and block nothing.
+
+| ID  | Task                                                                           | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------ | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1 | Durable `exiting` guard; add `positionId` to `Order` (D3)                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 3.2 | Answer Q1 and Q3                                                               | COMPLETE | `692a8af` | `docs/design/PHASE_3_EXIT_LIFECYCLE.md` §5.1 — Q1: a strategy exit closes the whole position, an exit while flat is a no-op, scale-out is not this phase. Q3: a bar is judged against the levels it opened with, a trailing stop moves after judging, and stop beats target beats time — with the bar on which trailing first reports `STOP_LOSS` where `TAKE_PROFIT` is the truth, confirmed against the staged engine |
+| 3.3 | Strategy exit verdict → `STRATEGY_EXIT` (D1)                                   | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 3.4 | Time-in-trade exit → `TIME_EXIT`, measured from the entry fill (D2)            | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 3.5 | Trailing stop, reporting `STOP_LOSS`; mutable protective levels (D4)           | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 3.6 | Per-strategy square-off opt-out, defaulting to square off (D6)                 | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 3.7 | Manual emergency exit route, behind step-up (D5)                               | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 3.8 | Integration: every simulated entry reaches a completed Trade — the "done when" | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+**Most of this phase is written but not committed.** It is staged on
+`new-ai-agent-v1`, and design §8 audits it against Q1, Q3 and D1–D6. Two
+findings contradict the settled answers and must change before their tasks
+close: A1, the trailing stop judges a bar against a level that bar set (3.5),
+and A2, an exit verdict while flat can open a position (3.3). Each row closes
+with the commit that lands its part, against its own evidence.
+
+**Not in this phase:** scale-out — closing part of a position (Q1).
 
 ### Done when
 
