@@ -1,11 +1,11 @@
 # Phase 2 — Trade lifecycle
 
-**Status: DESIGN. Phase 2 is not open.** PLAN.md §4 forbids skipping a phase
-and §15 forbids implementing a future one early; Phase 1 is `IN PROGRESS`.
-This document exists so that when Phase 1 closes, the phase starts with the
-thinking already done — the same reason
+**Status: see [PLAN.md](../PLAN.md) §7.** Phase 2 is open; its task board
+lives there and nowhere else. This document holds the decisions the board's
+tasks implement. It was written before the phase opened, so it would start
+with the thinking already done — the same reason
 [PHASE_1_HISTORICAL_DATA.md](PHASE_1_HISTORICAL_DATA.md) existed before Phase 1
-opened.
+did.
 
 Authorities: [PLAN.md](../PLAN.md) §7 for scope,
 [ARCHITECTURE_DECISION.md](../architecture/ARCHITECTURE_DECISION.md) §9.2 for
@@ -59,6 +59,24 @@ since landed:
 3. **`volumeAvailable` / `volumeQuality`** now exist. `marketContext` captured
    at entry should record whether the volume behind it was trustworthy, or a
    later study will treat `SUSPECT` volume as fact.
+
+### 2.1 Audit outcome (task 2.1)
+
+| Drift                  | Outcome                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — `dataProvenance`   | Now `DataProvenanceSchema`: the candle store's key `(symbol, interval, barTs)` for the bar the entry decision was made on, plus a **snapshot** of its `source` and `ingestionVersion`. The snapshot is needed because a backfill may later overwrite the LIVE_TICK bar at that key with the broker's record. For a derivative, the key names the analysed underlying's bar. |
+| 2 — calendar in `core` | Does not apply. No trade code imports the calendar.                                                                                                                                                                                                                                                                                                                         |
+| 3 — volume quality     | `marketContext` is now `EntryMarketContextSchema`: the decision bar's `volumeAvailable` and `volumeQuality`, copied exactly and never defaulted. `{}` means captured, with the bar saying nothing; absent means not captured. Trend, volatility and VWAP belong to the phases that compute them.                                                                            |
+
+Both are stamped by the Strategy Runner, the only component holding the bar at
+decision time, and copied forward Signal → Order → `ORDER_FILLED` → Trade — the
+road `strategyVersion` takes (Q4). They are set once, when a trade opens; a
+reversal's new trade takes the reversing order's bar, because that order is
+its entry decision. An Exit Engine signal carries neither: it is not an entry.
+
+The audit also found one port drift: `trades-repository.integration.test.ts`
+predated the §0.4 probe and connected unconditionally, so without MongoDB
+`pnpm test` failed and stopped turbo before the engines and api suites ran.
 
 ---
 
@@ -375,6 +393,18 @@ can attribute an outcome to a strategy version and research that cannot.
 | Q5  | Does `netPnl` subtract anything beyond `charges`? If `otherCosts` means financing, borrow or STT handled outside `charges`, it needs a field and a definition. It must **not** mean `slippage`, which is already inside the fill prices and therefore inside `grossPnl`. | §5.3      |
 
 Q5 does not block the port. It blocks calling `netPnl` final.
+
+### 5.7 Known limits, found by the 2.1 audit
+
+Recorded rather than fixed in 2.1, whose scope was the port. Each needs a
+decision when its task is closed.
+
+| #   | Limit                                                                                                                                                                                                                                                                                                                  | Bears on |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| L1  | **A redelivered scale-in fill is applied twice after a restart.** The durable idempotency lookup matches only `entryOrderId` and the latest `exitOrderId`, so an ADD leg's order is unrecognisable. Nothing in the Risk Engine refuses a same-side add to a filled position.                                           | 2.4, D5  |
+| L2  | **Memory moves before Mongo.** The engine marks a fill applied and updates its open trade before `saveTrade` resolves. A failed save leaves the process ahead of the store, and if a reversal's second save fails, the new trade is lost for good: after a restart the order is found on the closed trade and skipped. | 2.4, D5  |
+| L3  | **`exitPrice` assumes no add after a partial exit.** It derives "already exited" from the peak `quantity`, which stops being "total entered" once a reduced position is added to. Nothing produces partial exits yet (Phase 3).                                                                                        | §5.1 Q2  |
+| L4  | **`entrySignalId` / `exitSignalId` are never populated**, because `ORDER_FILLED` carries no `signalId`. The link remains reachable through `entryOrderId` → order → `signalId`.                                                                                                                                        | 2.5      |
 
 ---
 

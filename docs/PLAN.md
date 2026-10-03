@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | READY    |
-| 3     | Exit lifecycle                     | READY    |
-| 4     | Deterministic replay               | READY    |
-| 5     | Pattern vocabulary                 | READY    |
-| 6     | Counterfactual strategy evaluation | READY    |
-| 7     | Statistical validation             | READY    |
-| 8     | Daily research                     | READY    |
-| 9     | Periodic research                  | READY    |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | IN PROGRESS |
+| 3     | Exit lifecycle                     | READY       |
+| 4     | Deterministic replay               | READY       |
+| 5     | Pattern vocabulary                 | READY       |
+| 6     | Counterfactual strategy evaluation | READY       |
+| 7     | Statistical validation             | READY       |
+| 8     | Daily research                     | READY       |
+| 9     | Periodic research                  | READY       |
+| 10    | Research knowledge base            | READY       |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -267,7 +267,7 @@ A known historical period can be loaded and queried reliably.
 
 ## 7. Phase 2 — Trade lifecycle
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -291,22 +291,22 @@ Structured around the decisions in
 detailed design for this phase. Q1–Q4 are settled there; Q5 is open and
 blocks nothing.
 
-| ID  | Task                                                                                     | STATUS | Commit | Evidence |
-| --- | ---------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 2.1 | Port `5dac705`; audit for drift; apply §5.1's two corrections                            | READY  | —      | —        |
-| 2.2 | ~~Answer Q1 and Q2~~ — settled in design §5.1, with Q3 and Q4 in §5.4                    | READY  | —      | —        |
-| 2.3 | `trades` collection + indexes; confirm `trade_logs` stays unused                         | READY  | —      | —        |
-| 2.4 | `TradeEngine` fill idempotency, proven by replaying one event (D5)                       | READY  | —      | —        |
-| 2.5 | Entry ↔ exit linkage: `entryOrderId`, `exitOrderId`, `positionId` populated              | READY  | —      | —        |
-| 2.6 | `exitReason` threaded from whoever closes the position (D6)                              | READY  | —      | —        |
-| 2.7 | Integration: a full round trip produces exactly one CLOSED trade                         | READY  | —      | —        |
-| 2.8 | `strategyVersion` on `StrategyConfig`, `SignalSchema`, `OrderSchema` (Q4) — all optional | READY  | —      | —        |
-| 2.9 | `/trades` read route                                                                     | READY  | —      | —        |
+| ID  | Task                                                                                     | STATUS   | Commit               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ---------------------------------------------------------------------------------------- | -------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.1 | Port `5dac705`; audit for drift; apply §5.1's two corrections                            | COMPLETE | `c23d0b0`, `69c61e8` | `packages/core/src/trade.ts` — §5.1's pro-rata reversal cost and weighted `exitPrice`; drifts 1 and 3 as `DataProvenanceSchema` and `EntryMarketContextSchema`, stamped by `packages/engines/src/strategy/strategy-runner.ts` and carried Signal → Order → `ORDER_FILLED` → Trade. Tests: `packages/core/src/trade.test.ts`, `packages/engines/src/trade/trade-engine.test.ts` (mutation-checked), `packages/engines/src/order/order-manager.test.ts`. Port drift: `packages/db/src/trades-repository.integration.test.ts` now goes through the §0.4 probe. `pnpm test:integration` on `69c61e8` alone: 968 tests, 0 skipped. Outcome recorded in `docs/design/PHASE_2_TRADE_LIFECYCLE.md` §2 |
+| 2.2 | ~~Answer Q1 and Q2~~ — settled in design §5.1, with Q3 and Q4 in §5.4                    | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.3 | `trades` collection + indexes; confirm `trade_logs` stays unused                         | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.4 | `TradeEngine` fill idempotency, proven by replaying one event (D5)                       | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.5 | Entry ↔ exit linkage: `entryOrderId`, `exitOrderId`, `positionId` populated              | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.6 | `exitReason` threaded from whoever closes the position (D6)                              | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.7 | Integration: a full round trip produces exactly one CLOSED trade                         | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.8 | `strategyVersion` on `StrategyConfig`, `SignalSchema`, `OrderSchema` (Q4) — all optional | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2.9 | `/trades` read route                                                                     | READY    | —                    | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
-**2.1, 2.3 and 2.4 are implemented and verified in the working tree but not
-committed**, so their rows stay READY: a COMPLETE row must cite a commit that
-resolves, and `scripts/check-plan.mjs` enforces it. They move to COMPLETE with
-the commit that lands them, not before.
+**2.2–2.9 landed in `c23d0b0` and `67444d1` without this board moving.** The
+rows stay READY until each is closed against its acceptance evidence, one at a
+time — landed code is not by itself a completion claim. `check-plan` cannot
+catch this direction of drift, which is why it went unnoticed.
 
 **Most of this phase already exists.** `docs/architecture-baseline` carries
 `5dac705` — the Trade schema, repository, engine and their tests — deferred
@@ -652,10 +652,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-The immediate priority is **Phase 0 — Repository + runtime integrity**, then
-**Phase 1 — Historical 5m data**.
+Phases 0 and 1 are complete. The immediate priority is **Phase 2 — Trade
+lifecycle**.
 
-Do not begin Phase 2 until Phase 1's acceptance criteria pass. Do not begin
+Do not begin Phase 3 until Phase 2's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 
