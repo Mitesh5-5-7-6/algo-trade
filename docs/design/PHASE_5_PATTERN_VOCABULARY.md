@@ -241,6 +241,48 @@ pinned to what it detects.
 
 ---
 
+## 6. Acceptance (task 5.7)
+
+The stored year — `NSE:NIFTY50-INDEX` and `NSE:NIFTYBANK-INDEX`,
+2025-09-29 .. 2026-09-28, 5m — swept with all five detectors at their
+defaults, by `sweepFromStore` at `9314c60`:
+
+| Symbol    | Bars   | Sessions | ORB_BREAKOUT | EMA_CROSS | RSI_REVERSION | VWAP_RECLAIM    | HIGH_VOLUME_BREAKOUT |
+| --------- | ------ | -------- | ------------ | --------- | ------------- | --------------- | -------------------- |
+| NIFTY50   | 18,463 | 247      | 839          | 725       | 632           | declined 18,462 | declined 18,443      |
+| NIFTYBANK | 18,463 | 247      | 814          | 745       | 607           | declined 18,462 | declined 18,443      |
+
+- **Twice against `neelkanth_research`, read-only:** 4,362 observations,
+  fingerprint `d9b9ce3c…80fe` both times.
+- **Every observation carries every PLAN §10 field** — `patternId`,
+  `detectorVersion`, timestamp, symbol, timeframe, market context
+  (`{volumeAvailable: true, volumeQuality: "SUSPECT"}`) and data provenance
+  (`BROKER_HISTORICAL`, its ingestion version) naming its own bar: 0
+  failures.
+- **Recorded twice, on a scratch copy** of the same 36,926 bars (the
+  research database stays read-only, as in Phase 4): the first recording
+  added 4,362 rows and 5 catalogue entries, the second added nothing, both
+  with the research fingerprint; every stored row parses and keeps the first
+  recording's `observedAt`. The scratch database was dropped.
+- **Versions pinned** (5.4); `pnpm test:integration`, strict: 1,211 tests, 0 skipped.
+
+**What the year says, and what it does not.** Two of the five detectors
+produced nothing — not because the structures never occurred, but because
+every stored index bar's volume is `SUSPECT` (D3), and the sweep says so per
+bar. That is the ADR working. Both become live the day index volume is
+confirmed `REAL` (Phase 1 Q4) or an equity series is stored — and the
+catalogue and pins mean the observations then recorded will sit beside these
+under the same versions.
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                         | Owner             |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| P1  | `VWAP_RECLAIM` and `HIGH_VOLUME_BREAKOUT` observe nothing on the index year: its volume is `SUSPECT`.                                         | data (Phase 1 Q4) |
+| P2  | Only the spec's five detectors; PLAN §10's wider list (`REJECTION`, `GAP`, `RANGE`, …) is not built.                                          | later             |
+| P3  | A pin detects a rule change only where its series exercises the rule; the series is built on each detector's boundaries, not proven complete. | by design         |
+| P4  | Observations are not yet joined to Trades — that is Phase 6.                                                                                  | Phase 6           |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §10

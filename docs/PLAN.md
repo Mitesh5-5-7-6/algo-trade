@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | IN PROGRESS |
-| 6     | Counterfactual strategy evaluation | READY       |
-| 7     | Statistical validation             | READY       |
-| 8     | Daily research                     | READY       |
-| 9     | Periodic research                  | READY       |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | READY    |
+| 7     | Statistical validation             | READY    |
+| 8     | Daily research                     | READY    |
+| 9     | Periodic research                  | READY    |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -427,7 +427,7 @@ modify Paper or Live trading state.
 
 ## 10. Phase 5 — Pattern vocabulary
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -459,11 +459,14 @@ is the detailed design for this phase and keeps each task's dependencies.
 | 5.4 | Detector versions pinned to their outputs; definitions catalogued in `patterns` (D5)    | COMPLETE | `072abdb` | `packages/engines/src/patterns/detector-versions.test.ts` pins each detector's version to what it finds on a fixed integer series (every detector fires; five mutants killed, one per detector); `PatternDefinition` in `packages/core/src/pattern.ts`, `catalog()` in `packages/patterns/src/registry.ts`, and `packages/db/src/pattern-catalog-repository.ts` keep one definition per version in `patterns`, insert-once, reporting a changed rule as a conflict (`packages/db/src/pattern-catalog-repository.integration.test.ts`, strict 4/4). ORB fires on the break, not the state — design D8                                                         |
 | 5.5 | Lookahead guard and determinism (D7)                                                    | COMPLETE | `5abcd3c` | `packages/engines/src/patterns/pattern-sweep-lookahead.test.ts`: on every one of 300 prefixes of a four-session series (every detector firing, the last session different), the prefix sweep equals the full sweep up to its last bar; a window reaching the rest of the session is killed. `packages/engines/src/patterns/pattern-sweep.ts` refuses bars out of order, duplicated, or from another series; repeat sweeps are identical. Design D7                                                                                                                                                                                                           |
 | 5.6 | Operator sweep over the research dataset, research database only (D6)                   | COMPLETE | `c53b946` | `apps/api/src/patterns/sweep-store.ts` reads `candles` and writes `patterns` then `pattern_observations`, refusing the whole sweep on a catalogue conflict (a dry run checks read-only); `apps/api/src/patterns/sweep-store.integration.test.ts` (strict 7/7) proves no trading repository is named, trading collections unchanged, provenance stored, a re-run records nothing with the same fingerprint, a dry run keeps nothing. `apps/api/scripts/sweep-patterns.mts` writes only to `neelkanth_research` or a scratch database. Design D6                                                                                                               |
-| 5.7 | Acceptance: sweep the real year twice — identical observations carrying every §10 field | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 5.7 | Acceptance: sweep the real year twice — identical observations carrying every §10 field | COMPLETE | `9314c60` | The stored NIFTY and BANKNIFTY year (36,926 bars, 247 sessions each) swept twice from `neelkanth_research`, read-only: 4,362 observations, identical fingerprints, every one carrying `patternId`, `detectorVersion`, timestamp, symbol, timeframe, market context and data provenance naming its own bar. Recorded twice on a scratch copy: 4,362 new, then 0, same fingerprint. `VWAP_RECLAIM` and `HIGH_VOLUME_BREAKOUT` declined every warm bar on `SUSPECT` index volume. Strict `pnpm test:integration` at `9314c60`: 1,211 tests, 0 skipped. Record in `docs/design/PHASE_5_PATTERN_VOCABULARY.md` §6                                                 |
 
-**Most of 5.1 already exists.** `docs/architecture-baseline` carries the
-library, sweep and store inside `ed71384`. Nothing of it touches the live
-runtime. It predates Phases 1–4, so it is ported and audited, not merged.
+**Phase sign-off:** `pnpm test:integration` on `9314c60` — strict, against
+real MongoDB and Redis — 1,211 tests, 0 skipped; and the stored NIFTY and BANKNIFTY year swept
+twice from `neelkanth_research` with identical fingerprints, then recorded
+twice on a scratch copy, the second adding nothing (design §6). 5.1 ported the
+library, sweep and store that `docs/architecture-baseline` carried inside
+`ed71384`.
 
 ### Done when
 
@@ -734,10 +737,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 4 are complete. The immediate priority is **Phase 5 — Pattern
-vocabulary**.
+Phases 0 to 5 are complete. The immediate priority is **Phase 6 —
+Counterfactual strategy evaluation**.
 
-Do not begin Phase 6 until Phase 5's acceptance criteria pass. Do not begin
+Do not begin Phase 7 until Phase 6's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 
