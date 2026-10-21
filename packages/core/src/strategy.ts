@@ -17,6 +17,17 @@ import { EntityIdSchema, SymbolSchema, TimestampSchema } from "./primitives.js";
  */
 export const ExitRulesSchema = z.object({
   /**
+   * Close at the intraday square-off (D6). **Absent means true.**
+   *
+   * The default is the whole decision. An intraday system that silently began
+   * holding overnight because a config defaulted the other way is a far worse
+   * failure than a swing position closed too early — the first carries gap
+   * risk nobody chose. Opting out is what lets a position survive the night
+   * at all, which Phase 2's Q3 (an overnight position stays one trade) needs
+   * before it can ever be exercised. Setting it false takes step-up.
+   */
+  squareOffAtSessionEnd: z.boolean().optional(),
+  /**
    * Close after this many minutes in the trade (D2).
    *
    * Measured from the ENTRY FILL to the close of the bar being judged —

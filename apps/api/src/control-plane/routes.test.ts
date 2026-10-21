@@ -816,3 +816,66 @@ describe("strategy exit rules (§3.4, audit A4)", () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+/**
+ * Task 3.6 (D6): opting out of square-off LOOSENS risk — a position may then
+ * carry overnight gap risk — so it takes step-up, as loosening a limit in
+ * PATCH /settings does. Rules that only add ways out do not.
+ */
+describe("opting out of square-off takes step-up (§3.6)", () => {
+  it("on create", async () => {
+    makeApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      payload: {
+        ...createBody,
+        exitRules: { squareOffAtSessionEnd: false },
+        stepUpPassword: "pw",
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(stepUps).toEqual(["pw"]);
+  });
+
+  it("on edit", async () => {
+    makeApp();
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/strategies",
+        payload: createBody,
+      })
+    ).json<StrategyConfig>();
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/strategies/${created.strategyId}`,
+      payload: {
+        exitRules: { squareOffAtSessionEnd: false },
+        stepUpPassword: "pw",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<StrategyConfig>().exitRules).toEqual({
+      squareOffAtSessionEnd: false,
+    });
+    expect(stepUps).toEqual(["pw"]);
+  });
+
+  it("not for rules that only add ways out, or for opting back in", async () => {
+    makeApp();
+    await app.inject({
+      method: "POST",
+      url: "/strategies",
+      payload: {
+        ...createBody,
+        exitRules: {
+          maxHoldMinutes: 30,
+          trailingStopPct: 0.01,
+          squareOffAtSessionEnd: true,
+        },
+      },
+    });
+    expect(stepUps).toEqual([]);
+  });
+});

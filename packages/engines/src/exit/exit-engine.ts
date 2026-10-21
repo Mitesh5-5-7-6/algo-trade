@@ -144,6 +144,7 @@ export class ExitEngine {
       const open = this.deps.ports.readOpenPositions();
       this.prune(open);
       for (const position of open) {
+        if (!this.squaresOff(position.strategyId)) continue;
         if (await this.alreadyExiting(position.positionId)) continue;
         await this.exit(position, "square_off", position.avgEntryPrice, now);
       }
@@ -183,6 +184,19 @@ export class ExitEngine {
       (position.side === "LONG" ? candidate > current : candidate < current);
     if (tighter)
       await this.deps.ports.updateStopLoss(position.positionId, candidate);
+  }
+
+  /**
+   * Whether this strategy flattens at the intraday square-off (D6).
+   *
+   * Defaults to TRUE, and the default is the decision: a strategy that has
+   * said nothing is an intraday strategy. A strategy that is not running
+   * reports no rules, so it is flattened too.
+   */
+  private squaresOff(strategyId: string): boolean {
+    return (
+      this.deps.ports.readExitRules(strategyId)?.squareOffAtSessionEnd ?? true
+    );
   }
 
   /**

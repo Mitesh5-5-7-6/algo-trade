@@ -297,3 +297,46 @@ describe("trailing stop (§3.5, D4, Q3)", () => {
     expect(h.handedOff).toEqual([]);
   });
 });
+
+/**
+ * Task 3.6 (D6): square-off is opt-out, per strategy. The default is the
+ * decision: an intraday system that silently began holding overnight because
+ * a config was absent carries gap risk nobody chose. Opting out changes only
+ * the flatten — the daily-loss gate is the Risk Engine's and is untouched
+ * (design Q4: almost certainly not, and it is not).
+ */
+describe("square-off is opt-out, per strategy (§3.6, D6)", () => {
+  const SQUARE_OFF = OPEN_TS + 6 * 3_600_000;
+
+  it("flattens by default", async () => {
+    const h = harness({ rules: null });
+    await h.engine.onSessionTick(SQUARE_OFF, SQUARE_OFF);
+
+    expect(h.handedOff[0]?.exitReason).toBe("SESSION_CLOSE");
+  });
+
+  it("flattens when exit rules exist but say nothing about it", async () => {
+    const h = harness({ rules: { maxHoldMinutes: 600 } });
+    await h.engine.onSessionTick(SQUARE_OFF, SQUARE_OFF);
+
+    expect(h.handedOff).toHaveLength(1);
+  });
+
+  it("leaves a strategy that opted out alone", async () => {
+    const h = harness({ rules: { squareOffAtSessionEnd: false } });
+    await h.engine.onSessionTick(SQUARE_OFF, SQUARE_OFF);
+
+    expect(h.handedOff).toEqual([]);
+  });
+
+  /** Holding overnight declines the flatten, not the protection. */
+  it("still honours stops for a strategy that holds overnight", async () => {
+    const h = harness({
+      positions: [position({ stopLoss: 99 })],
+      rules: { squareOffAtSessionEnd: false },
+    });
+    await h.engine.onCandleClosed(bar({ low: 98 }));
+
+    expect(h.handedOff[0]?.exitReason).toBe("STOP_LOSS");
+  });
+});

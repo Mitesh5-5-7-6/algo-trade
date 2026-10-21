@@ -350,6 +350,52 @@ describe("step-up re-auth (plan/21 §5)", () => {
       ).statusCode,
     ).toBe(200);
   });
+
+  /**
+   * Phase 3 D6: holding overnight is a loosening — a position may carry gap
+   * risk — so opting a strategy out of square-off is refused without a
+   * password, by the real verifier. A time exit only adds a way out.
+   */
+  it("requires step-up to opt a strategy out of square-off", async () => {
+    const cookie = sessionCookie(await login());
+    const strategy = {
+      type: "EMA_CROSSOVER",
+      name: "overnight",
+      params: { fast: 9, slow: 21 },
+      symbols: ["NSE:X-EQ"],
+    };
+
+    const noPw = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      headers: { cookie },
+      payload: { ...strategy, exitRules: { squareOffAtSessionEnd: false } },
+    });
+    expect(noPw.statusCode).toBe(403);
+    expect(noPw.json<{ error: { code: string } }>().error.code).toBe(
+      "STEP_UP_REQUIRED",
+    );
+
+    const withPw = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      headers: { cookie },
+      payload: {
+        ...strategy,
+        exitRules: { squareOffAtSessionEnd: false },
+        stepUpPassword: PASSWORD,
+      },
+    });
+    expect(withPw.statusCode).toBe(201);
+
+    const timeExit = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      headers: { cookie },
+      payload: { ...strategy, exitRules: { maxHoldMinutes: 30 } },
+    });
+    expect(timeExit.statusCode).toBe(201);
+  });
 });
 
 describe("bootstrap (plan/21 §6)", () => {

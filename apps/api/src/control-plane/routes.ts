@@ -7,6 +7,7 @@ import {
   ExitRulesSchema,
   StrategyConfigSchema,
   type RiskLimits,
+  type ExitRules,
   type StrategyConfig,
 } from "@neelkanth/core";
 import {
@@ -114,6 +115,7 @@ const CreateStrategyBody = z.object({
   riskRules: RiskRulesSchema.optional(),
   exitRules: ExitRulesSchema.optional(),
   enabled: z.boolean().default(false),
+  stepUpPassword: z.string().optional(),
 });
 
 const UpdateStrategyBody = z.object({
@@ -122,7 +124,26 @@ const UpdateStrategyBody = z.object({
   symbols: z.array(NormalizedSymbol).min(1).optional(),
   riskRules: RiskRulesSchema.optional(),
   exitRules: ExitRulesSchema.optional(),
+  stepUpPassword: z.string().optional(),
 });
+
+/**
+ * Whether an exit-rules change opts a strategy OUT of the square-off (D6).
+ *
+ * That loosens risk — a position may then carry overnight gap risk — so it
+ * takes step-up, like loosening a limit in PATCH /settings. Rules that only add
+ * ways out (a time exit, a trailing stop) do not, and neither does re-sending
+ * an opt-out the strategy already has.
+ */
+function optsOutOfSquareOff(
+  next: ExitRules | undefined,
+  current: ExitRules | undefined,
+): boolean {
+  return (
+    next?.squareOffAtSessionEnd === false &&
+    current?.squareOffAtSessionEnd !== false
+  );
+}
 
 const UpdateSettingsBody = z.object({
   capitalAllocation: z.number().nonnegative().optional(),
@@ -311,6 +332,9 @@ export function registerControlPlane(
 
   app.post("/strategies", async (request, reply) => {
     const body = parse(CreateStrategyBody, request.body);
+    if (optsOutOfSquareOff(body.exitRules, undefined)) {
+      await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
+    }
     if (!registry.has(body.type)) {
       throw new ValidationError(`unknown strategy type: ${body.type}`, {
         type: body.type,
@@ -346,6 +370,12 @@ export function registerControlPlane(
   app.patch("/strategies/:id", async (request) => {
     const { id } = parse(IdParams, request.params);
     const body = parse(UpdateStrategyBody, request.body);
+    if (body.exitRules !== undefined) {
+      const current = await strategies.findById(id);
+      if (optsOutOfSquareOff(body.exitRules, current?.exitRules)) {
+        await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
+      }
+    }
     // Only defined keys — exactOptionalPropertyTypes rejects `T | undefined`.
     const patch: Partial<
       Pick<
