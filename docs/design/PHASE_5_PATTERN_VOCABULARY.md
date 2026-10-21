@@ -185,7 +185,7 @@ earlier observation.
 
 Settled in 5.4, before the pin fixed what 1.0.0 means. As ported,
 `ORB_BREAKOUT` fired on every bar that closed outside the opening range — on
-the pin series, 168 times in three sessions. That is a state ("price is above
+a first three-session probe series, 168 times; on the break alone, 16. That is a state ("price is above
 the range"), and counted per bar it makes one breakout into twelve
 observations, inflating exactly the sample Phase 6 divides by. The other four
 detectors already report inversions — a cross, a re-cross, a reclaim, a break
