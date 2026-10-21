@@ -1,4 +1,4 @@
-import type { Position, Signal } from "@neelkanth/core";
+import { intervalMs, type Position, type Signal } from "@neelkanth/core";
 import type { ExitReason } from "@neelkanth/core";
 import type { EventPayload } from "@neelkanth/contracts";
 import type { ExitPorts, ExitTrigger } from "./ports.js";
@@ -15,6 +15,7 @@ import type { ExitPorts, ExitTrigger } from "./ports.js";
 const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
   stop: "STOP_LOSS",
   target: "TAKE_PROFIT",
+  time: "TIME_EXIT",
   square_off: "SESSION_CLOSE",
 };
 
@@ -45,6 +46,8 @@ export interface ExitEngineDeps {
 }
 
 /** An exit is a market order; SELL closes a LONG, BUY closes a SHORT. */
+const MINUTE_MS = 60_000;
+
 function closingSide(position: Position): "BUY" | "SELL" {
   return position.side === "LONG" ? "SELL" : "BUY";
 }
@@ -110,7 +113,10 @@ export class ExitEngine {
       for (const position of open) {
         if (position.symbol !== candle.symbol) continue;
         if (await this.alreadyExiting(position.positionId)) continue;
-        const trigger = ExitEngine.breach(position, candle);
+        // Q3 rule 4: stop, then target, then time.
+        const trigger =
+          ExitEngine.breach(position, candle) ??
+          this.heldTooLong(position, candle);
         if (trigger === null) continue;
         await this.exit(position, trigger, candle.close, candle.ts);
       }
@@ -139,6 +145,26 @@ export class ExitEngine {
     } catch (error) {
       this.deps.onError(error, { where: "onSessionTick" });
     }
+  }
+
+  /**
+   * Whether the position has been held past its configured limit (D2).
+   *
+   * From `openedAt` — the entry FILL's time — to the CLOSE of the bar being
+   * judged, which is when the decision is made. A bar's `ts` is its start;
+   * measuring to it undercounted every hold by one bar (audit A6). Judged on
+   * bar time, not the wall clock, so it is reproducible from stored candles.
+   */
+  private heldTooLong(
+    position: Position,
+    candle: EventPayload<"CANDLE_CLOSED">,
+  ): ExitTrigger | null {
+    const limit = this.deps.ports.readExitRules(
+      position.strategyId,
+    )?.maxHoldMinutes;
+    if (limit === undefined) return null;
+    const barClose = candle.ts + intervalMs(candle.interval);
+    return barClose - position.openedAt >= limit * MINUTE_MS ? "time" : null;
   }
 
   /**

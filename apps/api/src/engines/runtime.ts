@@ -690,6 +690,9 @@ export async function startEngineRuntime(deps: {
       // with the process, and the window it protects — handed off, fill not
       // back — is exactly the one a restart lands in.
       hasExitInFlight: (positionId) => orders.hasExitInFlight(positionId),
+      // From the runner rather than the database: asked on every closed bar
+      // for every open position (D2).
+      readExitRules: (strategyId) => runner.exitRulesFor(strategyId),
     },
     // The same risk→order road a strategy signal takes (plan/12 §1), saying
     // whether an order came of it (audit A7): a blocked or rejected exit

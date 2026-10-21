@@ -45,6 +45,8 @@ describe("strategyVersionOf (§2.8, PLAN rule 9)", () => {
     ["a param", { params: { rangeMinutes: 30, targetR: 2 } }],
     ["the risk rules", { riskRules: { maxPositionSize: 10 } }],
     ["the strategy type", { type: "EMA_CROSSOVER" }],
+    // A time exit changes what the strategy decides (Phase 3, audit A5).
+    ["the exit rules", { exitRules: { maxHoldMinutes: 30 } }],
   ])("changes when %s changes", (_what, over) => {
     expect(strategyVersionOf(config(over))).not.toBe(
       strategyVersionOf(config()),

@@ -182,7 +182,6 @@ export class PositionEngine {
     state: PositionState,
     payload: EventPayload<"ORDER_FILLED">,
   ): Position {
-    const now = this.now();
     if (current === null) {
       return {
         positionId: this.nextPositionId(),
@@ -202,8 +201,11 @@ export class PositionEngine {
         ...(payload.takeProfit === undefined
           ? {}
           : { target: payload.takeProfit }),
-        openedAt: now,
-        ...(state.status === "CLOSED" ? { closedAt: now } : {}),
+        // The fill's time, not the projection's (D2, audit A6): time-in-trade
+        // is measured from here, and it must agree with the Trade's entryTime
+        // — in a replay, the projection clock is not even the same day.
+        openedAt: payload.filledAt,
+        ...(state.status === "CLOSED" ? { closedAt: payload.filledAt } : {}),
         mode: payload.mode,
       };
     }
@@ -215,7 +217,7 @@ export class PositionEngine {
       status: state.status,
       realizedPnl: state.realizedPnl,
       ...(state.status === "CLOSED" && current.closedAt === undefined
-        ? { closedAt: now }
+        ? { closedAt: payload.filledAt }
         : {}),
     };
   }

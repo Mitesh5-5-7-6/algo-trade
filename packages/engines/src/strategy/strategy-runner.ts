@@ -1,5 +1,6 @@
 import type {
   CandleInterval,
+  ExitRules,
   DerivativeTarget,
   MarketContext,
   Signal,
@@ -40,6 +41,8 @@ interface Instance {
   readonly strategyId: string;
   /** Captured at enable time, so a mid-session config edit cannot rewrite it. */
   readonly strategyVersion?: string;
+  /** When to get out (Phase 3). Replaced when an edit re-provisions. */
+  readonly exitRules?: ExitRules;
   readonly symbol: string;
   readonly interval: CandleInterval;
   readonly strategy: RunnableStrategy;
@@ -146,6 +149,9 @@ export class StrategyRunner {
         // Declared, or derived from the rule that decides — never absent
         // (§2.8, PLAN rule 9). Captured here, at enable time.
         strategyVersion: strategyVersionOf(config),
+        ...(config.exitRules === undefined
+          ? {}
+          : { exitRules: config.exitRules }),
         symbol,
         interval: strategy.interval,
         strategy,
@@ -180,6 +186,20 @@ export class StrategyRunner {
       if (target !== null) out.push({ symbol: instance.symbol, target });
     }
     return out;
+  }
+
+  /**
+   * This strategy's exit rules, or null when it has none or is not running.
+   *
+   * Synchronous, because the Exit Engine asks on every closed bar for every
+   * open position — a read per decision would put the database on the path
+   * of a judgement made from a candle.
+   */
+  exitRulesFor(strategyId: string): ExitRules | null {
+    for (const instance of this.instances.values()) {
+      if (instance.strategyId === strategyId) return instance.exitRules ?? null;
+    }
+    return null;
   }
 
   /** Disable a strategy: drop all its per-symbol instances. */

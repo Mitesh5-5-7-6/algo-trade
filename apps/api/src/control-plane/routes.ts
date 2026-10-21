@@ -4,6 +4,7 @@ import type { Db } from "mongodb";
 import {
   RiskLimitsSchema,
   RiskRulesSchema,
+  ExitRulesSchema,
   StrategyConfigSchema,
   type RiskLimits,
   type StrategyConfig,
@@ -111,6 +112,7 @@ const CreateStrategyBody = z.object({
   params: z.record(z.string(), z.unknown()),
   symbols: z.array(NormalizedSymbol).min(1),
   riskRules: RiskRulesSchema.optional(),
+  exitRules: ExitRulesSchema.optional(),
   enabled: z.boolean().default(false),
 });
 
@@ -119,6 +121,7 @@ const UpdateStrategyBody = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
   symbols: z.array(NormalizedSymbol).min(1).optional(),
   riskRules: RiskRulesSchema.optional(),
+  exitRules: ExitRulesSchema.optional(),
 });
 
 const UpdateSettingsBody = z.object({
@@ -322,6 +325,7 @@ export function registerControlPlane(
       params: body.params,
       symbols: body.symbols,
       ...(body.riskRules === undefined ? {} : { riskRules: body.riskRules }),
+      ...(body.exitRules === undefined ? {} : { exitRules: body.exitRules }),
       enabled: body.enabled,
       status: "active",
       createdAt: now,
@@ -344,12 +348,16 @@ export function registerControlPlane(
     const body = parse(UpdateStrategyBody, request.body);
     // Only defined keys — exactOptionalPropertyTypes rejects `T | undefined`.
     const patch: Partial<
-      Pick<StrategyConfig, "name" | "params" | "symbols" | "riskRules">
+      Pick<
+        StrategyConfig,
+        "name" | "params" | "symbols" | "riskRules" | "exitRules"
+      >
     > = {};
     if (body.name !== undefined) patch.name = body.name;
     if (body.params !== undefined) patch.params = body.params;
     if (body.symbols !== undefined) patch.symbols = body.symbols;
     if (body.riskRules !== undefined) patch.riskRules = body.riskRules;
+    if (body.exitRules !== undefined) patch.exitRules = body.exitRules;
     const updated = await strategies.update(id, patch);
     if (updated === null) throw new NotFoundError("strategy not found", { id });
     // Re-provision a running strategy so param/symbol changes take effect live.

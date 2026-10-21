@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Position, Signal } from "@neelkanth/core";
+import type { ExitRules, Position, Signal } from "@neelkanth/core";
 import type { EventPayload } from "@neelkanth/contracts";
 import { ExitEngine, type ExitHandoffOutcome } from "./exit-engine.js";
 
@@ -47,6 +47,7 @@ const bar = (
 function harness(options: {
   positions?: Position[];
   inFlight?: boolean;
+  rules?: ExitRules | null;
   /** What each successive handoff reports; past the end, nothing. */
   outcomes?: (ExitHandoffOutcome | undefined)[];
 }) {
@@ -69,6 +70,7 @@ function harness(options: {
         lookups += 1;
         return Promise.resolve(options.inFlight ?? false);
       },
+      readExitRules: () => options.rules ?? null,
     },
     handoff: (signal) => {
       handedOff.push(signal);
@@ -163,5 +165,48 @@ describe("a blocked exit is retried (§3.1, audit A7)", () => {
     await h.engine.onCandleClosed(bar({ low: 97, ts: OPEN_TS + 300_000 }));
 
     expect(h.handedOff).toHaveLength(1);
+  });
+});
+
+/**
+ * Task 3.4 (D2): a time exit, measured from the entry FILL to the moment the
+ * decision is made — the bar's CLOSE. A bar's `ts` is its start, so judging
+ * on it undercounted the hold by one bar (audit A6).
+ */
+describe("time exit (§3.4, D2)", () => {
+  const MIN = 60_000;
+
+  it("closes a position held past its limit, at the bar's close", async () => {
+    const h = harness({ rules: { maxHoldMinutes: 15 } });
+    // The 5m bar starting at +10m closes at +15m: fifteen minutes held.
+    await h.engine.onCandleClosed(bar({ ts: OPEN_TS + 10 * MIN }));
+
+    expect(h.handedOff).toHaveLength(1);
+    expect(h.handedOff[0]?.exitReason).toBe("TIME_EXIT");
+  });
+
+  it("leaves it alone one bar short", async () => {
+    const h = harness({ rules: { maxHoldMinutes: 15 } });
+    await h.engine.onCandleClosed(bar({ ts: OPEN_TS + 5 * MIN })); // closes +10m
+
+    expect(h.handedOff).toEqual([]);
+  });
+
+  it("does nothing when no limit is configured", async () => {
+    const h = harness({ rules: null });
+    await h.engine.onCandleClosed(bar({ ts: OPEN_TS + 600 * MIN }));
+
+    expect(h.handedOff).toEqual([]);
+  });
+
+  /** Q3 rule 4: stop, then target, then time. */
+  it("reports a stop rather than a time exit when both are reached", async () => {
+    const h = harness({
+      positions: [position({ stopLoss: 99 })],
+      rules: { maxHoldMinutes: 15 },
+    });
+    await h.engine.onCandleClosed(bar({ ts: OPEN_TS + 30 * MIN, low: 98 }));
+
+    expect(h.handedOff[0]?.exitReason).toBe("STOP_LOSS");
   });
 });

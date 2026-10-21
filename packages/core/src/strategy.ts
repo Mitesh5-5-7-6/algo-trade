@@ -6,6 +6,28 @@ import { EntityIdSchema, SymbolSchema, TimestampSchema } from "./primitives.js";
  * The Risk Engine enforces that overrides may only be STRICTER than the
  * global limits (plan/14 §4) — that comparison is runtime logic, not shape.
  */
+/**
+ * Per-strategy exit behaviour (Phase 3).
+ *
+ * Separate from `RiskRules`, which is about how much to risk. These are
+ * about when to get out, and conflating them would make a strategy that
+ * wants a time exit look like one that wants a different position size.
+ * Part of the strategy's derived version: an exit rule changes what it
+ * decides.
+ */
+export const ExitRulesSchema = z.object({
+  /**
+   * Close after this many minutes in the trade (D2).
+   *
+   * Measured from the ENTRY FILL to the close of the bar being judged —
+   * never from the signal: `PENDING` is not `FILLED`, and a 30-minute rule
+   * measured from a signal that sat unfilled for eight of them is not the
+   * rule anybody wrote.
+   */
+  maxHoldMinutes: z.number().int().positive().optional(),
+});
+export type ExitRules = z.infer<typeof ExitRulesSchema>;
+
 export const RiskRulesSchema = z.object({
   maxPositionSize: z.number().int().positive().optional(),
   maxCapitalPerTrade: z.number().positive().optional(),
@@ -40,6 +62,7 @@ export const StrategyConfigSchema = z.object({
   params: z.record(z.string(), z.unknown()),
   symbols: z.array(SymbolSchema).min(1),
   riskRules: RiskRulesSchema.optional(),
+  exitRules: ExitRulesSchema.optional(),
   enabled: z.boolean(),
   status: StrategyStatusSchema,
   /**

@@ -63,6 +63,7 @@ function harness(open: Position[]) {
       },
       // Per-test fixtures: nothing is ever already in flight (D3).
       hasExitInFlight: () => Promise.resolve(false),
+      readExitRules: () => null,
     },
     handoff: (signal) => {
       handedOff.push(signal);
@@ -164,6 +165,7 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
         readSession: () => Promise.resolve(session),
         persistSignal: () => Promise.resolve(),
         hasExitInFlight: () => Promise.resolve(false),
+        readExitRules: () => null,
       },
       handoff: () => Promise.reject(new Error("risk unavailable")),
       nextSignalId: () => "sig_1",

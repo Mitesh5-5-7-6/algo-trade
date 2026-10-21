@@ -7,7 +7,7 @@ import type { StrategyConfig } from "./strategy.js";
  * `strategyVersion` reaches Signal, Order and Trade, but no route sets it on a
  * config, so without this every decision went out unversioned. A version an
  * operator DECLARED wins. Otherwise one is derived from what decides — the
- * type, the params and the risk rules — and labelled `cfg-` so it can never be
+ * type, the params, the risk rules and the exit rules — and labelled `cfg-` so it can never be
  * mistaken for a declared one.
  *
  * What is left out is the point. A rename is not a different strategy (the
@@ -20,7 +20,10 @@ import type { StrategyConfig } from "./strategy.js";
  * later `strategyRevision` (design §5.4 Q4). This identifies the config.
  */
 export function strategyVersionOf(
-  config: Pick<StrategyConfig, "type" | "params" | "riskRules"> & {
+  config: Pick<
+    StrategyConfig,
+    "type" | "params" | "riskRules" | "exitRules"
+  > & {
     strategyVersion?: string | undefined;
   },
 ): string {
@@ -29,6 +32,7 @@ export function strategyVersionOf(
     type: config.type,
     params: config.params,
     riskRules: config.riskRules,
+    exitRules: config.exitRules,
   });
   return `cfg-${cyrb53(rule).toString(16).padStart(14, "0")}`;
 }

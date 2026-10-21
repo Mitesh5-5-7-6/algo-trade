@@ -682,3 +682,30 @@ describe("a strategy can close what it holds (§3.3, D1)", () => {
     expect(h.handoffs).toEqual([]);
   });
 });
+
+/**
+ * Task 3.4: the Exit Engine asks the runner for a strategy's exit rules on
+ * every closed bar, so the answer is in memory — captured when the instance
+ * was enabled, and replaced when an edit re-provisions it.
+ */
+describe("exit rules come from the enabled config (§3.4)", () => {
+  it("returns the rules the strategy was enabled with", async () => {
+    const h = harness();
+    await h.runner.enable({
+      ...config("ALWAYS_BUY"),
+      exitRules: { maxHoldMinutes: 30 },
+    });
+
+    expect(h.runner.exitRulesFor("str_ALWAYS_BUY")).toEqual({
+      maxHoldMinutes: 30,
+    });
+  });
+
+  it("returns null when none are configured, or the strategy is not running", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+
+    expect(h.runner.exitRulesFor("str_ALWAYS_BUY")).toBeNull();
+    expect(h.runner.exitRulesFor("str_ghost")).toBeNull();
+  });
+});

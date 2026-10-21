@@ -764,3 +764,55 @@ describe("GET /trades (§2.9)", () => {
     expect(stepUps).toEqual([]);
   });
 });
+
+/**
+ * Task 3.4, audit A4: exit rules can be set through the API. The engine
+ * honoured them, but no route accepted them, so a time exit was reachable
+ * only by editing Mongo — the shape of Phase 2's strategyVersion gap.
+ */
+describe("strategy exit rules (§3.4, audit A4)", () => {
+  it("accepts exit rules on create", async () => {
+    makeApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      payload: { ...createBody, exitRules: { maxHoldMinutes: 30 } },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<StrategyConfig>().exitRules).toEqual({
+      maxHoldMinutes: 30,
+    });
+  });
+
+  it("updates exit rules, re-provisioning a running strategy", async () => {
+    makeApp();
+    const created = (
+      await app.inject({
+        method: "POST",
+        url: "/strategies",
+        payload: createBody,
+      })
+    ).json<StrategyConfig>();
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/strategies/${created.strategyId}`,
+      payload: { exitRules: { maxHoldMinutes: 45 } },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json<StrategyConfig>().exitRules).toEqual({
+      maxHoldMinutes: 45,
+    });
+    expect(runtime.calls).toContain(`disable:${created.strategyId}`);
+  });
+
+  it("rejects a non-positive hold limit", async () => {
+    makeApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      payload: { ...createBody, exitRules: { maxHoldMinutes: 0 } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

@@ -1,4 +1,9 @@
-import type { Position, SessionContext, Signal } from "@neelkanth/core";
+import type {
+  ExitRules,
+  Position,
+  SessionContext,
+  Signal,
+} from "@neelkanth/core";
 
 /**
  * Infrastructure the Exit Engine reads/writes through, injected so it stays
@@ -21,7 +26,19 @@ export interface ExitPorts {
    * knows an exit was already sent.
    */
   hasExitInFlight(positionId: string): Promise<boolean>;
+  /**
+   * This strategy's exit rules, or null if it has none configured.
+   *
+   * Synchronous and in memory: asked on every closed bar for every open
+   * position. The rules are those the running instance was enabled with; an
+   * edit takes effect when it re-provisions the strategy, as a params edit
+   * does.
+   */
+  readExitRules(strategyId: string): ExitRules | null;
 }
 
-/** Why the Exit Engine decided to flatten — recorded on the signal's reason. */
-export type ExitTrigger = "stop" | "target" | "square_off";
+/**
+ * Why the Exit Engine decided to flatten — recorded on the signal's reason.
+ * `time` is Phase 3 D2.
+ */
+export type ExitTrigger = "stop" | "target" | "time" | "square_off";
