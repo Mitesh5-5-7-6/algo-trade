@@ -52,6 +52,19 @@ export const StrategyVerdictSchema = z.object({
    */
   stopLossPct: z.number().gt(0).lt(1).optional(),
   targetPct: z.number().gt(0).optional(),
+  /**
+   * Close the open position, rather than propose a new one (Phase 3 D1).
+   *
+   * A strategy could previously only exit by emitting the OPPOSITE side,
+   * which the position engine netted against. Under Phase 2's Q1 that is
+   * indistinguishable from a genuine reversal — so "I am done" produced one
+   * closed trade AND a phantom position facing the other way.
+   *
+   * With this the runner closes the WHOLE position actually held, stamped
+   * STRATEGY_EXIT, whatever side or quantity the verdict names (Q1). While
+   * flat it is a no-op, recorded as a HOLD — never an entry.
+   */
+  exit: z.boolean().optional(),
   /** Mandatory human-readable justification (plan/15 §2). */
   reason: z.string().min(1),
 });

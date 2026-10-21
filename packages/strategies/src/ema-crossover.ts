@@ -108,6 +108,11 @@ export const emaCrossover: StrategyDefinition<
           confidence: Math.max(confidence, 0.6),
           qtyProposal: context.position.qty,
           reason: `fast EMA ${p.fast} crossed below slow EMA ${p.slow} — exit long`,
+          // An explicit exit (Phase 3 D1): the runner closes the whole
+          // position held and the Trade records STRATEGY_EXIT, rather than an
+          // opposite-side order the position engine nets — which a resized
+          // position would turn into a reversal.
+          exit: true,
         };
       }
       if (p.allowShort && context.position === null) {

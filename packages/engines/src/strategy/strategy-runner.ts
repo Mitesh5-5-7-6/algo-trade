@@ -438,8 +438,9 @@ export class StrategyRunner {
 
     // HOLD documents that the strategy looked and chose inaction (plan/15 §4);
     // it never proceeds to risk. A HOLD proposes nothing, so there is no latch
-    // to release.
-    if (verdict.side === "HOLD") return;
+    // to release. Judged on the SIGNAL's side: an exit verdict's side is
+    // derived from the position (D1), and one with nothing to close is a HOLD.
+    if (signal.side === "HOLD") return;
 
     // Below-threshold signals are recorded but not forwarded (plan/15 §6). The
     // strategy still has to hear about it: it marked an entry as proposed, and
@@ -447,14 +448,14 @@ export class StrategyRunner {
     if (verdict.confidence < this.minConfidence) {
       this.resolve(instance, {
         signalId: signal.signalId,
-        side: verdict.side,
+        side: signal.side,
         status: "REJECTED",
         reason: "below the confidence threshold",
       });
       return;
     }
 
-    this.remember(signal.signalId, instance, verdict.side);
+    this.remember(signal.signalId, instance, signal.side);
     await this.deps.handoff(signal); // synchronous risk→order (plan/14 §2)
   }
 
@@ -641,6 +642,11 @@ export class StrategyRunner {
       (verdict.targetPct === undefined
         ? undefined
         : trade.price * (1 + verdict.targetPct));
+    // An exit closes what is actually held (Phase 3 D1, Q1). Emitting the
+    // opposite side instead — the only mechanism before this — is
+    // indistinguishable from a genuine reversal, which Phase 2 Q1 makes TWO
+    // trades: one closed, and a phantom facing the other way.
+    const held = verdict.exit === true ? context.position : null;
     return {
       signalId: this.deps.nextSignalId(),
       strategyId: instance.strategyId,
@@ -653,13 +659,32 @@ export class StrategyRunner {
       ...(trade.underlying === undefined
         ? {}
         : { underlyingSymbol: trade.underlying }),
-      side: verdict.side,
+      // Derived, not asked for: a strategy that had to name the closing side
+      // could name the wrong one. With nothing held, an exit has nothing to
+      // close and is recorded as a HOLD — never an entry on whatever side the
+      // verdict happened to name (audit A2).
+      side:
+        held !== null
+          ? held.side === "LONG"
+            ? "SELL"
+            : "BUY"
+          : verdict.exit === true
+            ? "HOLD"
+            : verdict.side,
       confidence: verdict.confidence,
       ...(verdict.qtyProposal === undefined
         ? {}
         : { qtyProposal: verdict.qtyProposal }),
       ...(stopLoss === undefined ? {} : { stopLoss }),
       ...(target === undefined ? {} : { target }),
+      // The WHOLE position, whatever quantity the verdict proposed (Q1).
+      ...(held === null
+        ? {}
+        : {
+            exitReason: "STRATEGY_EXIT" as const,
+            positionId: held.positionId,
+            qtyProposal: held.qty,
+          }),
       reason: verdict.reason,
       contextSnapshot: {
         price: trade.price,

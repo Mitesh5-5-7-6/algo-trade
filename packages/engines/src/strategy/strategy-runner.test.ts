@@ -78,6 +78,26 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
       throw new Error("strategy blew up");
     }),
   );
+  // Phase 3 D1: a strategy that closes what is held rather than proposing the
+  // opposite side. HOLD is what it returns for "not an entry".
+  registry.register(
+    def("EXITER", () => ({
+      side: "HOLD",
+      confidence: 1,
+      exit: true,
+      reason: "done with this one",
+    })),
+  );
+  // The same exit, written the way EMA and RSI write theirs: naming the side
+  // that would close a long. Audit A2 — while flat, that side must not open.
+  registry.register(
+    def("EXIT_SELLER", () => ({
+      side: "SELL",
+      confidence: 1,
+      exit: true,
+      reason: "done with this one",
+    })),
+  );
   // Analyses one series, trades a contract derived from another — the split
   // the derivative path exists to handle.
   registry.register({
@@ -560,5 +580,105 @@ describe("the decision's bar travels with it (§2.1, design §2 drifts 1 and 3)"
 
     expect(h.signals[0]?.symbol).toBe("NSE:NIFTY26SEP25000CE");
     expect(h.signals[0]?.dataProvenance?.symbol).toBe("NSE:X-EQ");
+  });
+});
+
+describe("a strategy can close what it holds (§3.3, D1)", () => {
+  const held = (side: "LONG" | "SHORT", qty = 10): Position => ({
+    positionId: "pos_held",
+    strategyId: "str_EXITER",
+    symbol: "NSE:X-EQ",
+    side,
+    qty,
+    avgEntryPrice: 100,
+    status: "OPEN",
+    realizedPnl: 0,
+    unrealizedPnl: 0,
+    openedAt: 0,
+    mode: "paper",
+  });
+
+  /**
+   * Before this, the only way out was an opposite-side signal the position
+   * engine netted against — indistinguishable from a genuine reversal, which
+   * Phase 2 Q1 makes TWO trades: one closed, and a phantom facing the other
+   * way. A strategy saying "I am done" must not produce a new position.
+   */
+  it("emits a closing signal for a LONG, stamped STRATEGY_EXIT", async () => {
+    const h = harness();
+    h.setPosition(held("LONG"));
+    await h.runner.enable(config("EXITER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toHaveLength(1);
+    expect(h.handoffs[0]).toMatchObject({
+      side: "SELL",
+      exitReason: "STRATEGY_EXIT",
+      positionId: "pos_held",
+      qtyProposal: 10,
+    });
+  });
+
+  it("mirrors for a SHORT", async () => {
+    const h = harness();
+    h.setPosition(held("SHORT", 7));
+    await h.runner.enable(config("EXITER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]).toMatchObject({
+      side: "BUY",
+      exitReason: "STRATEGY_EXIT",
+      qtyProposal: 7,
+    });
+  });
+
+  /** Q1: the WHOLE position, whatever quantity the verdict proposed. */
+  it("closes the whole position, ignoring a proposed quantity", async () => {
+    const h = harness();
+    h.setPosition(held("LONG", 12));
+    await h.runner.enable(config("EXIT_SELLER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]).toMatchObject({ side: "SELL", qtyProposal: 12 });
+  });
+
+  /**
+   * An exit verdict with nothing held is a strategy asking to close a position
+   * that does not exist. It must not become a new entry on the closing side —
+   * which is precisely what deriving the side without checking would do.
+   */
+  it("forwards nothing when there is no position to close", async () => {
+    const h = harness();
+    h.setPosition(null);
+    await h.runner.enable(config("EXITER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toEqual([]);
+  });
+
+  /**
+   * Audit A2: the same, when the verdict names a side. Falling back to that
+   * side while flat turned "I am done" into a SHORT entry. It is recorded as
+   * a HOLD instead — the strategy did decide, so the evaluation is kept.
+   */
+  it("does not let an exit that names a side open a position while flat", async () => {
+    const h = harness();
+    h.setPosition(null);
+    await h.runner.enable(config("EXIT_SELLER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toEqual([]);
+    expect(h.signals[0]).toMatchObject({ side: "HOLD" });
+    expect(h.signals[0]?.exitReason).toBeUndefined();
+  });
+
+  /** An ordinary HOLD is still inaction, and still never forwarded. */
+  it("leaves a plain HOLD alone", async () => {
+    const h = harness();
+    h.setPosition(held("LONG"));
+    await h.runner.enable(config("HOLDER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toEqual([]);
   });
 });
