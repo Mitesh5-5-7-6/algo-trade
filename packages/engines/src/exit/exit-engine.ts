@@ -29,6 +29,13 @@ const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
  * handoff that reports nothing is read as placed: retrying on silence could
  * send a second closing order while the first is live.
  */
+/**
+ * The exit model's version (Phase 4 Q3) — which triggers exist and how a bar
+ * is judged against them (Phase 3). Its arithmetic is pinned by the golden
+ * record; bump this with any change to what the engine decides.
+ */
+export const EXIT_MODEL_VERSION = "1";
+
 export interface ExitHandoffOutcome {
   readonly placed: boolean;
 }

@@ -14,7 +14,12 @@ import {
   NSE_DEFAULT_SESSION,
 } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
-import { PaperBroker } from "@neelkanth/broker";
+import {
+  DEFAULT_CHARGES,
+  PaperBroker,
+  type ChargeConfig,
+  type SlippageModel,
+} from "@neelkanth/broker";
 import {
   computePortfolio,
   ExitEngine,
@@ -142,6 +147,10 @@ export interface ReplayInput {
   biasConfig?: MarketBiasConfig;
   allocatedCapital: number;
   limits: RiskLimits;
+  /** How fills slip (Q3). Defaults to the harness's 5 bps. */
+  slippage?: SlippageModel;
+  /** What fills cost (Q3). Defaults to `DEFAULT_CHARGES`. */
+  charges?: ChargeConfig;
   /** Observes each closed bar, in order, as the pipeline sees it. */
   onCandleClosed?: (candle: Candle) => void;
 }
@@ -230,6 +239,9 @@ export interface GoldenRecord {
 }
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+
+/** The harness's slippage when a run names none: 5 bps, adverse. */
+export const DEFAULT_SLIPPAGE: SlippageModel = { kind: "percent", pct: 0.0005 };
 
 /** Run one replay (Phase 4). */
 export async function runReplay(input: ReplayInput): Promise<GoldenRecord> {
@@ -393,7 +405,8 @@ class ReplayPipeline {
     const broker = new PaperBroker({
       readPrice: (symbol) => Promise.resolve(this.hotPrice.get(symbol) ?? null),
       readSessionOpen: () => Promise.resolve(true),
-      slippage: { kind: "percent", pct: 0.0005 },
+      slippage: fixture.slippage ?? DEFAULT_SLIPPAGE,
+      charges: fixture.charges ?? DEFAULT_CHARGES,
       now: () => this.now,
     });
     const orderPorts: OrderPorts = {

@@ -8,6 +8,13 @@ import type { OrderSide } from "@neelkanth/core";
  * Configurable so the operator can tune how conservative the rehearsal is
  * (plan/11 §10).
  */
+/**
+ * The slippage model's version (Phase 4 Q3). Bump it whenever
+ * `applySlippage` would produce a different price for the same inputs;
+ * `model-versions.test.ts` pins each version's outputs.
+ */
+export const SLIPPAGE_MODEL_VERSION = "1";
+
 export type SlippageModel =
   | { readonly kind: "none" }
   | { readonly kind: "percent"; readonly pct: number } // fraction, e.g. 0.0005 = 5bps

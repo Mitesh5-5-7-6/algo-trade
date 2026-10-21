@@ -16,6 +16,13 @@ import type { PortfolioSnapshot } from "./ports.js";
  */
 
 /** Limits after F&O fields fall back to their equity counterparts. */
+/**
+ * The position-sizing model's version (Phase 4 Q3). Bump it whenever a
+ * quantity would be sized differently for the same inputs;
+ * `sizing-version.test.ts` pins each version's outputs.
+ */
+export const SIZING_MODEL_VERSION = "1";
+
 export interface FnoLimits {
   riskPerTrade: number;
   maxCapitalPerTrade: number;

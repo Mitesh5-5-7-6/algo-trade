@@ -28,7 +28,7 @@ export function strategyVersionOf(
   },
 ): string {
   if (config.strategyVersion !== undefined) return config.strategyVersion;
-  const rule = canonical({
+  const rule = canonicalJson({
     type: config.type,
     params: config.params,
     riskRules: config.riskRules,
@@ -38,17 +38,18 @@ export function strategyVersionOf(
 }
 
 /**
- * JSON with object keys sorted and `undefined` dropped, so the same rule
- * always serialises the same way however its params were written.
+ * JSON with object keys sorted and `undefined` dropped, so the same value
+ * always serialises the same way however it was written. Shared by the
+ * strategy version and a replay's fingerprint (Phase 4 D5).
  */
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, v]) => v !== undefined)
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     return `{${entries
-      .map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`)
+      .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`)
       .join(",")}}`;
   }
   return JSON.stringify(value);
