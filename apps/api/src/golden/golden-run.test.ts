@@ -168,3 +168,56 @@ describe("the harness runs the whole machine, not a smaller one", () => {
     }
   });
 });
+
+/**
+ * Task 4.3 — the harness produces Phase 2's outcome primitive.
+ *
+ * Positions say what is held; a completed Trade says what one decision
+ * earned and why it ended, which is the only thing research labels against.
+ * A replay that stopped at positions would prove the determinism of
+ * everything except the record research reads.
+ */
+describe("the harness records completed Trades (§4.3)", () => {
+  const run = (): Promise<GoldenRecord> => runGoldenPipeline(goldenFixture());
+
+  it("closes a Trade for every position, linked to the orders that made it", async () => {
+    const record = await run();
+    expect(record.trades.length).toBe(record.positions.length);
+
+    const orderIds = new Set(record.orders.map((o) => o.orderId));
+    for (const trade of record.trades) {
+      expect(trade.status).toBe("CLOSED");
+      expect(orderIds.has(trade.entryOrderId)).toBe(true);
+      expect(orderIds.has(trade.exitOrderId ?? "")).toBe(true);
+    }
+  });
+
+  /** Recorded, never inferred — and the day's three default exits all appear. */
+  it("names why every Trade ended", async () => {
+    const record = await run();
+    const reasons = new Set(record.trades.map((t) => t.exitReason));
+    expect(reasons.has(undefined)).toBe(false);
+    for (const reason of ["STOP_LOSS", "TAKE_PROFIT", "SESSION_CLOSE"]) {
+      expect(reasons.has(reason)).toBe(true);
+    }
+  });
+
+  /** Phase 2's stamps survive the replay: version, and what the entry stood on. */
+  it("carries the strategy version and the entry bar's provenance", async () => {
+    const record = await run();
+    for (const trade of record.trades) {
+      expect(trade.strategyVersion).toMatch(/^cfg-/);
+      expect(trade.entrySource).toBe("LIVE_TICK");
+    }
+  });
+
+  /**
+   * Two engines, one day: the Trades' net results must add up to the realized
+   * P&L the Position Engine reports, or one of them is wrong about the day.
+   */
+  it("reconciles with the day's realized P&L", async () => {
+    const record = await run();
+    const net = record.trades.reduce((sum, t) => sum + t.netPnl, 0);
+    expect(net).toBeCloseTo(record.realizedPnl, 2);
+  });
+});

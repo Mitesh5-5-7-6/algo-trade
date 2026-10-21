@@ -8,6 +8,7 @@ import {
   type SessionContext,
   type Signal,
   type StrategyConfig,
+  type Trade,
   istDateKey,
 } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
@@ -26,6 +27,7 @@ import {
   RiskEngine,
   SessionManager,
   StrategyRunner,
+  TradeEngine,
   type ExitHandoffOutcome,
   type ExitPorts,
   type IndicatorPorts,
@@ -131,6 +133,30 @@ interface PositionRow {
   stopLoss?: number;
   target?: number;
 }
+/**
+ * A completed Trade, as research reads it (Phase 2's outcome primitive).
+ * The fields that make it evidence: both orders, why it ended, the version
+ * that decided it, and where the bar behind the entry came from.
+ */
+interface TradeRow {
+  tradeId: string;
+  strategyId: string;
+  strategyVersion?: string;
+  symbol: string;
+  side: string;
+  status: string;
+  entryOrderId: string;
+  exitOrderId?: string;
+  entryPrice: number;
+  exitPrice?: number;
+  quantity: number;
+  exitReason?: string;
+  grossPnl: number;
+  charges: number;
+  netPnl: number;
+  /** The entry bar's source — LIVE_TICK here, BROKER_HISTORICAL in history. */
+  entrySource?: string;
+}
 interface CandleCountRow {
   symbol: string;
   interval: string;
@@ -144,6 +170,8 @@ export interface GoldenRecord {
   riskDecisions: RiskDecisionRow[];
   orders: OrderRow[];
   positions: PositionRow[];
+  /** One per completed position lifecycle (§4.3). */
+  trades: TradeRow[];
   /** Session transitions, in order, as the single session driver saw them. */
   sessionEvents: string[];
   /** The gate's verdict at the end of the day. */
@@ -172,12 +200,15 @@ class GoldenPipeline {
   private readonly ordersById = new Map<string, Order>();
   private readonly ordersBySignal = new Set<string>();
   private readonly positionsById = new Map<string, Position>();
+  /** Latest state of each Trade, in the order Trades were opened. */
+  private readonly tradesById = new Map<string, Trade>();
 
   private readonly signals: SignalRow[] = [];
   private readonly riskDecisions: RiskDecisionRow[] = [];
   private readonly sessionEvents: string[] = [];
 
   private idSeq = 0;
+  private tradeSeq = 0;
 
   private readonly marketData: MarketDataEngine;
   private readonly session: SessionManager;
@@ -189,6 +220,7 @@ class GoldenPipeline {
   private readonly orderManager: OrderManager;
   private readonly positionEngine: PositionEngine;
   private readonly pnl: PnlEngine;
+  private readonly tradeEngine: TradeEngine;
 
   constructor(fixture: GoldenFixture) {
     this.fixture = fixture;
@@ -230,6 +262,28 @@ class GoldenPipeline {
       ports: positionPorts,
       nextPositionId: () => this.nextId("pos"),
       now: () => this.now,
+      onError,
+    });
+
+    // The outcome projection, keyed and fed as the runtime feeds it.
+    this.tradeEngine = new TradeEngine({
+      ports: {
+        saveTrade: (trade) => {
+          this.tradesById.set(trade.tradeId, trade);
+          return Promise.resolve();
+        },
+        loadOpenTrades: () => Promise.resolve([]),
+        findTradeByOrderId: () => Promise.resolve(null),
+        resolvePositionId: (strategyId, symbol) =>
+          this.positionEngine.getPosition(strategyId, symbol)?.positionId ??
+          null,
+      },
+      // Its own counter, so adding Trades does not renumber every signal and
+      // order after them — the record stays comparable across this change.
+      nextTradeId: () => {
+        this.tradeSeq += 1;
+        return `trd_${String(this.tradeSeq)}`;
+      },
       onError,
     });
 
@@ -493,6 +547,30 @@ class GoldenPipeline {
         ...(p.stopLoss === undefined ? {} : { stopLoss: round4(p.stopLoss) }),
         ...(p.target === undefined ? {} : { target: round4(p.target) }),
       })),
+      trades: [...this.tradesById.values()].map((t) => ({
+        tradeId: t.tradeId,
+        strategyId: t.strategyId,
+        ...(t.strategyVersion === undefined
+          ? {}
+          : { strategyVersion: t.strategyVersion }),
+        symbol: t.symbol,
+        side: t.side,
+        status: t.status,
+        entryOrderId: t.entryOrderId,
+        ...(t.exitOrderId === undefined ? {} : { exitOrderId: t.exitOrderId }),
+        entryPrice: round4(t.entryPrice),
+        ...(t.exitPrice === undefined
+          ? {}
+          : { exitPrice: round4(t.exitPrice) }),
+        quantity: t.quantity,
+        ...(t.exitReason === undefined ? {} : { exitReason: t.exitReason }),
+        grossPnl: round4(t.grossPnl ?? 0),
+        charges: round4(t.charges),
+        netPnl: round4(t.netPnl ?? 0),
+        ...(t.dataProvenance === undefined
+          ? {}
+          : { entrySource: t.dataProvenance.source }),
+      })),
       sessionEvents: this.sessionEvents,
       marketView: { bias: view.bias, detail: view.detail },
       openAtEnd: this.positionEngine.getOpenPositions().length,
@@ -622,7 +700,10 @@ class GoldenPipeline {
     }
     if (name === "ORDER_FILLED") {
       const filled = payload as EventPayload<"ORDER_FILLED">;
+      // Position first, then the Trade that reads it, then the strategy —
+      // the runtime's order (Phase 2, L5).
       await this.positionEngine.onOrderFilled(filled);
+      await this.tradeEngine.onOrderFilled(filled);
       this.runner.onOrderFilled(filled);
       return;
     }

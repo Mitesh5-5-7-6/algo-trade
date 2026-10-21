@@ -1025,6 +1025,62 @@
       "target": 172.55
     }
   ],
+  "trades": [
+    {
+      "tradeId": "trd_1",
+      "strategyId": "str_ema",
+      "strategyVersion": "cfg-0b93f69ceb64ee",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "LONG",
+      "status": "CLOSED",
+      "entryOrderId": "ord_38",
+      "exitOrderId": "ord_44",
+      "entryPrice": 122.111,
+      "exitPrice": 131.1744,
+      "quantity": 10,
+      "exitReason": "TAKE_PROFIT",
+      "grossPnl": 90.6336,
+      "charges": 1.353,
+      "netPnl": 89.2806,
+      "entrySource": "LIVE_TICK"
+    },
+    {
+      "tradeId": "trd_2",
+      "strategyId": "str_ema",
+      "strategyVersion": "cfg-0b93f69ceb64ee",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "SHORT",
+      "status": "CLOSED",
+      "entryOrderId": "ord_66",
+      "exitOrderId": "ord_104",
+      "entryPrice": 112.3338,
+      "exitPrice": 133.9369,
+      "quantity": 10,
+      "exitReason": "STOP_LOSS",
+      "grossPnl": -216.0313,
+      "charges": 1.282,
+      "netPnl": -217.3133,
+      "entrySource": "LIVE_TICK"
+    },
+    {
+      "tradeId": "trd_3",
+      "strategyId": "str_ema",
+      "strategyVersion": "cfg-0b93f69ceb64ee",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "LONG",
+      "status": "CLOSED",
+      "entryOrderId": "ord_106",
+      "exitOrderId": "ord_118",
+      "entryPrice": 133.4367,
+      "exitPrice": 130.8645,
+      "quantity": 10,
+      "exitReason": "SESSION_CLOSE",
+      "grossPnl": -25.7215,
+      "charges": 1.3986,
+      "netPnl": -27.1201,
+      "entrySource": "LIVE_TICK"
+    }
+  ],
   "sessionEvents": [
     "MARKET_OPEN",
     "MARKET_CLOSE"
