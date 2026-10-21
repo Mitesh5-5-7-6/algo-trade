@@ -100,3 +100,116 @@ describe("a replay run's manifest and fingerprint (§4.5, D5)", () => {
     expect(index.manifest.synthetic).toEqual(["NSE:TESTINDEX-INDEX"]);
   });
 });
+
+/**
+ * Task 4.6 — what a run refuses, and what it cannot see.
+ */
+describe("a run refuses what it cannot replay (§4.6, D8)", () => {
+  /**
+   * An option-chain strategy evaluated against an absent chain reads it as
+   * "hold" — a confident record of nothing. Refused by name instead.
+   */
+  it("refuses a strategy that needs an option chain", async () => {
+    const strategy = {
+      ...emaStrategy(),
+      strategyId: "str_pcr",
+      type: "INDEX_OPTION_PCR_OI",
+      params: {},
+    };
+    await expect(
+      runHistoricalReplay(await request({ strategy })),
+    ).rejects.toThrow(/INDEX_OPTION_PCR_OI.*option chain/);
+  });
+
+  /** A derivative strategy trades contracts the index-only dataset never priced. */
+  it("refuses a strategy that trades a derivative contract", async () => {
+    const strategy = {
+      ...emaStrategy(),
+      strategyId: "str_opt",
+      type: "INDEX_OPTION_MOMENTUM",
+      params: {},
+    };
+    await expect(
+      runHistoricalReplay(await request({ strategy })),
+    ).rejects.toThrow(/INDEX_OPTION_MOMENTUM.*contract/);
+  });
+
+  /** No bars for what it trades means nothing to decide on — not a quiet day. */
+  it("refuses a strategy whose symbol the dataset does not hold", async () => {
+    const strategy = { ...emaStrategy(), symbols: ["NSE:ABSENT-EQ"] };
+    await expect(
+      runHistoricalReplay(await request({ strategy })),
+    ).rejects.toThrow(/NSE:ABSENT-EQ/);
+  });
+
+  it("refuses a strategy that decides on another interval", async () => {
+    const ema = emaStrategy();
+    const strategy = { ...ema, params: { ...ema.params, interval: "15m" } };
+    await expect(
+      runHistoricalReplay(await request({ strategy })),
+    ).rejects.toThrow(/15m.*5m/);
+  });
+});
+
+describe("no decision sees the future (§4.6, D7)", () => {
+  /**
+   * The behavioural statement of "Feature(t) = f(candles ≤ t)": appending a
+   * later day to the dataset changes nothing that was decided before it. If
+   * any decision on days 1–2 read a bar from day 3, adding day 3 would move it.
+   */
+  it("decides the same on earlier days whether or not later days exist", async () => {
+    // The later day must DIFFER from the earlier ones: were it a copy, a
+    // decision that read it would see what it would have seen anyway, and
+    // a leak would pass unnoticed.
+    const scale = (offset: number) => (offset === 2 ? 1.3 : 1);
+    const short = await runHistoricalReplay(
+      await request({ candles: await historicalBars([0, 1], scale) }),
+    );
+    const long = await runHistoricalReplay(
+      await request({ candles: await historicalBars([0, 1, 2], scale) }),
+    );
+
+    expect(long.record.signals.slice(0, short.record.signals.length)).toEqual(
+      short.record.signals,
+    );
+    expect(long.record.orders.slice(0, short.record.orders.length)).toEqual(
+      short.record.orders,
+    );
+    expect(long.record.trades.slice(0, short.record.trades.length)).toEqual(
+      short.record.trades,
+    );
+    // Positions carry the stop and target levels, which the decisions above
+    // do not — and a leaked window moves a stop long before it moves a fill.
+    expect(
+      long.record.positions.slice(0, short.record.positions.length),
+    ).toEqual(short.record.positions);
+    expect(long.record.signals.length).toBeGreaterThan(
+      short.record.signals.length,
+    );
+  });
+
+  /** Bars are replayed in time order, whatever order they were handed in. */
+  it("is indifferent to the order the bars arrive in", async () => {
+    const bars = await historicalBars([0, 1]);
+    const ordered = await runHistoricalReplay(await request({ candles: bars }));
+    const shuffled = await runHistoricalReplay(
+      await request({ candles: [...bars].reverse() }),
+    );
+    expect(shuffled.fingerprint).toBe(ordered.fingerprint);
+  });
+});
+
+describe("one strategy per run (§4.6, D4)", () => {
+  /**
+   * Isolation is the request's shape — one strategy — and the record shows
+   * it: nothing in it belongs to anyone else.
+   */
+  it("records only the strategy it was given", async () => {
+    const { record } = await runHistoricalReplay(await request());
+    const ids = new Set([
+      ...record.signals.map((s) => s.strategyId),
+      ...record.trades.map((t) => t.strategyId),
+    ]);
+    expect(ids).toEqual(new Set(["str_ema"]));
+  });
+});

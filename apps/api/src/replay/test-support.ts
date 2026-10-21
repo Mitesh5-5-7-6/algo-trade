@@ -9,7 +9,11 @@ import { runReplay } from "../golden/pipeline.js";
  * Built by running the golden ticks through the real aggregator, so the bars
  * are ones the machine itself produced — not a second hand-written path.
  */
-export async function historicalBars(dayOffsets: number[]): Promise<Candle[]> {
+export async function historicalBars(
+  dayOffsets: number[],
+  /** Scale a day's prices, so days differ — copies of one day hide leaks. */
+  scaleFor: (offset: number) => number = () => 1,
+): Promise<Candle[]> {
   const fixture = goldenFixture();
   const bars: Candle[] = [];
   await runReplay({
@@ -35,6 +39,10 @@ export async function historicalBars(dayOffsets: number[]): Promise<Candle[]> {
   return dayOffsets.flatMap((offset) =>
     bars.map((bar) => ({
       ...bar,
+      open: bar.open * scaleFor(offset),
+      high: bar.high * scaleFor(offset),
+      low: bar.low * scaleFor(offset),
+      close: bar.close * scaleFor(offset),
       ts: bar.ts + offset * 86_400_000,
       source: "BROKER_HISTORICAL" as const,
       ingestionVersion: 1,

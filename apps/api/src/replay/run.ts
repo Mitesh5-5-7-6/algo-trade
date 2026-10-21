@@ -15,6 +15,7 @@ import {
   type SlippageModel,
 } from "@neelkanth/broker";
 import { EXIT_MODEL_VERSION, SIZING_MODEL_VERSION } from "@neelkanth/engines";
+import { createStrategyRegistry } from "@neelkanth/strategies";
 import {
   DEFAULT_SLIPPAGE,
   runReplay,
@@ -98,6 +99,7 @@ export async function runHistoricalReplay(
     (a, b) => a.ts - b.ts || a.symbol.localeCompare(b.symbol),
   );
   const interval = singleInterval(candles);
+  refuseUnreplayable(request.strategy, candles, interval);
   const { sessions, specialSessions } = sessionsFromCandles(
     candles,
     request.hours,
@@ -177,6 +179,51 @@ export function fingerprintOf(
   return createHash("sha256")
     .update(canonicalJson({ manifest, record }))
     .digest("hex");
+}
+
+/**
+ * Refuse, by name, a strategy this dataset cannot replay (design D8).
+ *
+ * Each would otherwise run and produce a confident record of nothing: an
+ * option-chain strategy reads an absent chain as "hold", a derivative one has
+ * no contract prices to fill against, and one whose symbol or interval the
+ * dataset lacks has no bars to decide on — all indistinguishable, afterwards,
+ * from a quiet market.
+ */
+function refuseUnreplayable(
+  strategy: StrategyConfig,
+  candles: readonly Candle[],
+  interval: CandleInterval,
+): void {
+  const registry = createStrategyRegistry();
+  const held = new Set(candles.map((c) => c.symbol));
+  for (const symbol of strategy.symbols) {
+    const instance = registry.instantiate(
+      strategy.type,
+      strategy.params,
+      symbol,
+    );
+    if (instance.requiresOptionChain()) {
+      throw new Error(
+        `${strategy.type} cannot be replayed: it needs an option chain, and no chain history exists`,
+      );
+    }
+    if (instance.derivative() !== null) {
+      throw new Error(
+        `${strategy.type} cannot be replayed: it trades a derivative contract, and the dataset holds no contract prices`,
+      );
+    }
+    if (instance.interval !== interval) {
+      throw new Error(
+        `${strategy.type} decides on ${instance.interval} bars, but the dataset is ${interval}`,
+      );
+    }
+    if (!held.has(symbol)) {
+      throw new Error(
+        `the dataset holds no bars for ${symbol}, which the strategy trades`,
+      );
+    }
+  }
 }
 
 function singleInterval(candles: readonly Candle[]): CandleInterval {
