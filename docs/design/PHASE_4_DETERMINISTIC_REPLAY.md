@@ -161,8 +161,38 @@ they would read as "hold", producing a confident record of nothing.
 | Q2  | **Where is a run's result kept?** In memory with a JSON artefact, or a `replay_runs` collection in `neelkanth_research` — never the trading database either way.                                                                                                         | 4.8    |
 | Q3  | **Which cost and slippage models, at which versions?** [charges.ts](../../packages/broker/src/charges.ts) and [slippage.ts](../../packages/broker/src/slippage.ts) exist; neither carries a version yet.                                                                 | 4.5    |
 
-**Q1 and Q2 block implementation of the tasks they name.** Q3 blocks only the
-manifest's claim to name its models.
+**Q1 and Q2 blocked the tasks they name, and are settled in §4.1.** Q3 blocks
+only the manifest's claim to name its models; it is settled with 4.5.
+
+### 4.1 Q1 and Q2 — SETTLED
+
+Settled with the recommendations this design made, when the phase was handed
+over for development as a whole; either can be revisited without disturbing
+the other.
+
+#### Q1 — an index is replayed as a labelled synthetic instrument
+
+| Case                                 | Outcome                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------ |
+| An equity-style strategy on an index | Trades the index level itself, sized by the equity path, in index points |
+| How the run says so                  | The manifest marks every such symbol `synthetic: true`                   |
+| A derivative strategy                | Refused (D8) — there are no contract prices to fill against              |
+
+Refusing until futures history exists would leave Phase 4 with nothing to
+replay: the dataset is two indices. A synthetic instrument measures the
+strategy's decision on the index's own path, which is what research on an
+index asks — but its P&L is in index points, not rupees of a tradable
+contract, and a reader must never mistake one for the other. Hence the label,
+on the manifest every result carries, rather than in a comment.
+
+#### Q2 — a run is kept in `replay_runs`, in the research database
+
+One document per run, in `neelkanth_research` — never the trading database:
+its manifest, its fingerprint, and its record (signals, orders, positions,
+completed Trades). Untimed, like `trades`: a replay is research evidence, and
+evidence on an operational TTL shrinks under whoever studies it (ADR §10.4).
+Its Trades live inside the run, never in `trades`, so nothing that reads
+production outcomes can mistake a replay for something that happened.
 
 ---
 
