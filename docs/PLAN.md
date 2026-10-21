@@ -445,6 +445,33 @@ timeframe, market context and data provenance.
 Patterns are deterministic, reproducible, versioned, and calculated only from
 information available at that time. No ML clustering yet.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_5_PATTERN_VOCABULARY.md](design/PHASE_5_PATTERN_VOCABULARY.md), which
+is the detailed design for this phase and keeps each task's dependencies.
+
+| ID  | Task                                                                                    | STATUS | Commit | Evidence |
+| --- | --------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 5.1 | Port `ed71384`'s pattern library, sweep and observations store; audit it (design §2.2)  | READY  | —      | —        |
+| 5.2 | `HIGH_VOLUME_BREAKOUT` — the spec's name, declining untrustworthy volume (D2, D3)       | READY  | —      | —        |
+| 5.3 | Observations carry market context and data provenance (D4)                              | READY  | —      | —        |
+| 5.4 | Detector versions pinned to their outputs; definitions catalogued in `patterns` (D5)    | READY  | —      | —        |
+| 5.5 | Lookahead guard and determinism (D7)                                                    | READY  | —      | —        |
+| 5.6 | Operator sweep over the research dataset, research database only (D6)                   | READY  | —      | —        |
+| 5.7 | Acceptance: sweep the real year twice — identical observations carrying every §10 field | READY  | —      | —        |
+
+**Most of 5.1 already exists.** `docs/architecture-baseline` carries the
+library, sweep and store inside `ed71384`. Nothing of it touches the live
+runtime. It predates Phases 1–4, so it is ported and audited, not merged.
+
+### Done when
+
+Sweeping the stored year twice yields identical observations, each carrying
+`patternId`, `detectorVersion`, timestamp, symbol, timeframe, market context
+and data provenance; a second recording adds nothing; and each detector's
+version is pinned to what it detects.
+
 ---
 
 ## 11. Phase 6 — Counterfactual strategy evaluation
