@@ -112,6 +112,25 @@ try {
     console.log(
       `synthetic    ${manifest.synthetic.join(", ")} — P&L in index points, not a tradable contract`,
     );
+  // Why a run did or did not trade: what the strategy proposed, and what
+  // risk made of it. A run with no Trades must say which gate held.
+  const sides = new Map<string, number>();
+  for (const s of record.signals)
+    sides.set(s.side, (sides.get(s.side) ?? 0) + 1);
+  const decisions = new Map<string, number>();
+  for (const d of record.riskDecisions) {
+    const key =
+      d.decision === "approved"
+        ? "approved"
+        : `blocked:${d.failedCheck ?? "?"}`;
+    decisions.set(key, (decisions.get(key) ?? 0) + 1);
+  }
+  console.log(
+    `signals      ${String(record.signals.length)} ${JSON.stringify(Object.fromEntries(sides))}`,
+  );
+  console.log(
+    `risk         ${JSON.stringify(Object.fromEntries(decisions))}  market view at end: ${record.marketView.bias}`,
+  );
   console.log(
     `trades       ${String(record.trades.length)} ${JSON.stringify(Object.fromEntries(byReason))}`,
   );

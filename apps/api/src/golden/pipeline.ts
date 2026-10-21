@@ -8,6 +8,7 @@ import {
   type SessionContext,
   type Signal,
   type StrategyConfig,
+  type Instrument,
   type Trade,
   intervalMs,
   istDateKey,
@@ -147,6 +148,11 @@ export interface ReplayInput {
   biasConfig?: MarketBiasConfig;
   allocatedCapital: number;
   limits: RiskLimits;
+  /**
+   * The symbol master risk sizes against. A non-equity symbol absent from it
+   * is refused ("lot size unknown"), so a synthetic index must be here (Q1).
+   */
+  instruments?: Instrument[];
   /** How fills slip (Q3). Defaults to the harness's 5 bps. */
   slippage?: SlippageModel;
   /** What fills cost (Q3). Defaults to `DEFAULT_CHARGES`. */
@@ -462,7 +468,8 @@ class ReplayPipeline {
       // NEUTRAL would never reproduce a day where that mattered.
       readMarketView: () => this.marketBias.current(),
       // Equity fixture — lot size 1 by definition, no symbol master needed.
-      readInstrument: () => null,
+      readInstrument: (symbol) =>
+        fixture.instruments?.find((i) => i.symbol === symbol) ?? null,
       readDailyRealizedLoss: () =>
         Promise.resolve(Math.max(0, -this.positionEngine.realizedPnl())),
       readOpenPositionCount: () =>

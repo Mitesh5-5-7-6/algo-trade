@@ -125,6 +125,15 @@ export async function runHistoricalReplay(
     limits: request.limits,
     slippage,
     charges,
+    // Q1: a traded index is an equity-style instrument of lot 1, so risk sizes
+    // it on the equity path, in index points. Without it, risk refuses the
+    // symbol outright — "lot size unknown" — and the run can never fill.
+    instruments: request.strategy.symbols.filter(isIndex).map((symbol) => ({
+      symbol,
+      kind: "EQUITY" as const,
+      lotSize: 1,
+      tickSize: 0.05,
+    })),
   });
 
   const sources: Record<string, number> = {};

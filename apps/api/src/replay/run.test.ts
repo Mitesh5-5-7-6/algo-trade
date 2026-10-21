@@ -99,6 +99,27 @@ describe("a replay run's manifest and fingerprint (§4.5, D5)", () => {
     expect(equity.manifest.synthetic).toEqual([]);
     expect(index.manifest.synthetic).toEqual(["NSE:TESTINDEX-INDEX"]);
   });
+
+  /**
+   * And it actually trades. Risk refuses a non-equity symbol it has no
+   * instrument for — "lot size unknown" — so without a synthetic instrument
+   * the label above would sit on a run that could never fill anything. Found
+   * replaying a real week of NIFTY: four BUYs, all blocked at positionSize.
+   */
+  it("sizes and fills a synthetic index, in index points", async () => {
+    const strategy = emaStrategy();
+    const index = await runHistoricalReplay(
+      await request({
+        strategy: { ...strategy, symbols: ["NSE:TESTINDEX-INDEX"] },
+      }),
+    );
+
+    const blocked = index.record.riskDecisions.filter(
+      (d) => d.failedCheck === "positionSize",
+    );
+    expect(blocked).toEqual([]);
+    expect(index.record.orders.length).toBeGreaterThan(0);
+  });
 });
 
 /**
