@@ -34,6 +34,11 @@ export const COLLECTIONS = {
    */
   strategyState: "strategy_state",
   settings: "settings",
+  /**
+   * Replay runs (Phase 4 Q2) — RESEARCH database only. Untimed, like
+   * `trades`: a replay is research evidence and must not expire.
+   */
+  replayRuns: "replay_runs",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -130,6 +135,15 @@ export async function ensureIndexes(db: Db): Promise<void> {
 
     // orders — the Exit Engine's durable in-flight check (Phase 3 D3).
     db.collection(COLLECTIONS.orders).createIndex({ positionId: 1, status: 1 }),
+
+    // replay_runs — one per run; findable by what was replayed.
+    db
+      .collection(COLLECTIONS.replayRuns)
+      .createIndex({ runId: 1 }, { unique: true }),
+    db.collection(COLLECTIONS.replayRuns).createIndex({ fingerprint: 1 }),
+    db
+      .collection(COLLECTIONS.replayRuns)
+      .createIndex({ strategyId: 1, createdAt: -1 }),
 
     // strategy_state — one row per instance; the key IS the identity.
     db

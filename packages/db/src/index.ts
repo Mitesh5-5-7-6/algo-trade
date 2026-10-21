@@ -12,3 +12,4 @@ export * from "./trades-repository.js";
 export * from "./strategies-repository.js";
 export * from "./broker-tokens-repository.js";
 export * from "./strategy-state-repository.js";
+export * from "./replay-runs-repository.js";
