@@ -9,7 +9,9 @@ import {
   type Signal,
   type StrategyConfig,
   type Trade,
+  intervalMs,
   istDateKey,
+  NSE_DEFAULT_SESSION,
 } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
 import { PaperBroker } from "@neelkanth/broker";
@@ -98,6 +100,52 @@ export interface GoldenFixture {
   afterCloseTs: number;
 }
 
+/**
+ * One trading day, as the session manager and the exits see it (D6).
+ * Timestamps are epoch ms; `date` is the IST trading date.
+ */
+export interface ReplaySession {
+  date: string;
+  /** A clock reading before the bell, so the open is a real transition. */
+  preOpenTs: number;
+  sessionOpenTs: number;
+  /** When the intraday flatten fires. */
+  squareOffTs: number;
+  /** The first clock reading after the bell — drives the flush and close. */
+  afterCloseTs: number;
+}
+
+/**
+ * What a run is fed (D1). Ticks prove the feed half — normalisation,
+ * aggregation, the flush. Stored candles are what history has: the broker's
+ * record is bars, and reconstructing ticks from a bar would invent an intrabar
+ * path the data does not contain. Candles enter at `CANDLE_CLOSED`, at their
+ * close time; everything after that is shared.
+ */
+export type ReplaySource =
+  { kind: "ticks"; ticks: RawTick[] } | { kind: "candles"; candles: Candle[] };
+
+/** Everything one replay is a function of. */
+export interface ReplayInput {
+  /** The interval strategies and the market view decide on. */
+  interval: CandleInterval;
+  /** Intervals the aggregator builds from ticks (tick sources only). */
+  intervals: CandleInterval[];
+  source: ReplaySource;
+  /** Trading days, in order. */
+  sessions: ReplaySession[];
+  /** Weekend dates the exchange opened (`SessionConfig.specialSessions`). */
+  specialSessions?: string[];
+  strategies: StrategyConfig[];
+  indexSymbols: string[];
+  breadthSymbols: string[];
+  biasConfig?: MarketBiasConfig;
+  allocatedCapital: number;
+  limits: RiskLimits;
+  /** Observes each closed bar, in order, as the pipeline sees it. */
+  onCandleClosed?: (candle: Candle) => void;
+}
+
 interface SignalRow {
   signalId: string;
   strategyId: string;
@@ -183,15 +231,45 @@ export interface GoldenRecord {
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
+/** Run one replay (Phase 4). */
+export async function runReplay(input: ReplayInput): Promise<GoldenRecord> {
+  return new ReplayPipeline(input).run();
+}
+
+/** The golden fixture: one tick-fed session. */
 export async function runGoldenPipeline(
   fixture: GoldenFixture,
 ): Promise<GoldenRecord> {
-  const pipeline = new GoldenPipeline(fixture);
-  return pipeline.run();
+  return runReplay({
+    interval: fixture.interval,
+    intervals: fixture.intervals,
+    source: { kind: "ticks", ticks: fixture.ticks },
+    sessions: [
+      {
+        date: istDateKey(fixture.sessionOpenTs),
+        preOpenTs: fixture.preOpenTs,
+        sessionOpenTs: fixture.sessionOpenTs,
+        squareOffTs: fixture.squareOffTs,
+        afterCloseTs: fixture.afterCloseTs,
+      },
+    ],
+    strategies: fixture.strategies,
+    indexSymbols: fixture.indexSymbols,
+    breadthSymbols: fixture.breadthSymbols,
+    ...(fixture.biasConfig === undefined
+      ? {}
+      : { biasConfig: fixture.biasConfig }),
+    allocatedCapital: fixture.allocatedCapital,
+    limits: fixture.limits,
+  });
 }
 
-class GoldenPipeline {
-  private readonly fixture: GoldenFixture;
+class ReplayPipeline {
+  private readonly fixture: ReplayInput;
+  /** The trading day being replayed. */
+  private day: ReplaySession;
+  /** Realized P&L of the days already closed — the counter resets each open. */
+  private realizedOfPastDays = 0;
   private now: number;
   private minutesSinceOpen = 0;
   private readonly hotPrice = new Map<string, number>();
@@ -222,9 +300,13 @@ class GoldenPipeline {
   private readonly pnl: PnlEngine;
   private readonly tradeEngine: TradeEngine;
 
-  constructor(fixture: GoldenFixture) {
+  constructor(fixture: ReplayInput) {
     this.fixture = fixture;
-    this.now = fixture.preOpenTs;
+    const first = fixture.sessions[0];
+    if (first === undefined)
+      throw new Error("a replay needs at least one session");
+    this.day = first;
+    this.now = first.preOpenTs;
 
     const onError = (error: unknown): never => {
       // In a golden run any engine error is a bug in the machine, not a
@@ -248,7 +330,10 @@ class GoldenPipeline {
     // ONE session driver, as production now has exactly one. `evaluate()`
     // consumes the open/close edge, so a second instance would swallow the
     // transition the first depends on (see MarketDataEngine's class note).
-    this.session = new SessionManager();
+    this.session = new SessionManager({
+      ...NSE_DEFAULT_SESSION,
+      specialSessions: fixture.specialSessions ?? [],
+    });
 
     // --- Position + PnL (projection chain) ---
     const positionPorts: PositionPorts = {
@@ -497,19 +582,21 @@ class GoldenPipeline {
       await this.runner.enable(config);
     }
 
-    // Boot before the bell, so the open is a real transition rather than the
-    // first thing the session manager ever saw.
-    await this.driveSession(this.fixture.preOpenTs);
+    for (const day of this.fixture.sessions) {
+      this.day = day;
+      // Boot before the bell, so the open is a real transition rather than
+      // the first thing the session manager ever saw.
+      await this.driveSession(day.preOpenTs);
 
-    for (const tick of this.fixture.ticks) {
-      await this.feedTick(tick);
+      await this.feedDay(day);
+
+      // The day's end, driven by the same session manager on the same clock:
+      // square off while risk will still approve exits, then flush the bars
+      // the aggregator is still holding open, then announce the close.
+      await this.driveSession(day.squareOffTs);
+      await this.driveSession(day.afterCloseTs);
+      this.realizedOfPastDays += this.positionEngine.realizedPnl();
     }
-
-    // The day's end, driven by the same session manager on the same clock:
-    // square off while risk will still approve exits, then flush the bars the
-    // aggregator is still holding open, then announce the close.
-    await this.driveSession(this.fixture.squareOffTs);
-    await this.driveSession(this.fixture.afterCloseTs);
 
     const view = this.marketBias.current();
     return {
@@ -574,8 +661,30 @@ class GoldenPipeline {
       sessionEvents: this.sessionEvents,
       marketView: { bias: view.bias, detail: view.detail },
       openAtEnd: this.positionEngine.getOpenPositions().length,
-      realizedPnl: round4(this.positionEngine.realizedPnl()),
+      // Every day's, not the last day's: the Position Engine's counter is the
+      // risk gate's daily figure and resets at each open.
+      realizedPnl: round4(this.realizedOfPastDays),
     };
+  }
+
+  /** Feed one day's input, in time order, through the door it arrives by. */
+  private async feedDay(day: ReplaySession): Promise<void> {
+    const within = (ts: number): boolean =>
+      ts >= day.preOpenTs && ts < day.afterCloseTs;
+    const source = this.fixture.source;
+    if (source.kind === "ticks") {
+      for (const tick of source.ticks) {
+        if (within(tick.ts)) await this.feedTick(tick);
+      }
+      return;
+    }
+    for (const candle of source.candles) {
+      const closeTs = candle.ts + intervalMs(candle.interval);
+      if (!within(closeTs)) continue;
+      // A stored bar arrives when it closes — never before (D7).
+      await this.driveSession(closeTs);
+      await this.publish("CANDLE_CLOSED", candle);
+    }
   }
 
   /**
@@ -601,9 +710,7 @@ class GoldenPipeline {
   private async driveSession(now: number): Promise<void> {
     if (now < this.now) return;
     this.now = now;
-    this.minutesSinceOpen = Math.round(
-      (now - this.fixture.sessionOpenTs) / 60_000,
-    );
+    this.minutesSinceOpen = Math.round((now - this.day.sessionOpenTs) / 60_000);
     const evaluation = this.session.evaluate(now);
 
     if (evaluation.marketOpened) {
@@ -615,7 +722,7 @@ class GoldenPipeline {
     // risk to approve the exits. By MARKET_CLOSE it is too late — the Risk
     // Engine's session check would block every exit order.
     if (evaluation.phase === "open") {
-      await this.exitEngine.onSessionTick(now, this.fixture.squareOffTs);
+      await this.exitEngine.onSessionTick(now, this.day.squareOffTs);
     }
     if (evaluation.marketClosed) {
       // Before anyone hears the market shut: the aggregator holds each
@@ -637,6 +744,7 @@ class GoldenPipeline {
    * they are deciding on.
    */
   private async onCandleClosed(candle: Candle): Promise<void> {
+    this.fixture.onCandleClosed?.(candle);
     this.hotPrice.set(candle.symbol, candle.close);
     this.appendWindow(candle);
 
@@ -731,7 +839,7 @@ class GoldenPipeline {
     return {
       phase: this.session.phase(this.now),
       minutesSinceOpen: this.minutesSinceOpen,
-      sessionOpenTs: this.fixture.sessionOpenTs,
+      sessionOpenTs: this.day.sessionOpenTs,
     };
   }
 

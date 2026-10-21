@@ -89,3 +89,39 @@ describe("SessionManager.phase (pure query)", () => {
     expect(evaluation.marketOpened).toBe(true); // the edge still fires
   });
 });
+
+/**
+ * Task 4.4: a special session is a session.
+ *
+ * NSE trades some weekends — the Union Budget session on Sunday 2026-02-01
+ * is in the Phase 1 dataset as 75 real bars. The calendar learned this in
+ * Phase 1 (`isTradingDayIST`); the session manager still treated every
+ * weekend as closed, so a replay of that day would have fed 75 bars to a
+ * machine that believed the market shut, and decided nothing.
+ */
+describe("SessionManager special sessions (§4.4)", () => {
+  // Sunday 2026-02-01, 10:00 IST.
+  const budgetSunday = Date.UTC(2026, 1, 1, 4, 30);
+
+  it("opens a weekend day declared a special session", () => {
+    const manager = new SessionManager({
+      ...NSE_DEFAULT_SESSION,
+      specialSessions: ["2026-02-01"],
+    });
+    expect(manager.phase(budgetSunday)).toBe("open");
+  });
+
+  it("keeps an undeclared weekend closed", () => {
+    expect(new SessionManager().phase(budgetSunday)).toBe("closed");
+  });
+
+  /** A declared closure outranks a special session (Phase 1's precedence). */
+  it("lets a holiday close even a special session", () => {
+    const manager = new SessionManager({
+      ...NSE_DEFAULT_SESSION,
+      holidays: ["2026-02-01"],
+      specialSessions: ["2026-02-01"],
+    });
+    expect(manager.phase(budgetSunday)).toBe("closed");
+  });
+});

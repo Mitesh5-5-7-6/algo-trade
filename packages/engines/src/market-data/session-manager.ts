@@ -1,4 +1,5 @@
 import {
+  isTradingDayIST,
   IST_OFFSET_MS,
   NSE_DEFAULT_SESSION,
   istDateKey,
@@ -47,6 +48,7 @@ export class SessionManager {
   private readonly openMin: number;
   private readonly closeMin: number;
   private readonly holidays: ReadonlySet<string>;
+  private readonly specialSessions: ReadonlySet<string>;
   private previous: SessionPhase | null = null;
 
   constructor(config: SessionConfig = NSE_DEFAULT_SESSION) {
@@ -54,6 +56,7 @@ export class SessionManager {
     this.openMin = parseHHMM(config.open);
     this.closeMin = parseHHMM(config.close);
     this.holidays = new Set(config.holidays);
+    this.specialSessions = new Set(config.specialSessions ?? []);
     if (!(this.preOpenMin <= this.openMin && this.openMin < this.closeMin)) {
       throw new Error("session times must satisfy preOpen ≤ open < close");
     }
@@ -69,9 +72,11 @@ export class SessionManager {
   }
 
   private phaseAt(now: number): SessionPhase {
-    const { dateKey, weekday, minuteOfDay } = SessionManager.toIst(now);
-    const isWeekend = weekday === 0 || weekday === 6;
-    if (isWeekend || this.holidays.has(dateKey)) return "closed";
+    const { dateKey, minuteOfDay } = SessionManager.toIst(now);
+    // One rule for whether a day existed, shared with ingestion: a holiday
+    // closes it, a special session opens a weekend, otherwise weekdays trade.
+    if (!isTradingDayIST(dateKey, this.holidays, this.specialSessions))
+      return "closed";
     if (minuteOfDay < this.preOpenMin) return "closed";
     if (minuteOfDay < this.openMin) return "pre-open";
     if (minuteOfDay < this.closeMin) return "open";

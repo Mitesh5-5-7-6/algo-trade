@@ -131,6 +131,11 @@ export interface SessionConfig {
   close: string;
   /** Exchange holidays as "YYYY-MM-DD" IST dates. */
   holidays: readonly string[];
+  /**
+   * Weekend dates the exchange opened anyway — the Budget and Muhurat
+   * sessions (see `isTradingDayIST`). Absent means none.
+   */
+  specialSessions?: readonly string[];
   exchange: string;
 }
 
