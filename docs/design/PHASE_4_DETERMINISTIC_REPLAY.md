@@ -243,6 +243,35 @@ their exit reasons — and the trading database is unchanged by either run.
 
 ---
 
+## 7. Acceptance (task 4.9)
+
+Run against the Phase 1 dataset in `neelkanth_research`, as dry runs —
+read-only, nothing kept — with `scripts/replay.mts` at `56a801c`:
+
+```text
+--strategy-type=EMA_CROSSOVER --params='{"quantity":50}'
+--symbols=NSE:NIFTY50-INDEX --index-symbols=NSE:NIFTY50-INDEX --capital=1000000
+```
+
+| Window                                          | Days                 | Bars  | Trades, by exit reason                                            | Realized (index points) | Fingerprint, both runs |
+| ----------------------------------------------- | -------------------- | ----- | ----------------------------------------------------------------- | ----------------------- | ---------------------- |
+| 2026-03-02 .. 03-06                             | 4 — Holi has no bars | 300   | 4: SESSION_CLOSE 2, TAKE_PROFIT 1, STRATEGY_EXIT 1                | +186.43                 | `bacfb6d1…f299`        |
+| 2026-03-02 .. 03-31, with `maxHoldMinutes: 120` | 19                   | 1,425 | 20: STRATEGY_EXIT 10, TIME_EXIT 5, TAKE_PROFIT 3, SESSION_CLOSE 2 | −1,238.70               | `9b99c617…c12b`        |
+
+Each pair was identical in every reported figure, and ended flat. The first
+attempt traded nothing — four BUYs blocked at `positionSize`, because risk
+refuses a non-equity symbol with no instrument — which is how a run now hands
+a traded index to risk as Q1's synthetic instrument (`56a801c`).
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                          | Owner          |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| R1  | The live feed releases a session's final bar only after the close (§4.1); a replay decides on one bar per session that live trading could not. | live ingestion |
+| R2  | Live trading has no settings field for special sessions; only a replay declares them.                                                          | later          |
+| R3  | Derivative and option-chain strategies cannot be replayed until contract prices and chain history exist (D8).                                  | data           |
+| R4  | A run's P&L on an index is in index points (Q1), not rupees of a tradable contract.                                                            | by design      |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §9

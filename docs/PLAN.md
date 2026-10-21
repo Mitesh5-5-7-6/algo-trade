@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | IN PROGRESS |
-| 5     | Pattern vocabulary                 | READY       |
-| 6     | Counterfactual strategy evaluation | READY       |
-| 7     | Statistical validation             | READY       |
-| 8     | Daily research                     | READY       |
-| 9     | Periodic research                  | READY       |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | READY    |
+| 6     | Counterfactual strategy evaluation | READY    |
+| 7     | Statistical validation             | READY    |
+| 8     | Daily research                     | READY    |
+| 9     | Periodic research                  | READY    |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -376,7 +376,7 @@ orphaned simulated entries.
 
 ## 9. Phase 4 — Deterministic replay
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -400,23 +400,23 @@ Structured around the decisions in
 is the detailed design for this phase and keeps each task's dependencies. Q1
 and Q2 block the tasks they name; Q3 blocks only the manifest's model names.
 
-| ID  | Task                                                                                                                            | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| --- | ------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 4.1 | Port `ed71384`'s harness extension — ticks, Market Data, Session Manager, Market Bias, Exit Engine — and audit it (design §2.2) | COMPLETE | `b655476` | `apps/api/src/golden/pipeline.ts` starts from raw ticks and runs the real Market Data Engine (1m and 5m aggregation, the end-of-day flush), Session Manager, Market Bias and Exit engines, with Phase 3's exit ports and placed-or-not handoff wired as the runtime wires them. `apps/api/src/golden/golden-run.test.ts` proves the feed half, both session edges, the three default exits, both sides, a market-view block and a flat close; `apps/api/src/golden/golden-record.json` reproduces byte for byte. Audit outcome in `docs/design/PHASE_4_DETERMINISTIC_REPLAY.md` §2.2 |
-| 4.2 | Answer Q1 and Q2                                                                                                                | COMPLETE | `79ef35c` | `docs/design/PHASE_4_DETERMINISTIC_REPLAY.md` §4.1 — Q1: an index is replayed as a synthetic instrument in index points, marked `synthetic: true` on the manifest; derivative strategies refused. Q2: one untimed `replay_runs` document per run in the research database, its Trades inside the run and never in `trades`                                                                                                                                                                                                                                                           |
-| 4.3 | Trade Engine in the harness, fills projected in the runtime's order; the record carries completed Trades                        | COMPLETE | `5270a7a` | `apps/api/src/golden/pipeline.ts` runs the Trade Engine, fills projected position → trade → strategy as the runtime does; `apps/api/src/golden/golden-record.json` carries three completed Trades (take-profit, stop on a short, square-off) with exit reason, `strategyVersion` and entry-bar source, and is otherwise unchanged. `apps/api/src/golden/golden-run.test.ts` proves linkage, reasons, stamps, and that Trades reconcile with realized P&L                                                                                                                             |
-| 4.4 | Candle source: the same pipeline from stored bars, across trading days (D1, D6)                                                 | COMPLETE | `242d52a` | `apps/api/src/golden/pipeline.ts` `runReplay` takes ticks or stored candles and a list of sessions; a stored bar enters at its close. `apps/api/src/golden/replay-source.test.ts` proves stored bars decide as the feed did, pins the one structural difference (the feed releases a session's final bar only after the close), and replays two days and the Budget Sunday. Days come from the bars (`apps/api/src/replay/sessions.ts`); `packages/engines/src/market-data/session-manager.ts` opens declared special sessions                                                       |
-| 4.5 | Run manifest and result fingerprint (D5); answer Q3                                                                             | COMPLETE | `f289f4c` | `apps/api/src/replay/run.ts` returns a manifest — dataset, strategy and version, seed, special sessions, synthetic symbols, the four model versions with the actual slippage and charge configs — and a sha256 fingerprint of manifest and record (`apps/api/src/replay/run.test.ts`). Q3: versions beside each model, pinned to their outputs by `packages/broker/src/model-versions.test.ts` and `packages/engines/src/risk/sizing-version.test.ts`                                                                                                                                |
-| 4.6 | One strategy per run; refuse what cannot be replayed (D4, D8); lookahead guard (D7)                                             | COMPLETE | `23db533` | `apps/api/src/replay/run.ts` refuses option-chain and derivative strategies, and any whose symbol or interval the dataset lacks (D8), and takes exactly one strategy (D4). `apps/api/src/replay/run.test.ts` proves the refusals, that appending a different later day changes no earlier decision or stop (D7, mutation-checked with a window that reads the future), and that bar order cannot move the fingerprint                                                                                                                                                                |
-| 4.7 | Prove read-only: a run writes nothing to the trading collections (D3)                                                           | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 4.8 | Operator entry point over the research dataset, storing results per Q2                                                          | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 4.9 | Acceptance: replay a known historical week twice — identical fingerprints, completed Trades                                     | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ID  | Task                                                                                                                            | STATUS   | Commit               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 4.1 | Port `ed71384`'s harness extension — ticks, Market Data, Session Manager, Market Bias, Exit Engine — and audit it (design §2.2) | COMPLETE | `b655476`            | `apps/api/src/golden/pipeline.ts` starts from raw ticks and runs the real Market Data Engine (1m and 5m aggregation, the end-of-day flush), Session Manager, Market Bias and Exit engines, with Phase 3's exit ports and placed-or-not handoff wired as the runtime wires them. `apps/api/src/golden/golden-run.test.ts` proves the feed half, both session edges, the three default exits, both sides, a market-view block and a flat close; `apps/api/src/golden/golden-record.json` reproduces byte for byte. Audit outcome in `docs/design/PHASE_4_DETERMINISTIC_REPLAY.md` §2.2 |
+| 4.2 | Answer Q1 and Q2                                                                                                                | COMPLETE | `79ef35c`            | `docs/design/PHASE_4_DETERMINISTIC_REPLAY.md` §4.1 — Q1: an index is replayed as a synthetic instrument in index points, marked `synthetic: true` on the manifest; derivative strategies refused. Q2: one untimed `replay_runs` document per run in the research database, its Trades inside the run and never in `trades`                                                                                                                                                                                                                                                           |
+| 4.3 | Trade Engine in the harness, fills projected in the runtime's order; the record carries completed Trades                        | COMPLETE | `5270a7a`            | `apps/api/src/golden/pipeline.ts` runs the Trade Engine, fills projected position → trade → strategy as the runtime does; `apps/api/src/golden/golden-record.json` carries three completed Trades (take-profit, stop on a short, square-off) with exit reason, `strategyVersion` and entry-bar source, and is otherwise unchanged. `apps/api/src/golden/golden-run.test.ts` proves linkage, reasons, stamps, and that Trades reconcile with realized P&L                                                                                                                             |
+| 4.4 | Candle source: the same pipeline from stored bars, across trading days (D1, D6)                                                 | COMPLETE | `242d52a`            | `apps/api/src/golden/pipeline.ts` `runReplay` takes ticks or stored candles and a list of sessions; a stored bar enters at its close. `apps/api/src/golden/replay-source.test.ts` proves stored bars decide as the feed did, pins the one structural difference (the feed releases a session's final bar only after the close), and replays two days and the Budget Sunday. Days come from the bars (`apps/api/src/replay/sessions.ts`); `packages/engines/src/market-data/session-manager.ts` opens declared special sessions                                                       |
+| 4.5 | Run manifest and result fingerprint (D5); answer Q3                                                                             | COMPLETE | `f289f4c`            | `apps/api/src/replay/run.ts` returns a manifest — dataset, strategy and version, seed, special sessions, synthetic symbols, the four model versions with the actual slippage and charge configs — and a sha256 fingerprint of manifest and record (`apps/api/src/replay/run.test.ts`). Q3: versions beside each model, pinned to their outputs by `packages/broker/src/model-versions.test.ts` and `packages/engines/src/risk/sizing-version.test.ts`                                                                                                                                |
+| 4.6 | One strategy per run; refuse what cannot be replayed (D4, D8); lookahead guard (D7)                                             | COMPLETE | `23db533`            | `apps/api/src/replay/run.ts` refuses option-chain and derivative strategies, and any whose symbol or interval the dataset lacks (D8), and takes exactly one strategy (D4). `apps/api/src/replay/run.test.ts` proves the refusals, that appending a different later day changes no earlier decision or stop (D7, mutation-checked with a window that reads the future), and that bar order cannot move the fingerprint                                                                                                                                                                |
+| 4.7 | Prove read-only: a run writes nothing to the trading collections (D3)                                                           | COMPLETE | `8193bac`            | `apps/api/src/replay/store.ts` reads `candles` and writes `replay_runs`, nothing else. `apps/api/src/replay/store.integration.test.ts` proves it structurally (no replay module names a trading repository) and against real MongoDB: orders, positions, trades, signals and risk_logs holding data are byte-identical after a run (mutation-checked)                                                                                                                                                                                                                                |
+| 4.8 | Operator entry point over the research dataset, storing results per Q2                                                          | COMPLETE | `8193bac`, `56a801c` | `apps/api/scripts/replay.mts` over `apps/api/src/replay/store.ts`, keeping runs through `packages/db/src/replay-runs-repository.ts` (untimed, one per run, findable by fingerprint — `packages/db/src/replay-runs-repository.integration.test.ts`); reports signals, risk decisions, Trades by reason and the fingerprint                                                                                                                                                                                                                                                            |
+| 4.9 | Acceptance: replay a known historical week twice — identical fingerprints, completed Trades                                     | COMPLETE | `56a801c`            | A real NIFTY week (4 days, 4 Trades) and month (19 days, 20 Trades across four exit reasons) from `neelkanth_research`, each replayed twice as dry runs with identical fingerprints, flat at the end — `docs/design/PHASE_4_DETERMINISTIC_REPLAY.md` §7. The first run exposed a synthetic index that could never fill, fixed in `apps/api/src/replay/run.ts`                                                                                                                                                                                                                        |
 
-**Most of 4.1 already exists.** `docs/architecture-baseline` carries it inside
-`ed71384`, a commit labelled as the Phase 5 pattern detectors. Its harness
-files carry no pattern code, so the port brings in no Phase 5 work. It
-predates Phases 1–3, so it is ported and audited, not merged — the way 2.1
-ported `5dac705`.
+**Phase sign-off:** `pnpm test:integration` on `56a801c` — strict, against
+real MongoDB and Redis — 1,104 tests, 0 skipped; and a real NIFTY week and
+month from `neelkanth_research`, each replayed twice with identical
+fingerprints and nothing written (design §7). 4.1 ported the harness extension
+that `docs/architecture-baseline` carried inside `ed71384`.
 
 ### Done when
 
@@ -707,10 +707,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 3 are complete. The immediate priority is **Phase 4 —
-Deterministic replay**.
+Phases 0 to 4 are complete. The immediate priority is **Phase 5 — Pattern
+vocabulary**.
 
-Do not begin Phase 5 until Phase 4's acceptance criteria pass. Do not begin
+Do not begin Phase 6 until Phase 5's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 

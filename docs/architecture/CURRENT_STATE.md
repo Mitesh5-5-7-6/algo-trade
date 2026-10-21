@@ -1,7 +1,7 @@
 # Current State — Neelkanth Trader
 
 **Status:** Audit baseline — Phase 0 durability work applied
-**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23. **Phase 2 entries** — the Trade entity and entry ↔ exit linkage (§1, §2, §3.4, §3.5) — re-audited at `09e6e89`, 2026-10-03; **Phase 3's** — the exit engine (§1, §2, §4.1) — at `13d013f`; every other entry still stands at `9c1a9bc`
+**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23. **Phase 2 entries** — the Trade entity and entry ↔ exit linkage (§1, §2, §3.4, §3.5) — re-audited at `09e6e89`, 2026-10-03; **Phase 3's** — the exit engine (§1, §2, §4.1) — at `13d013f`; **Phase 4's** — replay (§1, §2, §4.2) — at `56a801c`; every other entry still stands at `9c1a9bc`
 **Execution order:** [PLAN.md](../PLAN.md) — this document says what exists, never what to build next
 **Governed by:** [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md)
 
@@ -41,7 +41,7 @@ Every claim here is verified against the **working branch** at the time of writi
 | Daily-loss restart persistence          | `EXISTS` ✅        |
 | Strategy one-shot latch vs risk blocks  | `EXISTS` ✅        |
 | Strategy state survives restart         | `EXISTS` ✅        |
-| Deterministic replay coverage           | `PARTIALLY EXISTS` |
+| Deterministic replay coverage           | `EXISTS` ✅        |
 | Pattern vocabulary                      | `MISSING`          |
 | Statistical gate                        | `MISSING`          |
 | Daily R&D                               | `MISSING`          |
@@ -77,7 +77,7 @@ Entries are trading-platform defects as well as research dependencies; both are 
 | PnL                                | `PARTIALLY EXISTS` | Global scope works; per-strategy is empty                            |
 | Broker abstraction                 | `EXISTS`           | One contract, three implementations                                  |
 | Event bus                          | `EXISTS`           | In-process by default; Redis path present but unused                 |
-| Deterministic replay               | `PARTIALLY EXISTS` | Real harness, narrower machine, synthetic fixture only               |
+| Deterministic replay               | `EXISTS`           | Whole machine, from ticks or stored bars; manifest and fingerprint   |
 | R&D platform                       | `MISSING`          | —                                                                    |
 | AI / RAG                           | `MISSING`          | —                                                                    |
 
@@ -138,12 +138,13 @@ These five gaps are strictly sequential. Nothing in the R&D specification can be
 - **Remaining:** `BROKER_RECONCILIATION` has no producer (it belongs with reconciliation); a derivative strategy cannot exit by verdict; no scale-out. See [../design/PHASE_3_EXIT_LIFECYCLE.md](../design/PHASE_3_EXIT_LIFECYCLE.md) §8.1.
 - **Status:** `EXISTS`.
 
-### 4.2 Deterministic replay coverage
+### 4.2 Deterministic replay coverage — CLOSED
 
-- **Current state:** `PARTIALLY EXISTS`. A genuine replay harness, now running the whole trading machine on its fixture; not yet on history. Re-audited at `b655476`.
-- **Evidence:** [apps/api/src/golden/pipeline.ts](../../apps/api/src/golden/pipeline.ts) starts from raw ticks and runs the real Market Data Engine (aggregation at 1m and 5m, the end-of-day flush), Session Manager, Market Bias, Indicator, Strategy Runner, Exit, Risk, Order, Position and PnL engines over in-memory ports. The tick timestamp is the clock; ids are counters; slippage is fixed. No Mongo, no Redis, no writes to production collections. Its record reaches a stop, a target and a square-off and ends flat.
-- **Gap:** no Trade Engine, so the record has no completed Trades; the fixture is one synthetic day and nothing reads the Phase 1 dataset; `readInstrument` / `resolveContract` return null, so derivative strategies cannot be replayed; and nothing invokes it outside its test.
-- **Planned phase:** 4 — [../design/PHASE_4_DETERMINISTIC_REPLAY.md](../design/PHASE_4_DETERMINISTIC_REPLAY.md).
+- **Original state:** `PARTIALLY EXISTS` — a real harness over a smaller machine than production: no exits, no market-data path, a hard-coded market view, no Trades, one synthetic day, no entry point.
+- **Now:** [apps/api/src/golden/pipeline.ts](../../apps/api/src/golden/pipeline.ts) runs the whole machine — market data, session, bias, indicators, strategy, exits, risk, orders, positions, Trades, P&L — from ticks or from stored bars, across trading days. [apps/api/src/replay/run.ts](../../apps/api/src/replay/run.ts) replays one strategy over stored bars and returns a manifest (dataset, strategy version, seed, model versions) and a fingerprint; [apps/api/src/replay/store.ts](../../apps/api/src/replay/store.ts) reads `candles` and keeps the run in `replay_runs`, touching nothing else; [apps/api/scripts/replay.mts](../../apps/api/scripts/replay.mts) is the operator entry point. Re-audited at `56a801c`.
+- **Evidence:** a real NIFTY week and month, each replayed twice with identical fingerprints ([../design/PHASE_4_DETERMINISTIC_REPLAY.md](../design/PHASE_4_DETERMINISTIC_REPLAY.md) §7); trading collections proven byte-identical across a run.
+- **Remaining:** derivative and option-chain strategies cannot be replayed (no contract or chain history); index P&L is in points. See the design's §7.
+- **Status:** `EXISTS`.
 
 ### 4.3 Environment separation
 
