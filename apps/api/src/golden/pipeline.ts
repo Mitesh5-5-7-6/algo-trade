@@ -1,27 +1,37 @@
 import {
-  UNKNOWN_MARKET_VIEW,
   type Candle,
   type CandleInterval,
+  type MarketView,
   type Order,
   type Position,
   type RiskLimits,
   type SessionContext,
-  type SessionPhase,
   type Signal,
   type StrategyConfig,
+  istDateKey,
 } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
 import { PaperBroker } from "@neelkanth/broker";
 import {
   computePortfolio,
+  ExitEngine,
+  fixtureNormalizer,
   IndicatorEngine,
+  MarketBiasEngine,
+  MarketDataEngine,
   OrderManager,
   PnlEngine,
   PositionEngine,
   registerIndicatorSpec,
   RiskEngine,
+  SessionManager,
   StrategyRunner,
+  type ExitHandoffOutcome,
+  type ExitPorts,
   type IndicatorPorts,
+  type MarketBiasConfig,
+  type MarketBiasPorts,
+  type MarketDataPorts,
   type OrderPorts,
   type PnlPorts,
   type PositionPorts,
@@ -32,24 +42,58 @@ import { createStrategyRegistry } from "@neelkanth/strategies";
 
 /**
  * The golden-run pipeline harness (plan/27 §4): the whole machine wired with
- * in-memory ports so a recorded day of candles runs end-to-end with zero
+ * in-memory ports so a recorded day of TICKS runs end-to-end with zero
  * infrastructure. It is the determinism proof — the same fixture always
- * produces the same signals, risk decisions, orders, fills, positions, and PnL
- * (plan/02 Principle 1) — and a preview of the real composition root (plan/05
- * §3): same engines, same injected dependencies, fake ports instead of Redis/
- * Mongo. Everything is deterministic: counter-based ids, the candle timestamp
- * as the clock, fixed slippage/charges, no randomness.
+ * produces the same candles, signals, risk decisions, orders, fills, exits,
+ * positions, and PnL (plan/02 Principle 1) — and a preview of the real
+ * composition root (plan/05 §3): same engines, same order, fake ports instead
+ * of Redis/Mongo. Everything is deterministic: counter-based ids, the tick
+ * timestamp as the clock, fixed slippage/charges, no randomness.
+ *
+ * **It starts at ticks, not candles.** Production has no source of finished
+ * bars; it has a feed. The earlier harness was handed pre-baked candles, which
+ * meant normalization, aggregation and the end-of-day flush — the three steps
+ * every other number in the record depends on — were never exercised, and the
+ * record proved determinism over a strictly smaller machine than the one that
+ * trades (CURRENT_STATE §4).
  */
+
+/** The raw wire shape the fixture normalizer parses (see `normalize.ts`). */
+export interface RawTick {
+  sym: string;
+  ltp: number;
+  vol: number;
+  ts: number;
+}
 
 export interface GoldenFixture {
   symbol: string;
   interval: CandleInterval;
+  /** Every interval the aggregator builds — production builds 1m and 5m. */
+  intervals: CandleInterval[];
   /** IST session-open epoch ms; drives minutesSinceOpen. */
   sessionOpenTs: number;
-  candles: Candle[];
+  ticks: RawTick[];
   strategies: StrategyConfig[];
+  indexSymbols: string[];
+  breadthSymbols: string[];
+  biasConfig?: MarketBiasConfig;
   allocatedCapital: number;
   limits: RiskLimits;
+  /**
+   * A clock reading before the bell.
+   *
+   * The session manager reports no transition on its FIRST evaluation — it
+   * does not know the prior phase, and an honest "no transition" beats a
+   * fabricated one. So the harness, like the runtime, is running before the
+   * open; otherwise the day would begin mid-session and MARKET_OPEN would
+   * never fire.
+   */
+  preOpenTs: number;
+  /** When the intraday flatten fires. */
+  squareOffTs: number;
+  /** The first clock reading after the bell — drives the flush and MARKET_CLOSE. */
+  afterCloseTs: number;
 }
 
 interface SignalRow {
@@ -83,13 +127,29 @@ interface PositionRow {
   avgEntryPrice: number;
   realizedPnl: number;
   status: string;
+  /** The protective levels, recorded because the Exit Engine acts on them. */
+  stopLoss?: number;
+  target?: number;
+}
+interface CandleCountRow {
+  symbol: string;
+  interval: string;
+  count: number;
 }
 
 export interface GoldenRecord {
+  /** Bars the aggregator produced — proof the feed half ran. */
+  candles: CandleCountRow[];
   signals: SignalRow[];
   riskDecisions: RiskDecisionRow[];
   orders: OrderRow[];
   positions: PositionRow[];
+  /** Session transitions, in order, as the single session driver saw them. */
+  sessionEvents: string[];
+  /** The gate's verdict at the end of the day. */
+  marketView: { bias: string; detail: string };
+  /** Positions still open after square-off — the day must end flat. */
+  openAtEnd: number;
   realizedPnl: number;
 }
 
@@ -108,18 +168,23 @@ class GoldenPipeline {
   private minutesSinceOpen = 0;
   private readonly hotPrice = new Map<string, number>();
   private readonly candleWindow = new Map<string, Candle[]>();
+  private readonly candleCounts = new Map<string, number>();
   private readonly ordersById = new Map<string, Order>();
   private readonly ordersBySignal = new Set<string>();
   private readonly positionsById = new Map<string, Position>();
 
   private readonly signals: SignalRow[] = [];
   private readonly riskDecisions: RiskDecisionRow[] = [];
-  private readonly positionUpdates: PositionRow[] = [];
+  private readonly sessionEvents: string[] = [];
 
   private idSeq = 0;
 
+  private readonly marketData: MarketDataEngine;
+  private readonly session: SessionManager;
   private readonly indicatorEngine: IndicatorEngine;
+  private readonly marketBias: MarketBiasEngine;
   private readonly runner: StrategyRunner;
+  private readonly exitEngine: ExitEngine;
   private readonly risk: RiskEngine;
   private readonly orderManager: OrderManager;
   private readonly positionEngine: PositionEngine;
@@ -127,7 +192,7 @@ class GoldenPipeline {
 
   constructor(fixture: GoldenFixture) {
     this.fixture = fixture;
-    this.now = fixture.sessionOpenTs;
+    this.now = fixture.preOpenTs;
 
     const onError = (error: unknown): never => {
       // In a golden run any engine error is a bug in the machine, not a
@@ -135,6 +200,23 @@ class GoldenPipeline {
       throw error instanceof Error ? error : new Error(String(error));
     };
     const publish = this.publish.bind(this);
+
+    // --- Market Data (the feed half) ---
+    const marketDataPorts: MarketDataPorts = {
+      writeHotSession: () => Promise.resolve(),
+      saveCandle: () => Promise.resolve(),
+      publish,
+    };
+    this.marketData = new MarketDataEngine({
+      ports: marketDataPorts,
+      normalizer: fixtureNormalizer,
+      intervals: fixture.intervals,
+      onError,
+    });
+    // ONE session driver, as production now has exactly one. `evaluate()`
+    // consumes the open/close edge, so a second instance would swallow the
+    // transition the first depends on (see MarketDataEngine's class note).
+    this.session = new SessionManager();
 
     // --- Position + PnL (projection chain) ---
     const positionPorts: PositionPorts = {
@@ -203,12 +285,30 @@ class GoldenPipeline {
       onError,
     });
 
+    // --- Market bias (the gate risk reads) ---
+    const biasPorts: MarketBiasPorts = {
+      readCandleWindow: (symbol, interval, count) =>
+        Promise.resolve(this.window(symbol, interval).slice(-count)),
+    };
+    this.marketBias = new MarketBiasEngine({
+      ports: biasPorts,
+      indexSymbols: () => this.fixture.indexSymbols,
+      breadthSymbols: () => this.fixture.breadthSymbols,
+      interval: fixture.interval,
+      now: () => this.now,
+      ...(fixture.biasConfig === undefined
+        ? {}
+        : { config: fixture.biasConfig }),
+      onError,
+    });
+
     // --- Risk Engine ---
     const riskPorts: RiskPorts = {
-      readSession: () => Promise.resolve<SessionPhase>("open"),
-      // NEUTRAL: the golden run exercises the pipeline's mechanics, not the
-      // market gate, and a neutral view blocks nothing (see MarketView).
-      readMarketView: () => UNKNOWN_MARKET_VIEW,
+      readSession: () => Promise.resolve(this.session.phase(this.now)),
+      // The REAL gate, not a neutral stand-in: production blocks entries that
+      // disagree with the index + breadth read, and a harness that always sees
+      // NEUTRAL would never reproduce a day where that mattered.
+      readMarketView: () => this.marketBias.current(),
       // Equity fixture — lot size 1 by definition, no symbol master needed.
       readInstrument: () => null,
       readDailyRealizedLoss: () =>
@@ -267,13 +367,47 @@ class GoldenPipeline {
       onError,
     });
 
+    // --- Exit Engine ---
+    const exitPorts: ExitPorts = {
+      readOpenPositions: () => this.positionEngine.getOpenPositions(),
+      readSession: () => Promise.resolve<SessionContext>(this.sessionContext()),
+      persistSignal: (signal) => {
+        this.recordSignal(signal);
+        return Promise.resolve();
+      },
+      // Phase 3, wired as the runtime wires it. The durable in-flight check
+      // reads this run's own orders (D3)…
+      hasExitInFlight: (positionId) =>
+        Promise.resolve(
+          [...this.ordersById.values()].some(
+            (o) =>
+              o.positionId === positionId &&
+              (o.status === "PLACED" || o.status === "PENDING"),
+          ),
+        ),
+      // …exit rules come from the running instances, as in production…
+      readExitRules: (strategyId) => this.runner.exitRulesFor(strategyId),
+      // …and a trail moves the live position and its stored copy (D4).
+      updateStopLoss: (positionId, stopLoss) => {
+        this.positionEngine.setStopLoss(positionId, stopLoss);
+        const stored = this.positionsById.get(positionId);
+        if (stored !== undefined)
+          this.positionsById.set(positionId, { ...stored, stopLoss });
+        return Promise.resolve();
+      },
+    };
+    this.exitEngine = new ExitEngine({
+      ports: exitPorts,
+      handoff: (signal) => this.handoff(signal),
+      nextSignalId: () => this.nextId("sig"),
+      onError,
+    });
+
     // --- Strategy Runner ---
     const strategyPorts: StrategyPorts = {
-      readSession: () => Promise.resolve<SessionContext>(this.session()),
+      readSession: () => Promise.resolve<SessionContext>(this.sessionContext()),
       readCandleWindow: (symbol, interval, count) =>
-        Promise.resolve(
-          (this.candleWindow.get(`${symbol}|${interval}`) ?? []).slice(-count),
-        ),
+        Promise.resolve(this.window(symbol, interval).slice(-count)),
       readPosition: (strategyId, symbol) =>
         Promise.resolve(this.positionEngine.getPosition(strategyId, symbol)),
       // The fixture trades cash equity, so no strategy declares a derivative
@@ -282,14 +416,7 @@ class GoldenPipeline {
       readPrice: () => null,
       readSentiment: () => Promise.resolve(0),
       persistSignal: (signal) => {
-        this.signals.push({
-          signalId: signal.signalId,
-          strategyId: signal.strategyId,
-          symbol: signal.symbol,
-          side: signal.side,
-          confidence: round4(signal.confidence),
-          reason: signal.reason,
-        });
+        this.recordSignal(signal);
         return Promise.resolve();
       },
       publish,
@@ -303,7 +430,9 @@ class GoldenPipeline {
         }
         return this.indicatorEngine.warmUp(symbol, interval);
       },
-      handoff: (signal) => this.handoff(signal),
+      handoff: async (signal) => {
+        await this.handoff(signal);
+      },
       nextSignalId: () => this.nextId("sig"),
       onError,
     });
@@ -313,10 +442,33 @@ class GoldenPipeline {
     for (const config of this.fixture.strategies) {
       await this.runner.enable(config);
     }
-    for (const candle of this.fixture.candles) {
-      await this.feedCandle(candle);
+
+    // Boot before the bell, so the open is a real transition rather than the
+    // first thing the session manager ever saw.
+    await this.driveSession(this.fixture.preOpenTs);
+
+    for (const tick of this.fixture.ticks) {
+      await this.feedTick(tick);
     }
+
+    // The day's end, driven by the same session manager on the same clock:
+    // square off while risk will still approve exits, then flush the bars the
+    // aggregator is still holding open, then announce the close.
+    await this.driveSession(this.fixture.squareOffTs);
+    await this.driveSession(this.fixture.afterCloseTs);
+
+    const view = this.marketBias.current();
     return {
+      candles: [...this.candleCounts.entries()]
+        .map(([key, count]) => {
+          const [symbol = "", interval = ""] = key.split("|");
+          return { symbol, interval, count };
+        })
+        .sort((a, b) =>
+          `${a.symbol}|${a.interval}`.localeCompare(
+            `${b.symbol}|${b.interval}`,
+          ),
+        ),
       signals: this.signals,
       riskDecisions: this.riskDecisions,
       orders: [...this.ordersById.values()].map((o) => ({
@@ -338,39 +490,130 @@ class GoldenPipeline {
         avgEntryPrice: round4(p.avgEntryPrice),
         realizedPnl: round4(p.realizedPnl),
         status: p.status,
+        ...(p.stopLoss === undefined ? {} : { stopLoss: round4(p.stopLoss) }),
+        ...(p.target === undefined ? {} : { target: round4(p.target) }),
       })),
+      sessionEvents: this.sessionEvents,
+      marketView: { bias: view.bias, detail: view.detail },
+      openAtEnd: this.positionEngine.getOpenPositions().length,
       realizedPnl: round4(this.positionEngine.realizedPnl()),
     };
   }
 
-  private async feedCandle(candle: Candle): Promise<void> {
-    this.now = candle.ts;
+  /**
+   * One raw message, through the same door production uses.
+   *
+   * The session is evaluated before the tick is ingested, so a bar that closes
+   * after the bell is still judged against the phase that was in force — the
+   * same ordering the runtime's timer produces.
+   */
+  private async feedTick(tick: RawTick): Promise<void> {
+    await this.driveSession(tick.ts);
+    await this.marketData.ingestRaw(tick);
+  }
+
+  /**
+   * The single session driver (plan/17 §6).
+   *
+   * Production has exactly one, for a reason recorded in the Market Data
+   * Engine: `evaluate()` consumes the open/close edge, so two callers sharing a
+   * manager means one of them silently never sees a transition. The harness
+   * therefore drives it here and nowhere else.
+   */
+  private async driveSession(now: number): Promise<void> {
+    if (now < this.now) return;
+    this.now = now;
     this.minutesSinceOpen = Math.round(
-      (candle.ts - this.fixture.sessionOpenTs) / 60_000,
+      (now - this.fixture.sessionOpenTs) / 60_000,
     );
+    const evaluation = this.session.evaluate(now);
+
+    if (evaluation.marketOpened) {
+      this.indicatorEngine.onMarketOpen();
+      this.positionEngine.resetDaily();
+      this.sessionEvents.push("MARKET_OPEN");
+    }
+    // Flatten before the close, while the session is still open enough for
+    // risk to approve the exits. By MARKET_CLOSE it is too late — the Risk
+    // Engine's session check would block every exit order.
+    if (evaluation.phase === "open") {
+      await this.exitEngine.onSessionTick(now, this.fixture.squareOffTs);
+    }
+    if (evaluation.marketClosed) {
+      // Before anyone hears the market shut: the aggregator holds each
+      // interval's final bucket open until a later tick pushes it forward, and
+      // after the close no such tick arrives.
+      await this.marketData.flushOpenBars();
+      this.sessionEvents.push("MARKET_CLOSE");
+      await this.pnl.snapshot(istDateKey(now));
+    }
+  }
+
+  /**
+   * A closed bar, routed exactly as the runtime routes it.
+   *
+   * The order is load-bearing and is production's: protective exits are judged
+   * before new decisions, so a bar that both hits a stop and sets up an entry
+   * closes the position first; and the market view is refreshed before
+   * strategies decide, so the gate they are checked against reflects the bar
+   * they are deciding on.
+   */
+  private async onCandleClosed(candle: Candle): Promise<void> {
     this.hotPrice.set(candle.symbol, candle.close);
+    this.appendWindow(candle);
+
+    this.runner.onCandleClosed(candle); // cache the bar for the indicator update
+    await this.exitEngine.onCandleClosed(candle);
+    await this.marketBias.refresh();
+    await this.indicatorEngine.onCandleClosed(candle); // → INDICATORS_UPDATED
+  }
+
+  private appendWindow(candle: Candle): void {
     const key = `${candle.symbol}|${candle.interval}`;
     const window = this.candleWindow.get(key) ?? [];
     window.push(candle);
     this.candleWindow.set(key, window);
-
-    this.runner.onCandleClosed(candle); // cache the bar for the indicator update
-    await this.indicatorEngine.onCandleClosed(candle); // → INDICATORS_UPDATED → runner
+    this.candleCounts.set(key, (this.candleCounts.get(key) ?? 0) + 1);
   }
 
-  /** The synchronous risk→order handoff (plan/14 §2). */
-  private async handoff(signal: Signal): Promise<void> {
+  private window(symbol: string, interval: CandleInterval): Candle[] {
+    return this.candleWindow.get(`${symbol}|${interval}`) ?? [];
+  }
+
+  /**
+   * The synchronous risk→order handoff (plan/14 §2), saying whether an order
+   * came of it — as the runtime's exit handoff does since Phase 3 (audit A7),
+   * so a blocked exit is retried here exactly as it is in production.
+   */
+  private async handoff(signal: Signal): Promise<ExitHandoffOutcome> {
     const decision = await this.risk.validate(signal);
-    if (decision.decision === "approved") {
-      await this.orderManager.place(signal, decision);
-    }
+    if (decision.decision !== "approved") return { placed: false };
+    const result = await this.orderManager.place(signal, decision);
+    return {
+      placed: result.status !== "rejected" && result.status !== "halted",
+    };
   }
 
-  /** The in-memory event bus: record, then route to the next consumer. */
+  private recordSignal(signal: Signal): void {
+    this.signals.push({
+      signalId: signal.signalId,
+      strategyId: signal.strategyId,
+      symbol: signal.symbol,
+      side: signal.side,
+      confidence: round4(signal.confidence),
+      reason: signal.reason,
+    });
+  }
+
+  /** The in-memory event bus: route to the next consumer, as the runtime does. */
   private async publish<N extends EventName>(
     name: N,
     payload: EventPayload<N>,
   ): Promise<void> {
+    if (name === "CANDLE_CLOSED") {
+      await this.onCandleClosed(payload as EventPayload<"CANDLE_CLOSED">);
+      return;
+    }
     if (name === "INDICATORS_UPDATED") {
       await this.runner.onIndicatorsUpdated(
         payload as EventPayload<"INDICATORS_UPDATED">,
@@ -378,32 +621,34 @@ class GoldenPipeline {
       return;
     }
     if (name === "ORDER_FILLED") {
-      await this.positionEngine.onOrderFilled(
-        payload as EventPayload<"ORDER_FILLED">,
-      );
+      const filled = payload as EventPayload<"ORDER_FILLED">;
+      await this.positionEngine.onOrderFilled(filled);
+      this.runner.onOrderFilled(filled);
+      return;
+    }
+    if (name === "ORDER_PLACED") {
+      this.runner.onOrderPlaced(payload as EventPayload<"ORDER_PLACED">);
+      return;
+    }
+    if (name === "ORDER_REJECTED") {
+      this.runner.onOrderRejected(payload as EventPayload<"ORDER_REJECTED">);
+      return;
+    }
+    if (name === "RISK_BLOCKED") {
+      this.runner.onRiskBlocked(payload as EventPayload<"RISK_BLOCKED">);
       return;
     }
     if (name === "POSITION_UPDATED") {
-      const p = payload as EventPayload<"POSITION_UPDATED">;
-      this.positionUpdates.push({
-        strategyId: p.strategyId,
-        symbol: p.symbol,
-        side: p.side,
-        qty: p.qty,
-        avgEntryPrice: round4(p.avgEntryPrice),
-        realizedPnl: round4(p.realizedPnl),
-        status: p.status,
-      });
       await this.pnl.refresh(); // realized changed (plan/13 §5)
       return;
     }
-    // SIGNAL_CREATED / RISK_BLOCKED / ORDER_PLACED / PNL_UPDATED: captured via
-    // the durable-write ports; nothing to route.
+    // MARKET_TICK / SIGNAL_CREATED / PNL_UPDATED: captured via the
+    // durable-write ports; nothing to route.
   }
 
-  private session(): SessionContext {
+  private sessionContext(): SessionContext {
     return {
-      phase: "open",
+      phase: this.session.phase(this.now),
       minutesSinceOpen: this.minutesSinceOpen,
       sessionOpenTs: this.fixture.sessionOpenTs,
     };
@@ -414,3 +659,5 @@ class GoldenPipeline {
     return `${prefix}_${String(this.idSeq)}`;
   }
 }
+
+export type { MarketView };
