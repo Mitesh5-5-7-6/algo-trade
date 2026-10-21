@@ -393,6 +393,31 @@ Market Data → Indicators → Strategy → Signal → Risk
 → Order → Fill → Position → Trade → P&L
 ```
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_4_DETERMINISTIC_REPLAY.md](design/PHASE_4_DETERMINISTIC_REPLAY.md), which
+is the detailed design for this phase and keeps each task's dependencies. Q1
+and Q2 block the tasks they name; Q3 blocks only the manifest's model names.
+
+| ID  | Task                                                                                                                            | STATUS | Commit | Evidence |
+| --- | ------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 4.1 | Port `ed71384`'s harness extension — ticks, Market Data, Session Manager, Market Bias, Exit Engine — and audit it (design §2.2) | READY  | —      | —        |
+| 4.2 | Answer Q1 and Q2                                                                                                                | READY  | —      | —        |
+| 4.3 | Trade Engine in the harness, fills projected in the runtime's order; the record carries completed Trades                        | READY  | —      | —        |
+| 4.4 | Candle source: the same pipeline from stored bars, across trading days (D1, D6)                                                 | READY  | —      | —        |
+| 4.5 | Run manifest and result fingerprint (D5); answer Q3                                                                             | READY  | —      | —        |
+| 4.6 | One strategy per run; refuse what cannot be replayed (D4, D8); lookahead guard (D7)                                             | READY  | —      | —        |
+| 4.7 | Prove read-only: a run writes nothing to the trading collections (D3)                                                           | READY  | —      | —        |
+| 4.8 | Operator entry point over the research dataset, storing results per Q2                                                          | READY  | —      | —        |
+| 4.9 | Acceptance: replay a known historical week twice — identical fingerprints, completed Trades                                     | READY  | —      | —        |
+
+**Most of 4.1 already exists.** `docs/architecture-baseline` carries it inside
+`ed71384`, a commit labelled as the Phase 5 pattern detectors. Its harness
+files carry no pattern code, so the port brings in no Phase 5 work. It
+predates Phases 1–3, so it is ported and audited, not merged — the way 2.1
+ported `5dac705`.
+
 ### Done when
 
 Running the same replay twice produces identical results. Replay must never
