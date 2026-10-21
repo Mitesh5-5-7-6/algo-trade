@@ -194,6 +194,26 @@ evidence on an operational TTL shrinks under whoever studies it (ADR §10.4).
 Its Trades live inside the run, never in `trades`, so nothing that reads
 production outcomes can mistake a replay for something that happened.
 
+#### Q3 — SETTLED (task 4.5)
+
+Each model carries a version beside its arithmetic — `CHARGES_MODEL_VERSION`,
+`SLIPPAGE_MODEL_VERSION`, `SIZING_MODEL_VERSION`, `EXIT_MODEL_VERSION` — and a
+run's manifest names all four together with the actual slippage model and
+charge table it used: the version names the arithmetic, the configuration the
+numbers. The first three are pinned by tests that map each version to its
+outputs on fixed inputs, so changing the arithmetic fails until the outputs
+move to a new version. The exit model is pinned by the golden record.
+
+#### A finding of 4.4 — the session's final bar
+
+The live feed releases a session's last bar only at the end-of-day flush: no
+later tick pushes it out, so it arrives after the close and nothing decides on
+it. A stored bar arrives at its own close. A historical replay therefore
+decides on one more bar per session than live trading could — pinned in
+`replay-source.test.ts` so it is never mistaken for a bug. Making the live
+aggregator release that bar at the close would close the gap from the other
+side; it is a change to live ingestion, recorded here rather than made.
+
 ---
 
 ## 5. Proposed task order
