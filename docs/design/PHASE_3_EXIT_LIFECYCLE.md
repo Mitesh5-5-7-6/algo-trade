@@ -294,6 +294,32 @@ Q2 (wall-clock or session time) and Q4 (square-off opt-out vs. the daily-loss
 gate) stay open. The staged code assumes wall clock, and leaves the daily-loss
 gate untouched by the opt-out — consistent with Q4's "almost certainly not".
 
+### 8.1 Outcome
+
+The staged implementation was ported task by task; its exact staged form is
+kept on branch `wip/phase-3-staged`. Every finding was resolved before its
+task closed.
+
+| #   | Resolved in | How                                                                                                                                                                      |
+| --- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A1  | 3.5         | A bar is judged against the levels it opened with; the trail moves afterwards. The §5.1 bar reports `TAKE_PROFIT`, and restoring trail-first fails the tests.            |
+| A2  | 3.3         | An exit verdict while flat is recorded as a HOLD and never forwarded, whatever side it names.                                                                            |
+| A3  | 3.3         | EMA crossover and RSI reversion declare their exits, so `STRATEGY_EXIT` has producers; 3.8 shows one firing end to end.                                                  |
+| A4  | 3.4, 3.6    | `POST` and `PATCH /strategies` accept `exitRules`. Opting out of square-off takes step-up — it loosens risk.                                                             |
+| A5  | 3.4         | Exit rules are part of the derived strategy version; the port says, truthfully, that they are captured at enable.                                                        |
+| A6  | 3.4         | Time-in-trade runs from the entry fill to the bar's close, and `Position.openedAt` / `closedAt` are the fills' times.                                                    |
+| A7  | 3.1, 3.7    | The Exit Engine's handoff reports whether an order was placed; a blocked exit releases the guard and is retried, and the operator's exit answers 404 rather than "done". |
+| A8  | 3.4, 3.7    | Comments corrected and the manual-exit route placed after `GET /trades`.                                                                                                 |
+
+**Still standing** — decided, or recorded for the phase that owns them:
+
+| #   | Limit                                                                                                                                                                                                                                                                                           | Owner      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| P1  | **A derivative strategy cannot exit by verdict.** The runner reads the position by the ANALYSED symbol, while the position is keyed by the traded contract, so an exit verdict sees nothing held and is a no-op. Its stops, targets, time exits and square-off still come from the Exit Engine. | later      |
+| P2  | **A persistently blocked exit is retried every bar, or every session tick for square-off**, each attempt persisted as a signal. Deliberate — a visible retry beats a silent orphan — but noisy if risk keeps refusing.                                                                          | Phase 14   |
+| P3  | **Q2 is open**: time-in-trade is wall-clock, so an overnight hold counts the closed hours. Q4 holds by construction — the opt-out never touches the daily-loss gate.                                                                                                                            | first data |
+| P4  | **Scale-out is not built** (Q1). It needs lot-aware exit quantities and Phase 2's L3 resolved first.                                                                                                                                                                                            | later      |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §8

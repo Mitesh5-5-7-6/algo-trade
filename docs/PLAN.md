@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | IN PROGRESS |
-| 4     | Deterministic replay               | READY       |
-| 5     | Pattern vocabulary                 | READY       |
-| 6     | Counterfactual strategy evaluation | READY       |
-| 7     | Statistical validation             | READY       |
-| 8     | Daily research                     | READY       |
-| 9     | Periodic research                  | READY       |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | READY    |
+| 5     | Pattern vocabulary                 | READY    |
+| 6     | Counterfactual strategy evaluation | READY    |
+| 7     | Statistical validation             | READY    |
+| 8     | Daily research                     | READY    |
+| 9     | Periodic research                  | READY    |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -329,7 +329,7 @@ Every completed position produces exactly one complete Trade.
 
 ## 8. Phase 3 — Exit lifecycle
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -347,23 +347,23 @@ Structured around the decisions in
 detailed design for this phase and keeps each task's dependencies. Q1 and Q3
 are settled there (§5.1); Q2 and Q4 are open and block nothing.
 
-| ID  | Task                                                                           | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --- | ------------------------------------------------------------------------------ | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1 | Durable `exiting` guard; add `positionId` to `Order` (D3)                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 3.2 | Answer Q1 and Q3                                                               | COMPLETE | `692a8af` | `docs/design/PHASE_3_EXIT_LIFECYCLE.md` §5.1 — Q1: a strategy exit closes the whole position, an exit while flat is a no-op, scale-out is not this phase. Q3: a bar is judged against the levels it opened with, a trailing stop moves after judging, and stop beats target beats time — with the bar on which trailing first reports `STOP_LOSS` where `TAKE_PROFIT` is the truth, confirmed against the staged engine |
-| 3.3 | Strategy exit verdict → `STRATEGY_EXIT` (D1)                                   | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 3.4 | Time-in-trade exit → `TIME_EXIT`, measured from the entry fill (D2)            | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 3.5 | Trailing stop, reporting `STOP_LOSS`; mutable protective levels (D4)           | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 3.6 | Per-strategy square-off opt-out, defaulting to square off (D6)                 | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 3.7 | Manual emergency exit route, behind step-up (D5)                               | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| 3.8 | Integration: every simulated entry reaches a completed Trade — the "done when" | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ID  | Task                                                                           | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --- | ------------------------------------------------------------------------------ | -------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1 | Durable `exiting` guard; add `positionId` to `Order` (D3)                      | COMPLETE | `a5baac2` | `packages/engines/src/exit/exit-engine.ts` consults `packages/db/src/orders-repository.ts` `hasExitInFlight` (PLACED/PENDING by `positionId`, indexed in `packages/db/src/collections.ts`) when memory misses, and releases its guard when the handoff from `apps/api/src/engines/runtime.ts` reports no order (audit A7). Tests: `packages/engines/src/exit/exit-lifecycle.test.ts`, `packages/engines/src/order/order-manager.test.ts` (mutation-checked), and the durable query against real MongoDB in `packages/db/src/repositories.integration.test.ts`                      |
+| 3.2 | Answer Q1 and Q3                                                               | COMPLETE | `692a8af` | `docs/design/PHASE_3_EXIT_LIFECYCLE.md` §5.1 — Q1: a strategy exit closes the whole position, an exit while flat is a no-op, scale-out is not this phase. Q3: a bar is judged against the levels it opened with, a trailing stop moves after judging, and stop beats target beats time — with the bar on which trailing first reports `STOP_LOSS` where `TAKE_PROFIT` is the truth, confirmed against the staged engine                                                                                                                                                            |
+| 3.3 | Strategy exit verdict → `STRATEGY_EXIT` (D1)                                   | COMPLETE | `b39a2f7` | `packages/engines/src/strategy/strategy-runner.ts` turns an `exit: true` verdict into a close of the whole position held, stamped `STRATEGY_EXIT`; while flat it is recorded as a HOLD, never an entry (audit A2). EMA crossover and RSI reversion now declare their exits (A3). Tests: `packages/engines/src/strategy/strategy-runner.test.ts`, `packages/strategies/src/library.test.ts`                                                                                                                                                                                         |
+| 3.4 | Time-in-trade exit → `TIME_EXIT`, measured from the entry fill (D2)            | COMPLETE | `08dddd7` | `ExitRules.maxHoldMinutes` in `packages/core/src/strategy.ts`, judged in `packages/engines/src/exit/exit-engine.ts` from the entry fill to the bar close, with `Position.openedAt` stamped from the fill in `packages/engines/src/position/position-engine.ts` (A6). Settable through `apps/api/src/control-plane/routes.ts` (A4) and part of the derived version in `packages/core/src/strategy-version.ts` (A5). Tests: `packages/engines/src/exit/exit-lifecycle.test.ts`, `packages/engines/src/position/position-engine.test.ts`, `apps/api/src/control-plane/routes.test.ts` |
+| 3.5 | Trailing stop, reporting `STOP_LOSS`; mutable protective levels (D4)           | COMPLETE | `8ec709f` | `ExitRules.trailingStopPct`: the stop tightens after a bar is judged, effective from the next bar (design §5.1 Q3, audit A1), reporting `STOP_LOSS`; held in memory and in Mongo via `packages/db/src/positions-repository.ts` `setStopLoss`. Tests: `packages/engines/src/exit/exit-lifecycle.test.ts` — including the §5.1 bar reporting `TAKE_PROFIT`, mutation-checked by restoring trail-first — and `packages/db/src/repositories.integration.test.ts`                                                                                                                       |
+| 3.6 | Per-strategy square-off opt-out, defaulting to square off (D6)                 | COMPLETE | `c6b0dbb` | `ExitRules.squareOffAtSessionEnd`, absent meaning true; `packages/engines/src/exit/exit-engine.ts` skips opted-out strategies at the square-off while stops, targets and time exits still apply, and the daily-loss gate is untouched (Q4). Opting out takes step-up in `apps/api/src/control-plane/routes.ts`, proven with the real verifier in `apps/api/src/auth/auth.test.ts`                                                                                                                                                                                                  |
+| 3.7 | Manual emergency exit route, behind step-up (D5)                               | COMPLETE | `6022c98` | `POST /positions/:positionId/exit` in `apps/api/src/control-plane/routes.ts`, behind step-up, reporting `MANUAL_EMERGENCY` and closing the whole position; answers 404 when nothing was sent, including when risk refused it. `packages/engines/src/exit/exit-engine.ts` `exitNow`; `apps/api/src/serverless/runtime-projection.ts` answers false. Tests: `packages/engines/src/exit/exit-lifecycle.test.ts`, `apps/api/src/control-plane/routes.test.ts`, `apps/api/src/auth/auth.test.ts`                                                                                        |
+| 3.8 | Integration: every simulated entry reaches a completed Trade — the "done when" | COMPLETE | `13d013f` | `packages/engines/src/exit/exit-completeness.test.ts`: real Strategy Runner (EMA crossover), Exit Engine, Order Manager, Position Engine and Trade Engine in memory — six entries end as six closed Trades with six different exit reasons, both orders and a position each, nothing open. Tied to `ExitReasonSchema`; mutation-checked by dropping EMA's `exit: true`                                                                                                                                                                                                             |
 
-**Most of this phase is written but not committed.** It is staged on
-`new-ai-agent-v1`, and design §8 audits it against Q1, Q3 and D1–D6. Two
-findings contradict the settled answers and must change before their tasks
-close: A1, the trailing stop judges a bar against a level that bar set (3.5),
-and A2, an exit verdict while flat can open a position (3.3). Each row closes
-with the commit that lands its part, against its own evidence.
+**Phase sign-off:** `pnpm test:integration` on `13d013f` — strict, against
+real MongoDB and Redis — 1,055 tests, 0 skipped. Most of the phase was written before it
+opened and staged uncommitted; it was ported task by task, its exact staged
+form kept on branch `wip/phase-3-staged`. Design §8 audited it and §8.1
+records what became of every finding: A1 and A2 contradicted the settled Q1
+and Q3 and were fixed before their tasks closed.
 
 **Not in this phase:** scale-out — closing part of a position (Q1).
 
@@ -682,10 +682,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0, 1 and 2 are complete. The immediate priority is **Phase 3 — Exit
-lifecycle**.
+Phases 0 to 3 are complete. The immediate priority is **Phase 4 —
+Deterministic replay**.
 
-Do not begin Phase 4 until Phase 3's acceptance criteria pass. Do not begin
+Do not begin Phase 5 until Phase 4's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 

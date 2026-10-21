@@ -1,7 +1,7 @@
 # Current State — Neelkanth Trader
 
 **Status:** Audit baseline — Phase 0 durability work applied
-**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23. **Phase 2 entries** — the Trade entity and entry ↔ exit linkage (§1, §2, §3.4, §3.5) — re-audited at `09e6e89`, 2026-10-03; every other entry still stands at `9c1a9bc`
+**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23. **Phase 2 entries** — the Trade entity and entry ↔ exit linkage (§1, §2, §3.4, §3.5) — re-audited at `09e6e89`, 2026-10-03; **Phase 3's** — the exit engine (§1, §2, §4.1) — at `13d013f`; every other entry still stands at `9c1a9bc`
 **Execution order:** [PLAN.md](../PLAN.md) — this document says what exists, never what to build next
 **Governed by:** [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md)
 
@@ -35,7 +35,7 @@ Every claim here is verified against the **working branch** at the time of writi
 | Candle provenance                       | `EXISTS` ✅        |
 | Completed Trade entity                  | `EXISTS` ✅        |
 | Entry ↔ exit linkage                    | `EXISTS` ✅        |
-| Exit lifecycle completeness             | `PARTIALLY EXISTS` |
+| Exit lifecycle completeness             | `EXISTS` ✅        |
 | Session flush / `pollSession`           | `EXISTS` ✅        |
 | Flush depends on a correct holiday list | `MISSING` guard    |
 | Daily-loss restart persistence          | `EXISTS` ✅        |
@@ -72,7 +72,7 @@ Entries are trading-platform defects as well as research dependencies; both are 
 | Risk engine                        | `EXISTS`           | Five checks, fail-closed; daily loss is durable per IST day (§5.2)   |
 | Order manager                      | `EXISTS`           | Unique `signalId` index as the duplicate-execution backstop          |
 | Position engine                    | `EXISTS`           | Fill projection, idempotent, reversal-aware                          |
-| Exit engine                        | `PARTIALLY EXISTS` | Three triggers                                                       |
+| Exit engine                        | `EXISTS`           | Six exit reasons; durable guard; retries a blocked exit              |
 | Trade entity                       | `EXISTS`           | One trade per position lifecycle; restart-idempotent; costs separate |
 | PnL                                | `PARTIALLY EXISTS` | Global scope works; per-strategy is empty                            |
 | Broker abstraction                 | `EXISTS`           | One contract, three implementations                                  |
@@ -130,14 +130,13 @@ These five gaps are strictly sequential. Nothing in the R&D specification can be
 
 ## 4. Partially exists
 
-### 4.1 Exit engine
+### 4.1 Exit engine — CLOSED
 
-- **Current state:** `PARTIALLY EXISTS`. Present, wired and live.
-- **Evidence:** [packages/engines/src/exit/exit-engine.ts](../../packages/engines/src/exit/exit-engine.ts) with ports in the same directory. `ExitTrigger = "stop" | "target" | "square_off"` — three triggers. Constructed at [apps/api/src/engines/runtime.ts:551](../../apps/api/src/engines/runtime.ts#L551); `onCandleClosed` is called at line 648 **before** market-bias refresh and indicator update, so protective exits are judged before new entries on the same bar. Exits route through the same risk → order handoff as strategy signals and are exempted from the market-bias, daily-loss and position-size gates as risk-reducing.
-- **Gap:** No strategy exit, no time-in-trade exit, no trailing stop, no partial exit or scale-out. A strategy currently has no way to say "close this" — an exit only happens if it emits an opposite-side signal that the position engine nets against. The in-memory `exiting` guard is not persisted, so a restart between handoff and fill permits a re-exit.
-- **Why it matters:** [RND_RESEARCH_SPECIFICATION.md §4](RND_RESEARCH_SPECIFICATION.md) Phase 3 requires that every simulated entry can reach an outcome. Three triggers cover most but not all entries.
-- **Planned phase:** 3.
-- **Note:** This component was previously believed absent from a ZIP snapshot. It is present. The audit rule at the top of this document exists because of that.
+- **Original state:** `PARTIALLY EXISTS`. Three triggers — stop, target, square-off — with no strategy exit, no time exit, no trailing stop, an in-memory-only guard, and square-off forced on every position.
+- **Now:** [packages/engines/src/exit/exit-engine.ts](../../packages/engines/src/exit/exit-engine.ts) produces `STOP_LOSS`, `TAKE_PROFIT`, `TIME_EXIT`, `SESSION_CLOSE` and `MANUAL_EMERGENCY`; the Strategy Runner produces `STRATEGY_EXIT` from an explicit exit verdict. Per-strategy `exitRules` add a time limit, a trailing stop, and an opt-out from square-off behind step-up. A bar is judged against the levels it opened with, and a trail moves only afterwards. The guard consults open exit orders by `positionId` after a restart, and a blocked exit is retried rather than left orphaned.
+- **Evidence:** six entries end as six closed Trades with six different reasons and nothing open, against the real engines ([exit-completeness.test.ts](../../packages/engines/src/exit/exit-completeness.test.ts)).
+- **Remaining:** `BROKER_RECONCILIATION` has no producer (it belongs with reconciliation); a derivative strategy cannot exit by verdict; no scale-out. See [../design/PHASE_3_EXIT_LIFECYCLE.md](../design/PHASE_3_EXIT_LIFECYCLE.md) §8.1.
+- **Status:** `EXISTS`.
 
 ### 4.2 Deterministic replay coverage
 
