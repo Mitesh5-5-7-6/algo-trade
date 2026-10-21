@@ -47,6 +47,6 @@ export interface ExitPorts {
 
 /**
  * Why the Exit Engine decided to flatten — recorded on the signal's reason.
- * `time` is Phase 3 D2.
+ * `time` and `manual` are Phase 3 (D2, D5).
  */
-export type ExitTrigger = "stop" | "target" | "time" | "square_off";
+export type ExitTrigger = "stop" | "target" | "time" | "square_off" | "manual";

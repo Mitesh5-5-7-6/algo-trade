@@ -6,17 +6,19 @@ import type { ExitPorts, ExitTrigger } from "./ports.js";
 /**
  * The Exit Engine's triggers, as the Trade's vocabulary (ADR §9.2).
  *
- * Only three of the seven exit reasons have a producer today. The other
- * four — STRATEGY_EXIT, TIME_EXIT, MANUAL_EMERGENCY, BROKER_RECONCILIATION
- * — are deliberately absent rather than approximated: nothing emits them,
- * and mapping a square-off onto TIME_EXIT because the names rhyme would
- * put a claim in the research dataset that no component ever made.
+ * Five of the seven exit reasons are produced here. STRATEGY_EXIT comes from
+ * the Strategy Runner (Phase 3 D1), and BROKER_RECONCILIATION stays
+ * unproduced: it describes a position that went away without being asked
+ * to, which belongs with reconciliation. A reason is never approximated —
+ * mapping a square-off onto TIME_EXIT because the names rhyme would put a
+ * claim in the research dataset that no component ever made.
  */
 const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
   stop: "STOP_LOSS",
   target: "TAKE_PROFIT",
   time: "TIME_EXIT",
   square_off: "SESSION_CLOSE",
+  manual: "MANUAL_EMERGENCY",
 };
 
 /**
@@ -62,12 +64,16 @@ function closingSide(position: Position): "BUY" | "SELL" {
  * once opened, closed only if some strategy happened to reverse. That is not a
  * risk model — it is the absence of one.
  *
- * Three triggers, all resolved against **closed bars** so the decision is
- * reproducible from stored candles:
+ * Bar triggers are resolved against **closed bars**, judged against the levels
+ * each bar opened with, so a decision is reproducible from stored candles:
  *
- * - **stop** — the bar's low (LONG) or high (SHORT) reached the stop.
+ * - **stop** — the bar's low (LONG) or high (SHORT) reached the stop, which a
+ *   strategy's trailing rule may have tightened after earlier bars (D4).
  * - **target** — likewise for the take-profit.
- * - **square_off** — the configured intraday flatten time has passed.
+ * - **time** — the position has been held past its strategy's limit (D2).
+ *
+ * And two that are not bars: **square_off**, the intraday flatten a strategy
+ * may decline (D6), and **manual**, an operator's emergency exit (D5).
  *
  * When a single bar touches both stop and target, the **stop wins**. Nothing in
  * a 5-minute OHLC bar says which came first, and assuming the favourable one
@@ -187,6 +193,32 @@ export class ExitEngine {
   }
 
   /**
+   * Flatten one position on an operator's instruction (D5).
+   *
+   * Reported as MANUAL_EMERGENCY, which is the honest label: a human overrode
+   * the system. Recording it as STRATEGY_EXIT would teach a strategy it did
+   * something it did not do, and the research dataset would carry that
+   * forever. Closes the whole position (Q1).
+   *
+   * False when there was nothing to close, an exit was already on its way, or
+   * risk blocked this one — the operator is told rather than a second exit
+   * sent, and never told "done" for a position still open (audit A7).
+   */
+  async exitNow(positionId: string, now: number): Promise<boolean> {
+    try {
+      const open = this.deps.ports.readOpenPositions();
+      this.prune(open);
+      const position = open.find((p) => p.positionId === positionId);
+      if (position === undefined) return false;
+      if (await this.alreadyExiting(positionId)) return false;
+      return await this.exit(position, "manual", position.avgEntryPrice, now);
+    } catch (error) {
+      this.deps.onError(error, { where: "exitNow", positionId });
+      return false;
+    }
+  }
+
+  /**
    * Whether this strategy flattens at the intraday square-off (D6).
    *
    * Defaults to TRUE, and the default is the decision: a strategy that has
@@ -256,13 +288,16 @@ export class ExitEngine {
     return null;
   }
 
-  /** Record the exit decision and hand it to risk → order (plan/14 §2). */
+  /**
+   * Record the exit decision and hand it to risk → order (plan/14 §2).
+   * True unless the handoff said no order came of it.
+   */
   private async exit(
     position: Position,
     trigger: ExitTrigger,
     price: number,
     ts: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.exiting.add(position.positionId);
     const signal: Signal = {
       signalId: this.deps.nextSignalId(),
@@ -291,6 +326,10 @@ export class ExitEngine {
     // No order came of it (risk blocked it), so nothing is in flight: clear
     // the mark, or every later bar skips the position and it stays open with
     // no exit coming until a restart — the orphan §7 forbids (audit A7).
-    if (outcome?.placed === false) this.exiting.delete(position.positionId);
+    if (outcome?.placed === false) {
+      this.exiting.delete(position.positionId);
+      return false;
+    }
+    return true;
   }
 }

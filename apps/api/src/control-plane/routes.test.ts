@@ -83,6 +83,11 @@ function fakeRuntime() {
     applyGlobalSettings() {
       calls.push("applyGlobalSettings");
     },
+    exitPositionNow(positionId) {
+      calls.push(`exit:${positionId}`);
+      // Nothing to flatten, or an exit already on its way.
+      return Promise.resolve(positionId !== "pos_gone");
+    },
     getOpenPositions: (): Position[] => [],
     realizedPnl: () => 250,
     unrealizedPnl: () => 40,
@@ -877,5 +882,41 @@ describe("opting out of square-off takes step-up (§3.6)", () => {
       },
     });
     expect(stepUps).toEqual([]);
+  });
+});
+
+/**
+ * Task 3.7 (D5): POST /positions/:positionId/exit — behind step-up, because
+ * it sends a live market order and must not be a stray click.
+ */
+describe("POST /positions/:positionId/exit (§3.7, D5)", () => {
+  it("flattens the position, after step-up, and says why", async () => {
+    makeApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/positions/pos_1/exit",
+      payload: { stepUpPassword: "pw" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      positionId: "pos_1",
+      exiting: true,
+      reason: "MANUAL_EMERGENCY",
+    });
+    expect(stepUps).toEqual(["pw"]);
+    expect(runtime.calls).toContain("exit:pos_1");
+  });
+
+  /** Not a silent 204: "nothing happened" must not read as "done". */
+  it("answers 404 when there is nothing to flatten", async () => {
+    makeApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/positions/pos_gone/exit",
+      payload: { stepUpPassword: "pw" },
+    });
+
+    expect(res.statusCode).toBe(404);
   });
 });

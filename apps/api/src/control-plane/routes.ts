@@ -621,6 +621,37 @@ export function registerControlPlane(
     return rows.slice(0, limit);
   });
 
+  /**
+   * ⚠ step-up. Flatten one position immediately (Phase 3 D5).
+   *
+   * Behind the same gate as PATCH /settings and POST /backfill, for the
+   * plainest of the three reasons: it sends a live market order. It must not
+   * be a stray click, nor reachable by a session someone left open.
+   *
+   * Recorded as MANUAL_EMERGENCY. An operator overriding the system is a
+   * different event from a strategy deciding it is done, and a dataset that
+   * recorded the first as the second would teach a strategy it did something
+   * it never did.
+   */
+  app.post("/positions/:positionId/exit", async (request) => {
+    const { positionId } = parse(
+      z.object({ positionId: z.string().min(1) }),
+      request.params,
+    );
+    const body = parse(StepUpBody, request.body ?? {});
+    await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
+
+    if (!(await runtime.exitPositionNow(positionId))) {
+      // Not a silent 204: the position may have closed on its own, an exit
+      // may already be on its way, or risk refused this one. Each is a state
+      // the operator must not mistake for "done".
+      throw new NotFoundError(
+        `no exit sent for ${positionId}: not open, an exit is already in flight, or risk refused it`,
+      );
+    }
+    return { positionId, exiting: true, reason: "MANUAL_EMERGENCY" };
+  });
+
   app.get("/control/status", async () => {
     const global = await settings.getGlobal();
     return {

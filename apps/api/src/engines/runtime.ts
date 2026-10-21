@@ -1017,6 +1017,9 @@ export async function startEngineRuntime(deps: {
       state.limits = limits;
       state.allocatedCapital = allocatedCapital;
     },
+    async exitPositionNow(positionId) {
+      return exitEngine.exitNow(positionId, Date.now());
+    },
     getOpenPositions() {
       return positionEngine.getOpenPositions();
     },

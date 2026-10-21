@@ -340,3 +340,53 @@ describe("square-off is opt-out, per strategy (§3.6, D6)", () => {
     expect(h.handedOff[0]?.exitReason).toBe("STOP_LOSS");
   });
 });
+
+/**
+ * Task 3.7 (D5): the operator's emergency exit.
+ */
+describe("manual emergency exit (§3.7, D5)", () => {
+  /**
+   * MANUAL_EMERGENCY is the honest label. Recording an operator override as
+   * STRATEGY_EXIT would teach a strategy it did something it never did, and
+   * the research dataset would carry that forever.
+   */
+  it("flattens the named position and says why", async () => {
+    const h = harness({});
+    const done = await h.engine.exitNow("pos_1", OPEN_TS);
+
+    expect(done).toBe(true);
+    expect(h.handedOff[0]?.exitReason).toBe("MANUAL_EMERGENCY");
+    expect(h.handedOff[0]?.positionId).toBe("pos_1");
+  });
+
+  it("reports false for a position that is not open", async () => {
+    const h = harness({});
+    expect(await h.engine.exitNow("pos_missing", OPEN_TS)).toBe(false);
+    expect(h.handedOff).toEqual([]);
+  });
+
+  /** Told, not silently duplicated — the operator needs the difference. */
+  it("reports false when an exit is already in flight", async () => {
+    const h = harness({ inFlight: true });
+    expect(await h.engine.exitNow("pos_1", OPEN_TS)).toBe(false);
+    expect(h.handedOff).toEqual([]);
+  });
+
+  it("closes the whole position, whichever way it faces", async () => {
+    const h = harness({ positions: [position({ side: "SHORT", qty: 7 })] });
+    await h.engine.exitNow("pos_1", OPEN_TS);
+
+    expect(h.handedOff[0]?.side).toBe("BUY");
+    expect(h.handedOff[0]?.qtyProposal).toBe(7);
+  });
+
+  /**
+   * Audit A7 again, from the operator's side: if risk blocked the exit, no
+   * order exists, and reporting success would tell the operator to stop
+   * watching a position that is still open.
+   */
+  it("reports false when risk blocked the exit", async () => {
+    const h = harness({ outcomes: [{ placed: false }] });
+    expect(await h.engine.exitNow("pos_1", OPEN_TS)).toBe(false);
+  });
+});

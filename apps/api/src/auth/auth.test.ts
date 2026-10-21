@@ -91,6 +91,7 @@ function fakeRuntime(): RuntimeControls {
     disableStrategy() {
       /* noop */
     },
+    exitPositionNow: () => Promise.resolve(false),
     applyGlobalSettings() {
       /* noop */
     },
@@ -356,6 +357,20 @@ describe("step-up re-auth (plan/21 §5)", () => {
    * risk — so opting a strategy out of square-off is refused without a
    * password, by the real verifier. A time exit only adds a way out.
    */
+  /** Phase 3 D5: a manual exit sends a live market order. */
+  it("requires step-up for a manual emergency exit", async () => {
+    const cookie = sessionCookie(await login());
+    const res = await app.inject({
+      method: "POST",
+      url: "/positions/pos_1/exit",
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ error: { code: string } }>().error.code).toBe(
+      "STEP_UP_REQUIRED",
+    );
+  });
+
   it("requires step-up to opt a strategy out of square-off", async () => {
     const cookie = sessionCookie(await login());
     const strategy = {

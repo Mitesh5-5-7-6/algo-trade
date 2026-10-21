@@ -190,6 +190,13 @@ export function createRuntimeProjection(
     disableStrategy(strategyId) {
       notify("disableStrategy", { strategyId });
     },
+    exitPositionNow(positionId) {
+      // Serverless holds no engines, so it cannot flatten anything. It says so
+      // rather than resolving true — an operator told "done" by a process that
+      // did nothing would stop watching a position that is still open.
+      notify("exitPositionNow", { positionId });
+      return Promise.resolve(false);
+    },
     applyGlobalSettings(next: {
       limits: RiskLimits;
       allocatedCapital: number;
