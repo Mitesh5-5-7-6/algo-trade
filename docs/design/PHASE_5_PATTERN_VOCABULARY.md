@@ -134,6 +134,13 @@ ingestion version) and `marketContext` (its volume flags), reusing the Trade's
 Phase 2 shapes. A pattern observed on a `LIVE_TICK` bar later overwritten by
 the broker's record must still say which bar it saw.
 
+**Settled in 5.3.** Both are required on every occurrence and observation, and
+the schema refuses provenance that names a bar other than the occurrence's own
+`(symbol, interval, ts)`. The reading of a bar is one pair of functions in
+`core` — `provenanceOf` and `marketContextOf` — which the strategy runner now
+uses for the Trade as well, so a pattern and a trade on the same bar cannot
+describe it differently.
+
 ### D5 — A detector's version means its arithmetic
 
 Spec §5.1: if a definition changes, research produced under the old one stays

@@ -14,7 +14,9 @@
  */
 import type { ZodType, ZodTypeDef } from "zod";
 import {
+  marketContextOf,
   PatternOccurrenceSchema,
+  provenanceOf,
   type Candle,
   type CandleInterval,
   type PatternDirection,
@@ -131,5 +133,7 @@ export function toOccurrence<Params>(
     direction: result.direction,
     evidence: result.evidence,
     params: params as Record<string, unknown>,
+    dataProvenance: provenanceOf(context.candle),
+    marketContext: marketContextOf(context.candle),
   });
 }

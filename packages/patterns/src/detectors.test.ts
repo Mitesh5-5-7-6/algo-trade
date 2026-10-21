@@ -396,6 +396,40 @@ describe("the detector registry (§5.1)", () => {
     expect(occurrence?.params).toMatchObject({ rangeMinutes: 15 });
   });
 
+  /** D4: the occurrence says which bar it saw, and what its volume was worth. */
+  it("stamps the decision bar's provenance and market context", () => {
+    const registry = createPatternRegistry();
+    const decision = bar(3, {
+      close: 106,
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 1,
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    });
+    const occurrence = registry
+      .instantiate("ORB_BREAKOUT")
+      .detect(
+        context([
+          bar(0, { high: 104, low: 96 }),
+          bar(1, { high: 105, low: 95 }),
+          bar(2, { high: 103, low: 97 }),
+          decision,
+        ]),
+      );
+
+    expect(occurrence?.dataProvenance).toEqual({
+      symbol: SYM,
+      interval: "5m",
+      barTs: decision.ts,
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 1,
+    });
+    expect(occurrence?.marketContext).toEqual({
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    });
+  });
+
   it("reports the version of every registered detector", () => {
     const versions = createPatternRegistry().versionMap();
     expect(Object.keys(versions)).toHaveLength(5);

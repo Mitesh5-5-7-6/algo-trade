@@ -407,6 +407,43 @@ describe("sweepPatterns — determinism and provenance", () => {
     ]);
   });
 
+  /** D4, across a whole sweep: each occurrence's provenance is its own bar. */
+  it("gives every occurrence the provenance of the bar it fired on", () => {
+    const candles = [
+      bar(DAY_1_OPEN, 0, { high: 104, low: 96, ingestionVersion: 1 }),
+      bar(DAY_1_OPEN, 1, { high: 105, low: 95, ingestionVersion: 1 }),
+      bar(DAY_1_OPEN, 2, { high: 103, low: 97, ingestionVersion: 1 }),
+      bar(DAY_1_OPEN, 3, { close: 106, ingestionVersion: 1 }),
+      bar(DAY_2_OPEN, 0, { high: 104, low: 96 }),
+      bar(DAY_2_OPEN, 1, { high: 105, low: 95 }),
+      bar(DAY_2_OPEN, 2, { high: 103, low: 97 }),
+      bar(DAY_2_OPEN, 3, { close: 106, source: "LIVE_TICK" }),
+    ];
+    const result = sweepPatterns({
+      symbol: "NSE:SWEEP-EQ",
+      interval: "5m",
+      candles,
+      detectors: [detector("ORB_BREAKOUT")],
+    });
+
+    expect(result.occurrences).toHaveLength(2);
+    expect(result.occurrences.map((o) => o.dataProvenance)).toEqual([
+      {
+        symbol: "NSE:SWEEP-EQ",
+        interval: "5m",
+        barTs: DAY_1_OPEN + 3 * BAR_MS,
+        source: "BROKER_HISTORICAL",
+        ingestionVersion: 1,
+      },
+      {
+        symbol: "NSE:SWEEP-EQ",
+        interval: "5m",
+        barTs: DAY_2_OPEN + 3 * BAR_MS,
+        source: "LIVE_TICK",
+      },
+    ]);
+  });
+
   it("scans nothing when given nothing", () => {
     const result = sweepPatterns({
       symbol: "NSE:SWEEP-EQ",

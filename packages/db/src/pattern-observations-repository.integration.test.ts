@@ -57,19 +57,33 @@ afterAll(async () => {
 const SWEEP_AT = 1_760_100_000_000;
 const BAR = 1_760_000_900_000;
 
+/** Provenance follows the fixture's own bar, so an override moves both. */
 const occurrence = (
   overrides: Partial<PatternOccurrence> = {},
-): PatternOccurrence => ({
-  patternId: "ORB_BREAKOUT",
-  detectorVersion: "1.0.0",
-  symbol: "NSE:NIFTY50-INDEX",
-  interval: "5m",
-  ts: BAR,
-  direction: "BULLISH",
-  evidence: { rangeHigh: 105, rangeLow: 95, close: 106 },
-  params: { rangeMinutes: 15 },
-  ...overrides,
-});
+): PatternOccurrence => {
+  const base = {
+    patternId: "ORB_BREAKOUT",
+    detectorVersion: "1.0.0",
+    symbol: "NSE:NIFTY50-INDEX",
+    interval: "5m",
+    ts: BAR,
+    direction: "BULLISH" as const,
+    evidence: { rangeHigh: 105, rangeLow: 95, close: 106 },
+    params: { rangeMinutes: 15 },
+    marketContext: { volumeAvailable: true, volumeQuality: "SUSPECT" as const },
+    ...overrides,
+  };
+  return {
+    ...base,
+    dataProvenance: overrides.dataProvenance ?? {
+      symbol: base.symbol,
+      interval: base.interval as "5m",
+      barTs: base.ts,
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 1,
+    },
+  };
+};
 
 describe("PatternObservationsRepository", () => {
   it("records a detection and reads it back by symbol and date", async () => {
@@ -83,6 +97,18 @@ describe("PatternObservationsRepository", () => {
     expect(found[0]?.patternId).toBe("ORB_BREAKOUT");
     expect(found[0]?.evidence["rangeHigh"]).toBe(105);
     expect(found[0]?.paramsKey).toBe('{"rangeMinutes":15}');
+    // D4: what the observation stood on survives the round trip.
+    expect(found[0]?.dataProvenance).toEqual({
+      symbol: "NSE:NIFTY50-INDEX",
+      interval: "5m",
+      barTs: BAR,
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 1,
+    });
+    expect(found[0]?.marketContext).toEqual({
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    });
   });
 
   /**

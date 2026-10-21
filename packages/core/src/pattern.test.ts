@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { canonicalJson } from "./strategy-version.js";
-import { patternParamsKey, toObservation } from "./pattern.js";
+import {
+  PatternOccurrenceSchema,
+  patternParamsKey,
+  toObservation,
+  type PatternOccurrence,
+} from "./pattern.js";
+import { CandleSchema } from "./market.js";
+import { marketContextOf, provenanceOf } from "./trade.js";
 
 /**
  * A params key is the strategy version's and the replay fingerprint's
@@ -34,24 +41,113 @@ describe("patternParamsKey", () => {
   });
 });
 
+const OCCURRENCE: PatternOccurrence = {
+  patternId: "EMA_CROSS",
+  detectorVersion: "1.0.0",
+  symbol: "NSE:X-EQ",
+  interval: "5m",
+  ts: 1_000,
+  direction: "BULLISH",
+  evidence: { fast: 101 },
+  params: { slow: 21, fast: 9 },
+  dataProvenance: {
+    symbol: "NSE:X-EQ",
+    interval: "5m",
+    barTs: 1_000,
+    source: "BROKER_HISTORICAL",
+    ingestionVersion: 1,
+  },
+  marketContext: { volumeAvailable: true, volumeQuality: "SUSPECT" },
+};
+
 describe("toObservation", () => {
   it("adds the params key and when it was observed", () => {
-    const observation = toObservation(
-      {
-        patternId: "EMA_CROSS",
-        detectorVersion: "1.0.0",
-        symbol: "NSE:X-EQ",
-        interval: "5m",
-        ts: 1_000,
-        direction: "BULLISH",
-        evidence: { fast: 101 },
-        params: { slow: 21, fast: 9 },
-      },
-      2_000,
-    );
+    const observation = toObservation(OCCURRENCE, 2_000);
     expect(observation).toMatchObject({
       paramsKey: '{"fast":9,"slow":21}',
       observedAt: 2_000,
+    });
+  });
+});
+
+/**
+ * PLAN.md §10 / design D4: every observation carries its market context and
+ * its data provenance — the Trade's Phase 2 shapes, so a pattern and a trade
+ * on one bar describe it the same way.
+ */
+describe("an observation says what it stood on (D4)", () => {
+  it("keeps the provenance and market context through to the stored form", () => {
+    const observation = toObservation(OCCURRENCE, 2_000);
+    expect(observation.dataProvenance).toEqual(OCCURRENCE.dataProvenance);
+    expect(observation.marketContext).toEqual(OCCURRENCE.marketContext);
+  });
+
+  it("refuses an occurrence without either", () => {
+    const noProvenance: Record<string, unknown> = { ...OCCURRENCE };
+    delete noProvenance["dataProvenance"];
+    const noContext: Record<string, unknown> = { ...OCCURRENCE };
+    delete noContext["marketContext"];
+    expect(PatternOccurrenceSchema.safeParse(noProvenance).success).toBe(false);
+    expect(PatternOccurrenceSchema.safeParse(noContext).success).toBe(false);
+  });
+
+  /** Provenance names a bar; it must be this occurrence's bar. */
+  it("refuses provenance that names a different bar", () => {
+    const elsewhere = (over: Record<string, unknown>) =>
+      PatternOccurrenceSchema.safeParse({
+        ...OCCURRENCE,
+        dataProvenance: { ...OCCURRENCE.dataProvenance, ...over },
+      }).success;
+    expect(elsewhere({})).toBe(true);
+    expect(elsewhere({ barTs: 1_300 })).toBe(false);
+    expect(elsewhere({ symbol: "NSE:Y-EQ" })).toBe(false);
+    expect(elsewhere({ interval: "1m" })).toBe(false);
+    expect(() => toObservation({ ...OCCURRENCE, ts: 1_300 }, 2_000)).toThrow();
+  });
+});
+
+describe("provenanceOf / marketContextOf — one reading of a bar", () => {
+  const candle = (fields: Record<string, unknown> = {}) =>
+    CandleSchema.parse({
+      symbol: "NSE:X-EQ",
+      interval: "5m",
+      open: 100,
+      high: 101,
+      low: 99,
+      close: 100,
+      volume: 1_000,
+      ts: 9_000,
+      ...fields,
+    });
+
+  it("snapshots the bar's key, source and ingestion version", () => {
+    expect(
+      provenanceOf(
+        candle({ source: "BROKER_HISTORICAL", ingestionVersion: 2 }),
+      ),
+    ).toEqual({
+      symbol: "NSE:X-EQ",
+      interval: "5m",
+      barTs: 9_000,
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 2,
+    });
+    expect(provenanceOf(candle())).not.toHaveProperty("ingestionVersion");
+  });
+
+  /** Copied, never defaulted: a silent bar keeps the candle's own meaning. */
+  it("copies the volume flags exactly, and invents none", () => {
+    expect(marketContextOf(candle())).toEqual({});
+    expect(marketContextOf(candle({ volumeQuality: "SUSPECT" }))).toEqual({
+      volumeQuality: "SUSPECT",
+    });
+    expect(
+      marketContextOf(
+        candle({ volumeAvailable: false, volumeQuality: "UNAVAILABLE" }),
+      ),
+    ).toEqual({
+      volumeAvailable: false,
+      volumeQuality: "UNAVAILABLE",
     });
   });
 });

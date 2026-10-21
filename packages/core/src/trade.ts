@@ -8,7 +8,11 @@ import {
   TimestampSchema,
   TradeModeSchema,
 } from "./primitives.js";
-import { CandleSourceSchema, VolumeQualitySchema } from "./market.js";
+import {
+  CandleSourceSchema,
+  VolumeQualitySchema,
+  type Candle,
+} from "./market.js";
 import { PositionSideSchema } from "./position.js";
 
 /**
@@ -70,6 +74,38 @@ export const EntryMarketContextSchema = z.object({
   volumeQuality: VolumeQualitySchema.optional(),
 });
 export type EntryMarketContext = z.infer<typeof EntryMarketContextSchema>;
+
+/**
+ * A bar's provenance snapshot. One definition, so a Trade's entry and a
+ * pattern observed on the same bar describe it identically (Phase 5 D4).
+ */
+export function provenanceOf(candle: Candle): DataProvenance {
+  return {
+    symbol: candle.symbol,
+    interval: candle.interval,
+    barTs: candle.ts,
+    source: candle.source,
+    ...(candle.ingestionVersion === undefined
+      ? {}
+      : { ingestionVersion: candle.ingestionVersion }),
+  };
+}
+
+/**
+ * A bar's volume flags, copied and never defaulted: a bar silent about its
+ * volume yields `{}`, which keeps the candle's own meaning rather than a
+ * claim nothing here ever made.
+ */
+export function marketContextOf(candle: Candle): EntryMarketContext {
+  return {
+    ...(candle.volumeAvailable === undefined
+      ? {}
+      : { volumeAvailable: candle.volumeAvailable }),
+    ...(candle.volumeQuality === undefined
+      ? {}
+      : { volumeQuality: candle.volumeQuality }),
+  };
+}
 
 /**
  * The completed Trade — the canonical outcome primitive.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { SymbolSchema, TimestampSchema } from "./primitives.js";
 import { canonicalJson } from "./strategy-version.js";
+import { DataProvenanceSchema, EntryMarketContextSchema } from "./trade.js";
 
 /**
  * Chart patterns as stored evidence (RND_RESEARCH_SPECIFICATION §5).
@@ -22,7 +23,7 @@ export type PatternDirection = z.infer<typeof PatternDirectionSchema>;
  * detection is an assertion nobody can re-check — and re-checking is the only
  * way to tell a real edge from a detector bug six months later.
  */
-export const PatternOccurrenceSchema = z.object({
+const PatternOccurrenceShape = z.object({
   patternId: z.string().min(1),
   /**
    * The detector build that produced this.
@@ -41,7 +42,41 @@ export const PatternOccurrenceSchema = z.object({
   evidence: z.record(z.string(), z.number()),
   /** The parameters in force, so a detection is reproducible from its record. */
   params: z.record(z.string(), z.unknown()),
+  /**
+   * The bar this was observed on — its key, source and ingestion version
+   * (PLAN.md §10, Phase 5 D4). The candle store lets a broker bar overwrite
+   * the LIVE_TICK one, so the key alone could later resolve to a bar the
+   * detector never saw; the snapshot still says what it did see.
+   */
+  dataProvenance: DataProvenanceSchema,
+  /**
+   * What that bar's volume was worth (the Trade's shape). A reader pooling
+   * observations must be able to tell those made on SUSPECT volume apart.
+   */
+  marketContext: EntryMarketContextSchema,
 });
+
+/** Provenance names a bar; it must be the bar this occurrence is about. */
+function aboutItsOwnBar(
+  value: z.infer<typeof PatternOccurrenceShape>,
+  ctx: z.RefinementCtx,
+): void {
+  const at = value.dataProvenance;
+  if (
+    at.barTs !== value.ts ||
+    at.symbol !== value.symbol ||
+    at.interval !== value.interval
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["dataProvenance"],
+      message: "dataProvenance must name the occurrence's own bar",
+    });
+  }
+}
+
+export const PatternOccurrenceSchema =
+  PatternOccurrenceShape.superRefine(aboutItsOwnBar);
 export type PatternOccurrence = z.infer<typeof PatternOccurrenceSchema>;
 
 /**
@@ -98,12 +133,12 @@ export function patternParamsKey(params: Record<string, unknown>): string {
  * this an ORB breakout" — only "under this definition, at these parameters,
  * yes". Two rows for one bar is the correct answer, not a duplicate.
  */
-export const PatternObservationSchema = PatternOccurrenceSchema.extend({
+export const PatternObservationSchema = PatternOccurrenceShape.extend({
   /** Derived from `params`; denormalised so the unique index can use it. */
   paramsKey: z.string().min(1).max(MAX_PARAMS_KEY),
   /** When the sweep that produced this row ran. Never the bar's time. */
   observedAt: TimestampSchema,
-});
+}).superRefine(aboutItsOwnBar);
 export type PatternObservation = z.infer<typeof PatternObservationSchema>;
 
 /** Complete an occurrence into its stored form. */
