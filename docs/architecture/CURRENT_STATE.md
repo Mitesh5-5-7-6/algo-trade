@@ -140,11 +140,10 @@ These five gaps are strictly sequential. Nothing in the R&D specification can be
 
 ### 4.2 Deterministic replay coverage
 
-- **Current state:** `PARTIALLY EXISTS`. A genuine replay harness, narrower than production.
-- **Evidence:** [apps/api/src/golden/pipeline.ts](../../apps/api/src/golden/pipeline.ts) constructs the real `PositionEngine`, `PnlEngine`, `PaperBroker`, `OrderManager`, `RiskEngine`, `IndicatorEngine` and `StrategyRunner` against in-memory ports, driven by a `GoldenFixture` that is already a parameter rather than a constant. The candle timestamp is the clock; ids are counters; slippage is fixed. No Mongo, no Redis, no writes to production collections.
-- **Gap:** Three engines are absent from the harness — `ExitEngine`, `MarketDataEngine`/`CandleAggregator`, and `MarketBiasEngine` (hardcoded to an unknown market view). The fixture is 60 synthetic sine-wave bars for a test symbol, and `readInstrument` / `resolveContract` return null, so the option-momentum strategy cannot be replayed at all. There is no CLI or route that invokes it outside the test.
-- **Why it matters:** The determinism proof covers a strictly smaller machine than production — in particular, a machine with no exits, which is the machine least able to produce outcomes.
-- **Planned phase:** 4. The architecture requires parameterising this harness rather than building a second replay engine.
+- **Current state:** `PARTIALLY EXISTS`. A genuine replay harness, now running the whole trading machine on its fixture; not yet on history. Re-audited at `b655476`.
+- **Evidence:** [apps/api/src/golden/pipeline.ts](../../apps/api/src/golden/pipeline.ts) starts from raw ticks and runs the real Market Data Engine (aggregation at 1m and 5m, the end-of-day flush), Session Manager, Market Bias, Indicator, Strategy Runner, Exit, Risk, Order, Position and PnL engines over in-memory ports. The tick timestamp is the clock; ids are counters; slippage is fixed. No Mongo, no Redis, no writes to production collections. Its record reaches a stop, a target and a square-off and ends flat.
+- **Gap:** no Trade Engine, so the record has no completed Trades; the fixture is one synthetic day and nothing reads the Phase 1 dataset; `readInstrument` / `resolveContract` return null, so derivative strategies cannot be replayed; and nothing invokes it outside its test.
+- **Planned phase:** 4 — [../design/PHASE_4_DETERMINISTIC_REPLAY.md](../design/PHASE_4_DETERMINISTIC_REPLAY.md).
 
 ### 4.3 Environment separation
 

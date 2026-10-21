@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | READY    |
-| 5     | Pattern vocabulary                 | READY    |
-| 6     | Counterfactual strategy evaluation | READY    |
-| 7     | Statistical validation             | READY    |
-| 8     | Daily research                     | READY    |
-| 9     | Periodic research                  | READY    |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | IN PROGRESS |
+| 5     | Pattern vocabulary                 | READY       |
+| 6     | Counterfactual strategy evaluation | READY       |
+| 7     | Statistical validation             | READY       |
+| 8     | Daily research                     | READY       |
+| 9     | Periodic research                  | READY       |
+| 10    | Research knowledge base            | READY       |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -376,7 +376,7 @@ orphaned simulated entries.
 
 ## 9. Phase 4 — Deterministic replay
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -400,17 +400,17 @@ Structured around the decisions in
 is the detailed design for this phase and keeps each task's dependencies. Q1
 and Q2 block the tasks they name; Q3 blocks only the manifest's model names.
 
-| ID  | Task                                                                                                                            | STATUS | Commit | Evidence |
-| --- | ------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 4.1 | Port `ed71384`'s harness extension — ticks, Market Data, Session Manager, Market Bias, Exit Engine — and audit it (design §2.2) | READY  | —      | —        |
-| 4.2 | Answer Q1 and Q2                                                                                                                | READY  | —      | —        |
-| 4.3 | Trade Engine in the harness, fills projected in the runtime's order; the record carries completed Trades                        | READY  | —      | —        |
-| 4.4 | Candle source: the same pipeline from stored bars, across trading days (D1, D6)                                                 | READY  | —      | —        |
-| 4.5 | Run manifest and result fingerprint (D5); answer Q3                                                                             | READY  | —      | —        |
-| 4.6 | One strategy per run; refuse what cannot be replayed (D4, D8); lookahead guard (D7)                                             | READY  | —      | —        |
-| 4.7 | Prove read-only: a run writes nothing to the trading collections (D3)                                                           | READY  | —      | —        |
-| 4.8 | Operator entry point over the research dataset, storing results per Q2                                                          | READY  | —      | —        |
-| 4.9 | Acceptance: replay a known historical week twice — identical fingerprints, completed Trades                                     | READY  | —      | —        |
+| ID  | Task                                                                                                                            | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 4.1 | Port `ed71384`'s harness extension — ticks, Market Data, Session Manager, Market Bias, Exit Engine — and audit it (design §2.2) | COMPLETE | `b655476` | `apps/api/src/golden/pipeline.ts` starts from raw ticks and runs the real Market Data Engine (1m and 5m aggregation, the end-of-day flush), Session Manager, Market Bias and Exit engines, with Phase 3's exit ports and placed-or-not handoff wired as the runtime wires them. `apps/api/src/golden/golden-run.test.ts` proves the feed half, both session edges, the three default exits, both sides, a market-view block and a flat close; `apps/api/src/golden/golden-record.json` reproduces byte for byte. Audit outcome in `docs/design/PHASE_4_DETERMINISTIC_REPLAY.md` §2.2 |
+| 4.2 | Answer Q1 and Q2                                                                                                                | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.3 | Trade Engine in the harness, fills projected in the runtime's order; the record carries completed Trades                        | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.4 | Candle source: the same pipeline from stored bars, across trading days (D1, D6)                                                 | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.5 | Run manifest and result fingerprint (D5); answer Q3                                                                             | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.6 | One strategy per run; refuse what cannot be replayed (D4, D8); lookahead guard (D7)                                             | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.7 | Prove read-only: a run writes nothing to the trading collections (D3)                                                           | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.8 | Operator entry point over the research dataset, storing results per Q2                                                          | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.9 | Acceptance: replay a known historical week twice — identical fingerprints, completed Trades                                     | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 **Most of 4.1 already exists.** `docs/architecture-baseline` carries it inside
 `ed71384`, a commit labelled as the Phase 5 pattern detectors. Its harness

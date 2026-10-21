@@ -73,6 +73,16 @@ What the audit must check, because it predates Phases 1–3:
    `strategyVersion` and `dataProvenance` now travel with every decision; the
    record should show what production would store.
 
+**Audit outcome (task 4.1).** Ported in `b655476`; the ported record
+reproduces byte for byte under today's engines.
+
+| Point                             | Outcome                                                                                                                                                                                                                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — Exit Engine ports and handoff | Wired as the runtime wires them: the in-flight check over the run's own orders, exit rules from the running instances, trails on the live position and its stored copy, and a handoff that reports whether an order was placed. Also: `istDateKey` now comes from core. |
+| 2 — No Trade Engine               | Still true; that is 4.3.                                                                                                                                                                                                                                                |
+| 3 — Fill projection order         | Already matches. The harness publishes inline, so each fill is projected before the next exists — the order the runtime enforces since Phase 2's L5.                                                                                                                    |
+| 4 — What the record shows         | Deferred to 4.3. The record projects positions; the provenance, version and exit reason production stores live on the Trade, which the record gains there.                                                                                                              |
+
 ### 2.3 The dataset
 
 Phase 1 left one year of `BROKER_HISTORICAL` 5-minute bars for `NIFTY` and
