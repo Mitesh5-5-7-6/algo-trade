@@ -283,7 +283,11 @@ describe("sweepPatterns — warm-up", () => {
    */
   it("never lets a detector fire on an indicator that never became ready", () => {
     const candles = Array.from({ length: 10 }, (_, i) =>
-      bar(DAY_1_OPEN, i, { volume: 0, close: 100 + (i % 2 === 0 ? -2 : 2) }),
+      bar(DAY_1_OPEN, i, {
+        symbol: "NSE:INDEX-INDEX",
+        volume: 0,
+        close: 100 + (i % 2 === 0 ? -2 : 2),
+      }),
     );
     const result = sweepPatterns({
       symbol: "NSE:INDEX-INDEX",

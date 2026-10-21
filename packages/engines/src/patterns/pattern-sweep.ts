@@ -155,6 +155,8 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
     };
   }
 
+  assertJudgeableInOrder(request);
+
   // One fold per key, shared across detectors: three detectors wanting EMA(9)
   // cost one computation, as they do in the live engine.
   const folds = new Map<string, RunningIndicator>();
@@ -246,6 +248,33 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
     declinedForVolume,
     sessions,
   };
+}
+
+/**
+ * One series, strictly ascending (Phase 5 D7). Out of order, a later bar would
+ * be judged — and its indicators folded — before an earlier one; duplicated,
+ * one bar would count twice. Refused, not re-sorted: the store returns bars in
+ * order, so disorder means a broken caller, and quietly fixing it would hide
+ * that.
+ */
+function assertJudgeableInOrder(request: SweepRequest): void {
+  let previous = -Infinity;
+  for (const candle of request.candles) {
+    if (
+      candle.symbol !== request.symbol ||
+      candle.interval !== request.interval
+    ) {
+      throw new Error(
+        `sweep of ${request.symbol} ${request.interval} was given a ${candle.symbol} ${candle.interval} bar`,
+      );
+    }
+    if (candle.ts <= previous) {
+      throw new Error(
+        `sweep of ${request.symbol}: bars must be strictly ascending by ts (${String(candle.ts)} after ${String(previous)})`,
+      );
+    }
+    previous = candle.ts;
+  }
 }
 
 function readAll(folds: Map<string, RunningIndicator>): Record<string, number> {

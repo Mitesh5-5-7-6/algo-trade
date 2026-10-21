@@ -181,6 +181,15 @@ A detection at bar `t` sees bars `≤ t`. Proven behaviourally, as Phase 4 did:
 appending later bars — different ones, since copies hide leaks — changes no
 earlier observation.
 
+**Settled in 5.5.** The strong form: over four sessions of the pin series —
+every detector firing, the fourth session unlike the third — sweeping each of
+the 300 prefixes yields exactly the full sweep's observations up to that
+prefix's last bar. A detector window reaching the rest of the session fails
+it. And bars must arrive as one series, strictly ascending: out of order is
+lookahead by another name, so the sweep refuses it — and a mismatched symbol
+or interval — rather than re-sorting, because the store already returns bars
+in order and disorder means a broken caller.
+
 ### D8 — A pattern is an event, not a state
 
 Settled in 5.4, before the pin fixed what 1.0.0 means. As ported,
