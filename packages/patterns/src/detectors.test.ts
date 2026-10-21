@@ -96,6 +96,45 @@ describe("ORB_BREAKOUT", () => {
     expect(result).toBeNull();
   });
 
+  /**
+   * The break is the event, not every bar after it (design D8). Price that
+   * stays above the range for an hour is one breakout, not twelve — a state
+   * counted per bar would inflate exactly the sample Phase 6 divides by.
+   */
+  it("fires on the break, not again on each bar that stays outside", () => {
+    const params = orbBreakout.paramsSchema.parse({});
+    const after = [...range, bar(3, { close: 106 }), bar(4, { close: 107 })];
+    expect(
+      orbBreakout.detect(context(after.slice(0, 4)), params)?.direction,
+    ).toBe("BULLISH");
+    expect(orbBreakout.detect(context(after), params)).toBeNull();
+  });
+
+  it("fires again when price returns inside the range and breaks out again", () => {
+    const params = orbBreakout.paramsSchema.parse({});
+    const bars = [
+      ...range,
+      bar(3, { close: 106 }),
+      bar(4, { close: 101 }),
+      bar(5, { close: 106 }),
+    ];
+    const result = orbBreakout.detect(context(bars), params);
+    expect(result?.direction).toBe("BULLISH");
+    expect(result?.evidence["prevClose"]).toBe(101);
+  });
+
+  it("fires bearish on a close straight through from above the range to below it", () => {
+    const params = orbBreakout.paramsSchema.parse({});
+    const bars = [
+      ...range,
+      bar(3, { close: 106 }),
+      bar(4, { close: 94, low: 93 }),
+    ];
+    expect(orbBreakout.detect(context(bars), params)?.direction).toBe(
+      "BEARISH",
+    );
+  });
+
   it("does not fire on a bar still inside the range window", () => {
     const result = orbBreakout.detect(
       context([...range.slice(0, 2)]),
@@ -436,6 +475,26 @@ describe("the detector registry (§5.1)", () => {
     for (const version of Object.values(versions)) {
       expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     }
+  });
+
+  /** D5: the registry describes each detector for the `patterns` catalogue. */
+  it("catalogues every detector's definition, defaults and volume use", () => {
+    const catalog = createPatternRegistry().catalog();
+    expect(catalog.map((d) => d.patternId)).toEqual(
+      BUILTIN_DETECTORS.map((d) => d.patternId),
+    );
+    expect(catalog.find((d) => d.patternId === "HIGH_VOLUME_BREAKOUT")).toEqual(
+      {
+        patternId: "HIGH_VOLUME_BREAKOUT",
+        detectorVersion: "1.0.0",
+        definition: highVolumeBreakout.definition,
+        defaultParams: { lookback: 20, volumeMultiple: 1.5 },
+        volumeBased: true,
+      },
+    );
+    expect(
+      catalog.find((d) => d.patternId === "ORB_BREAKOUT")?.volumeBased,
+    ).toBe(false);
   });
 
   it("rejects an unknown pattern id", () => {

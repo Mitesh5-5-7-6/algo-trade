@@ -14,6 +14,14 @@ export type OrbBreakoutParams = z.infer<typeof OrbBreakoutParamsSchema>;
  * Opening-range breakout: the session's first `rangeMinutes` define a range,
  * and a later bar CLOSES outside it.
  *
+ * **The break, not the state** (Phase 5 D8). It fires on the close that
+ * crosses out — the previous bar closed at or inside the level being broken —
+ * and not again on every bar that stays outside. Price that holds above the
+ * range for an hour is one breakout; counted per bar it would be twelve, and
+ * every rate Phase 6 computes would be divided by a sample that is mostly one
+ * event. The other four detectors already report inversions; this makes the
+ * fifth agree. A return inside and a second break is a second event.
+ *
  * Closes rather than touches. An intrabar spike that is rejected before the
  * bell is not a breakout, and counting it would populate the matrix with
  * structures no strategy could have acted on at bar close.
@@ -23,7 +31,8 @@ export const orbBreakout: PatternDetector<OrbBreakoutParams> = {
   detectorVersion: "1.0.0",
   definition:
     "The first N minutes of the session form a range; a later bar closes " +
-    "above its high (bullish) or below its low (bearish).",
+    "above its high (bullish) or below its low (bearish), the previous bar " +
+    "having closed at or within that level.",
   paramsSchema: OrbBreakoutParamsSchema,
   requiredIndicators: () => [],
   /**
@@ -54,13 +63,26 @@ export const orbBreakout: PatternDetector<OrbBreakoutParams> = {
       return null;
     }
 
+    // Never undefined here — a non-empty range precedes the decision bar —
+    // but a missing previous close is no evidence of a crossing.
+    const prev = context.candles.at(-2);
+    if (prev === undefined) return null;
+
     const rangeHigh = highestHigh(range);
     const rangeLow = lowestLow(range);
     const close = context.candle.close;
-    const evidence = { rangeHigh, rangeLow, close, rangeBars: range.length };
+    const evidence = {
+      rangeHigh,
+      rangeLow,
+      close,
+      prevClose: prev.close,
+      rangeBars: range.length,
+    };
 
-    if (close > rangeHigh) return { direction: "BULLISH", evidence };
-    if (close < rangeLow) return { direction: "BEARISH", evidence };
+    if (close > rangeHigh && prev.close <= rangeHigh)
+      return { direction: "BULLISH", evidence };
+    if (close < rangeLow && prev.close >= rangeLow)
+      return { direction: "BEARISH", evidence };
     return null;
   },
 };

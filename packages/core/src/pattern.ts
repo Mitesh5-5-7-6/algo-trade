@@ -152,3 +152,33 @@ export function toObservation(
     observedAt,
   });
 }
+
+/**
+ * A detector definition as catalogued in `patterns` (Phase 5 D5): one per
+ * `(patternId, detectorVersion)`, so an old observation can still be read
+ * against the rule that produced it after the code has moved on (spec §5.1).
+ */
+export const PatternDefinitionSchema = z.object({
+  patternId: z.string().min(1),
+  detectorVersion: z.string().min(1),
+  /** The rule in words — the detector's own `definition`. */
+  definition: z.string().min(1),
+  /** What `{}` resolves to: the parameters an unparameterised sweep uses. */
+  defaultParams: z.record(z.string(), z.unknown()),
+  /** Whether it declines on untrusted volume (D3). */
+  volumeBased: z.boolean(),
+});
+export type PatternDefinition = z.infer<typeof PatternDefinitionSchema>;
+
+/**
+ * The parts of a definition that ARE the rule. Two entries for one
+ * `(patternId, detectorVersion)` must agree on these, or a rule changed
+ * without its version being bumped.
+ */
+export function definitionKey(definition: PatternDefinition): string {
+  return canonicalJson({
+    definition: definition.definition,
+    defaultParams: definition.defaultParams,
+    volumeBased: definition.volumeBased,
+  });
+}

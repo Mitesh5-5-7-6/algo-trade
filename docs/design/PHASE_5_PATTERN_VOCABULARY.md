@@ -152,6 +152,23 @@ detectorVersion)` with its definition text and parameter defaults — so an old
 observation can still be read against the definition that produced it after
 the code has moved on.
 
+**Settled in 5.4.** The pin sweeps each detector at its defaults over one fixed
+three-session series — integer arithmetic only, so it is bit-identical on every
+runtime — and pins `{version, count, sha256 of what it found}`. Every
+detector fires on it (5 to 22 times), and the volume ladder spans the 1.5×
+threshold. Five mutants killed: ORB back to a state, and a nudged default in
+each of the other four. Its limit is its series: a change that alters nothing
+on it passes, so the series is built to sit on each detector's boundaries.
+
+`patterns` holds a `PatternDefinition` per version — definition text,
+`defaultParams`, `volumeBased` — written once. Registering a version whose
+rule differs from the catalogued one is reported as a conflict and never
+overwrites it; 5.6's sweep refuses to record observations under a conflict.
+
+The version rule this implies: **1.0.0 means the rule as pinned at 5.4.**
+Changes before that — D3's volume refusal, D8 — were ports, made before any
+observation existed for them to mislabel.
+
 ### D6 — Research database only, and read-only to trading
 
 Observations and the catalogue live in `neelkanth_research` (ADR §10.1 lists
@@ -163,6 +180,20 @@ Observations and the catalogue live in `neelkanth_research` (ADR §10.1 lists
 A detection at bar `t` sees bars `≤ t`. Proven behaviourally, as Phase 4 did:
 appending later bars — different ones, since copies hide leaks — changes no
 earlier observation.
+
+### D8 — A pattern is an event, not a state
+
+Settled in 5.4, before the pin fixed what 1.0.0 means. As ported,
+`ORB_BREAKOUT` fired on every bar that closed outside the opening range — on
+the pin series, 168 times in three sessions. That is a state ("price is above
+the range"), and counted per bar it makes one breakout into twelve
+observations, inflating exactly the sample Phase 6 divides by. The other four
+detectors already report inversions — a cross, a re-cross, a reclaim, a break
+of a prior high. `ORB_BREAKOUT` now agrees: it fires on the close that
+crosses out of the range, the previous bar having closed at or inside the
+level; a return inside and a second break is a second event. The spec names
+the pattern but not its rule, so this is a detector decision, not a document
+conflict.
 
 ---
 

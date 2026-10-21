@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canonicalJson } from "./strategy-version.js";
 import {
+  definitionKey,
   PatternOccurrenceSchema,
   patternParamsKey,
   toObservation,
@@ -149,5 +150,29 @@ describe("provenanceOf / marketContextOf — one reading of a bar", () => {
       volumeAvailable: false,
       volumeQuality: "UNAVAILABLE",
     });
+  });
+});
+
+describe("definitionKey (D5)", () => {
+  const def = {
+    patternId: "EMA_CROSS",
+    detectorVersion: "1.0.0",
+    definition: "fast crosses slow",
+    defaultParams: { fast: 9, slow: 21 },
+    volumeBased: false,
+  };
+  it("is the rule — text, defaults, volume use — and not the identity", () => {
+    expect(definitionKey(def)).toBe(
+      definitionKey({ ...def, defaultParams: { slow: 21, fast: 9 } }),
+    );
+    expect(definitionKey(def)).not.toBe(
+      definitionKey({ ...def, defaultParams: { fast: 10, slow: 21 } }),
+    );
+    expect(definitionKey(def)).not.toBe(
+      definitionKey({ ...def, definition: "fast crosses slow, twice" }),
+    );
+    expect(definitionKey(def)).not.toBe(
+      definitionKey({ ...def, volumeBased: true }),
+    );
   });
 });

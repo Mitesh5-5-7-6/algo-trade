@@ -1,4 +1,4 @@
-import { hasTrustedVolume } from "@neelkanth/core";
+import { hasTrustedVolume, type PatternDefinition } from "@neelkanth/core";
 import type { IndicatorSpec } from "@neelkanth/indicators";
 import {
   toOccurrence,
@@ -71,6 +71,7 @@ export class PatternRegistry {
     (rawParams: unknown) => RunnableDetector
   >();
   private readonly versions = new Map<string, string>();
+  private readonly definitions = new Map<string, PatternDefinition>();
 
   register<P>(detector: PatternDetector<P>): void {
     if (this.factories.has(detector.patternId)) {
@@ -80,6 +81,21 @@ export class PatternRegistry {
       instantiate(detector, rawParams),
     );
     this.versions.set(detector.patternId, detector.detectorVersion);
+    this.definitions.set(detector.patternId, {
+      patternId: detector.patternId,
+      detectorVersion: detector.detectorVersion,
+      definition: detector.definition,
+      defaultParams: detector.paramsSchema.parse({}) as Record<string, unknown>,
+      volumeBased: detector.volumeBars !== undefined,
+    });
+  }
+
+  /**
+   * Every registered detector's definition, for the `patterns` catalogue
+   * (Phase 5 D5). A sweep records these before the observations they label.
+   */
+  catalog(): PatternDefinition[] {
+    return [...this.definitions.values()];
   }
 
   has(patternId: string): boolean {

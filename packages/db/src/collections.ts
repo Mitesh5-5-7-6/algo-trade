@@ -47,6 +47,13 @@ export const COLLECTIONS = {
    * later statistic is computed from.
    */
   patternObservations: "pattern_observations",
+  /**
+   * Detector definitions, one per (patternId, detectorVersion) — what each
+   * version of each pattern meant (Phase 5 D5). RESEARCH database only.
+   * No TTL: an observation outlives the code that produced it, and this is
+   * how it can still be read.
+   */
+  patterns: "patterns",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -109,6 +116,13 @@ export async function ensureIndexes(db: Db): Promise<void> {
       },
       { unique: true, name: "observation_identity" },
     ),
+    // patterns — one definition per detector version.
+    db
+      .collection(COLLECTIONS.patterns)
+      .createIndex(
+        { patternId: 1, detectorVersion: 1 },
+        { unique: true, name: "definition_identity" },
+      ),
     // "What happened to this symbol that day" — the per-instrument read.
     db
       .collection(COLLECTIONS.patternObservations)
