@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | READY    |
-| 6     | Counterfactual strategy evaluation | READY    |
-| 7     | Statistical validation             | READY    |
-| 8     | Daily research                     | READY    |
-| 9     | Periodic research                  | READY    |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | IN PROGRESS |
+| 6     | Counterfactual strategy evaluation | READY       |
+| 7     | Statistical validation             | READY       |
+| 8     | Daily research                     | READY       |
+| 9     | Periodic research                  | READY       |
+| 10    | Research knowledge base            | READY       |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -427,7 +427,7 @@ modify Paper or Live trading state.
 
 ## 10. Phase 5 — Pattern vocabulary
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -451,15 +451,15 @@ Structured around the decisions in
 [PHASE_5_PATTERN_VOCABULARY.md](design/PHASE_5_PATTERN_VOCABULARY.md), which
 is the detailed design for this phase and keeps each task's dependencies.
 
-| ID  | Task                                                                                    | STATUS | Commit | Evidence |
-| --- | --------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 5.1 | Port `ed71384`'s pattern library, sweep and observations store; audit it (design §2.2)  | READY  | —      | —        |
-| 5.2 | `HIGH_VOLUME_BREAKOUT` — the spec's name, declining untrustworthy volume (D2, D3)       | READY  | —      | —        |
-| 5.3 | Observations carry market context and data provenance (D4)                              | READY  | —      | —        |
-| 5.4 | Detector versions pinned to their outputs; definitions catalogued in `patterns` (D5)    | READY  | —      | —        |
-| 5.5 | Lookahead guard and determinism (D7)                                                    | READY  | —      | —        |
-| 5.6 | Operator sweep over the research dataset, research database only (D6)                   | READY  | —      | —        |
-| 5.7 | Acceptance: sweep the real year twice — identical observations carrying every §10 field | READY  | —      | —        |
+| ID  | Task                                                                                    | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | --------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 5.1 | Port `ed71384`'s pattern library, sweep and observations store; audit it (design §2.2)  | COMPLETE | `2f041c6` | `packages/patterns` (contract, registry, the five detectors), `packages/engines/src/patterns/` (sweep, runner) and `packages/db/src/pattern-observations-repository.ts` ported from `ed71384`; baseline tests pass unmodified. The sweep reads the calendar from `core` (`sessionOpenTsFor` moved there, `packages/core/src/calendar.test.ts`); a Budget Sunday sweeps as its own session (`packages/engines/src/patterns/pattern-sweep.test.ts`); the params key is `canonicalJson`, pinned in `packages/core/src/pattern.test.ts`; the store's Mongo test probes and runs strict, 11/11. Audit outcome in `docs/design/PHASE_5_PATTERN_VOCABULARY.md` §2.3 |
+| 5.2 | `HIGH_VOLUME_BREAKOUT` — the spec's name, declining untrustworthy volume (D2, D3)       | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 5.3 | Observations carry market context and data provenance (D4)                              | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 5.4 | Detector versions pinned to their outputs; definitions catalogued in `patterns` (D5)    | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 5.5 | Lookahead guard and determinism (D7)                                                    | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 5.6 | Operator sweep over the research dataset, research database only (D6)                   | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 5.7 | Acceptance: sweep the real year twice — identical observations carrying every §10 field | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 **Most of 5.1 already exists.** `docs/architecture-baseline` carries the
 library, sweep and store inside `ed71384`. Nothing of it touches the live
