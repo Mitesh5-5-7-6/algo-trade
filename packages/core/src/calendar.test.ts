@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isTradingDayIST,
   istDateKey,
+  istDayStart,
   sessionOpenTsFor,
   startOfDayIST,
   tradingDaysBetween,
@@ -236,6 +237,16 @@ describe("sessionOpenTsFor (Phase 5 — the sweep's session anchor)", () => {
     };
     expect(sessionOpenTsFor(ist(2026, 10, 8, 18, 40), muhurat)).toBe(
       ist(2026, 10, 8, 18, 15),
+    );
+  });
+});
+
+describe("istDayStart", () => {
+  it("is IST midnight of the date, and istDateKey's inverse", () => {
+    expect(istDayStart("2026-01-05")).toBe(ist(2026, 0, 5, 0, 0));
+    expect(istDateKey(istDayStart("2026-02-01"))).toBe("2026-02-01");
+    expect(startOfDayIST(ist(2026, 0, 5, 15, 29))).toBe(
+      istDayStart("2026-01-05"),
     );
   });
 });

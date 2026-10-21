@@ -109,6 +109,16 @@ describe("PatternCatalogRepository (D5)", () => {
     expect(await repo.find("ORB_BREAKOUT", "1.0.0")).toEqual(ORB);
   });
 
+  it("checks without writing", async () => {
+    const repo = new PatternCatalogRepository(connection.db);
+    expect((await repo.check([ORB])).added).toEqual(["ORB_BREAKOUT@1.0.0"]);
+    expect(await repo.list()).toEqual([]);
+    await repo.register([ORB]);
+    const edited = { ...ORB, definition: "something else" };
+    expect((await repo.check([edited])).conflicts).toHaveLength(1);
+    expect((await repo.check([ORB])).known).toEqual(["ORB_BREAKOUT@1.0.0"]);
+  });
+
   it("keeps two versions of one pattern side by side", async () => {
     const repo = new PatternCatalogRepository(connection.db);
     const v2 = {

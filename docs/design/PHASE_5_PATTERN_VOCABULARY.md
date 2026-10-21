@@ -175,6 +175,17 @@ Observations and the catalogue live in `neelkanth_research` (ADR §10.1 lists
 `patterns` and `pattern_observations` among the R&D collections). A sweep reads
 `candles` and writes those two; it can reach no trading collection.
 
+**Settled in 5.6.** `apps/api/src/patterns/sweep-store.ts` reads `candles`
+and writes `patterns` then `pattern_observations`; a static scan proves it
+names no trading repository, and a run beside populated trading collections
+leaves them identical. The catalogue goes first: a version catalogued with a
+different rule refuses the whole sweep, before any observation is written — a
+dry run checks the catalogue read-only and refuses the same way. Each symbol's
+occurrences, and the run, get a sha256 fingerprint; `observedAt` is outside
+it, so a re-run is comparable. `scripts/sweep-patterns.mts` is the operator
+entry point, and it refuses to write anywhere but `neelkanth_research` or a
+scratch `neelkanth_it_*` / `neelkanth_ci_*` database.
+
 ### D7 — Only the past, proven
 
 A detection at bar `t` sees bars `≤ t`. Proven behaviourally, as Phase 4 did:

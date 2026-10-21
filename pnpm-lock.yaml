@@ -59,6 +59,9 @@ importers:
       '@neelkanth/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@neelkanth/patterns':
+        specifier: workspace:*
+        version: link:../../packages/patterns
       '@neelkanth/redis':
         specifier: workspace:*
         version: link:../../packages/redis

@@ -78,6 +78,36 @@ export class PatternCatalogRepository {
     return outcome;
   }
 
+  /**
+   * What `register` would report, writing nothing — for a dry run, which
+   * must still say whether a real run would be refused. `added` here means
+   * "not yet catalogued".
+   */
+  async check(
+    definitions: readonly PatternDefinition[],
+  ): Promise<CatalogOutcome> {
+    const outcome: CatalogOutcome = { added: [], known: [], conflicts: [] };
+    for (const raw of definitions) {
+      const running = PatternDefinitionSchema.parse(raw);
+      const label = `${running.patternId}@${running.detectorVersion}`;
+      const catalogued = await this.find(
+        running.patternId,
+        running.detectorVersion,
+      );
+      if (catalogued === null) outcome.added.push(label);
+      else if (definitionKey(catalogued) === definitionKey(running))
+        outcome.known.push(label);
+      else
+        outcome.conflicts.push({
+          patternId: running.patternId,
+          detectorVersion: running.detectorVersion,
+          catalogued,
+          running,
+        });
+    }
+    return outcome;
+  }
+
   async find(
     patternId: string,
     detectorVersion: string,

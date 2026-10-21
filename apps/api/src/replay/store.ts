@@ -1,9 +1,5 @@
 import type { Db } from "mongodb";
-import {
-  IST_OFFSET_MS,
-  type Candle,
-  type CandleInterval,
-} from "@neelkanth/core";
+import { istDayStart, type Candle, type CandleInterval } from "@neelkanth/core";
 import { CandlesRepository, ReplayRunsRepository } from "@neelkanth/db";
 import {
   runHistoricalReplay,
@@ -73,17 +69,12 @@ async function loadCandles(
   request: StoredReplayRequest,
 ): Promise<Candle[]> {
   const repo = new CandlesRepository(db);
-  const fromTs = istMidnight(request.fromDate);
-  const toTs = istMidnight(request.toDate) + DAY_MS; // half-open, toDate inclusive
+  const fromTs = istDayStart(request.fromDate);
+  const toTs = istDayStart(request.toDate) + DAY_MS; // half-open, toDate inclusive
   const perSymbol = await Promise.all(
     request.symbols.map((symbol) =>
       repo.findRange(symbol, request.interval, fromTs, toTs),
     ),
   );
   return perSymbol.flat();
-}
-
-function istMidnight(date: string): number {
-  const [y = 0, m = 1, d = 1] = date.split("-").map(Number);
-  return Date.UTC(y, m - 1, d) - IST_OFFSET_MS;
 }

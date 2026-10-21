@@ -22,6 +22,7 @@
     "@neelkanth/engines": "workspace:*",
     "@neelkanth/indicators": "workspace:*",
     "@neelkanth/logger": "workspace:*",
+    "@neelkanth/patterns": "workspace:*",
     "@neelkanth/redis": "workspace:*",
     "@neelkanth/strategies": "workspace:*",
     "@node-rs/argon2": "^2.0.2",

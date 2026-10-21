@@ -34,6 +34,12 @@ export function startOfDayIST(now: number): number {
 }
 
 /** Minutes past IST midnight for an instant — the session-window coordinate. */
+/** IST midnight of a "YYYY-MM-DD" trading date, epoch ms — `istDateKey`'s inverse. */
+export function istDayStart(dateKey: string): number {
+  const [y = 0, m = 1, d = 1] = dateKey.split("-").map(Number);
+  return Date.UTC(y, m - 1, d) - IST_OFFSET_MS;
+}
+
 export function minuteOfDayIST(now: number): number {
   const ist = new Date(now + IST_OFFSET_MS);
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
