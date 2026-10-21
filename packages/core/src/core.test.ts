@@ -5,6 +5,7 @@ import {
   CANDLE_SOURCE_RANK,
   ConfidenceSchema,
   ExecutionOutcomeSchema,
+  hasTrustedVolume,
   OrderSchema,
   ORDER_TERMINAL_STATUSES,
   PositionSchema,
@@ -306,6 +307,44 @@ describe("risk decision contract (plan/14 §6)", () => {
     expect(
       RiskDecisionSchema.safeParse({ decision: "approved", cappedQty: 0 })
         .success,
+    ).toBe(false);
+  });
+});
+
+describe("hasTrustedVolume (ADR §20.6)", () => {
+  const candle = (fields: Record<string, unknown> = {}) =>
+    CandleSchema.parse({
+      symbol: "NSE:X-EQ",
+      interval: "5m",
+      open: 100,
+      high: 101,
+      low: 99,
+      close: 100,
+      volume: 1_000,
+      ts: 1_000_000,
+      ...fields,
+    });
+
+  it("trusts a bar that says nothing — tick-built bars predate the fields", () => {
+    expect(hasTrustedVolume(candle())).toBe(true);
+    expect(
+      hasTrustedVolume(
+        candle({ volumeAvailable: true, volumeQuality: "REAL" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not trust SUSPECT or UNAVAILABLE volume, or volume marked unavailable", () => {
+    expect(hasTrustedVolume(candle({ volumeQuality: "SUSPECT" }))).toBe(false);
+    expect(hasTrustedVolume(candle({ volumeQuality: "UNAVAILABLE" }))).toBe(
+      false,
+    );
+    expect(hasTrustedVolume(candle({ volumeAvailable: false }))).toBe(false);
+    // Unavailable wins over a REAL label: the two disagreeing is not a reason to believe the number.
+    expect(
+      hasTrustedVolume(
+        candle({ volumeAvailable: false, volumeQuality: "REAL" }),
+      ),
     ).toBe(false);
   });
 });

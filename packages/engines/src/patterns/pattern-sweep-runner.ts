@@ -87,6 +87,7 @@ export class PatternSweepRunner {
       occurrences: [],
       barsScanned: 0,
       skippedForWarmup: {},
+      declinedForVolume: {},
       sessions: [],
       recorded: 0,
       alreadyKnown: 0,

@@ -104,6 +104,29 @@ not drawn. `HIGH_VOLUME_BREAKOUT` declines any bar — the one judged, or one in
 its average — whose volume is unavailable, `SUSPECT` or `UNAVAILABLE`. A
 detector that read a filler zero as "low volume" would manufacture breakouts.
 
+**Settled in 5.2, wider than first written.** VWAP is volume-weighted over the
+session, so a VWAP reclaim is a volume-based conclusion too: `VWAP_RECLAIM`
+declines when any bar since the open is untrusted. The ADR sentence covers
+both; naming only one would have been the board's wording, not the rule.
+
+How: a detector declares the bars its answer rests on (`volumeBars`), and the
+registry declines when any fails `hasTrustedVolume` (`core`; only `REAL`, with
+absent fields meaning `REAL`). The check lives in one place, so no detector can
+forget it and no caller using the registry can skip it. The sweep reports
+declines per detector as `declinedForVolume`, beside `skippedForWarmup`:
+"found nothing" and "could not look" stay different facts.
+
+**What it means on the real dataset.** Every stored bar — 18,463 each for
+`NSE:NIFTY50-INDEX` and `NSE:NIFTYBANK-INDEX`, 2025-09-29 to 2026-09-28 — is
+`SUSPECT`, by Phase 1's rule that an index's aggregate volume is unverified.
+So on that year `HIGH_VOLUME_BREAKOUT` and `VWAP_RECLAIM` decline every warm
+bar, and only the three price-only detectors produce observations. That is the
+ADR working, not a gap. Promoting index volume to `REAL` is a data decision
+(Phase 1 Q4), not something a detector may assume.
+
+Both detectors stay `1.0.0`: no observation was ever stored under the baseline
+rule, so there is nothing for the version to tell apart.
+
 ### D4 — An observation says what it stood on
 
 Every observation carries `dataProvenance` (the bar's key, source and

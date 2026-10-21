@@ -7,7 +7,7 @@ import {
   emaCross,
   orbBreakout,
   rsiReversion,
-  volumeBreakout,
+  highVolumeBreakout,
   vwapReclaim,
 } from "./index.js";
 
@@ -213,8 +213,8 @@ describe("VWAP_RECLAIM", () => {
   });
 });
 
-describe("VOLUME_BREAKOUT", () => {
-  const params = volumeBreakout.paramsSchema.parse({ lookback: 3 });
+describe("HIGH_VOLUME_BREAKOUT", () => {
+  const params = highVolumeBreakout.paramsSchema.parse({ lookback: 3 });
   const base = [
     bar(0, { high: 102, low: 98, volume: 1_000 }),
     bar(1, { high: 103, low: 97, volume: 1_000 }),
@@ -222,7 +222,7 @@ describe("VOLUME_BREAKOUT", () => {
   ];
 
   it("fires on a break confirmed by volume", () => {
-    const result = volumeBreakout.detect(
+    const result = highVolumeBreakout.detect(
       context([...base, bar(3, { close: 104, volume: 2_000 })]),
       params,
     );
@@ -232,7 +232,7 @@ describe("VOLUME_BREAKOUT", () => {
 
   /** The volume half is the entire reason this is its own pattern. */
   it("does not fire on the same break with ordinary volume", () => {
-    const result = volumeBreakout.detect(
+    const result = highVolumeBreakout.detect(
       context([...base, bar(3, { close: 104, volume: 1_000 })]),
       params,
     );
@@ -245,11 +245,109 @@ describe("VOLUME_BREAKOUT", () => {
    */
   it("declines rather than guesses when there is no volume at all", () => {
     const flat = base.map((b) => ({ ...b, volume: 0 }));
-    const result = volumeBreakout.detect(
+    const result = highVolumeBreakout.detect(
       context([...flat, bar(3, { close: 104, volume: 0 })]),
       params,
     );
     expect(result).toBeNull();
+  });
+});
+
+/**
+ * D3 / ADR §20.6: where reliable volume is unavailable, volume-based
+ * conclusions are not drawn. Every bar of the stored NIFTY and BANKNIFTY year
+ * is SUSPECT — nobody has confirmed what an index's aggregate volume means —
+ * so this is not an edge case: it decides what two detectors can say at all.
+ *
+ * Enforced by the registry, from the bars each detector declares its answer
+ * rests on, so no caller going through the registry can skip it.
+ */
+describe("volume quality (D3, ADR §20.6)", () => {
+  const registry = createPatternRegistry();
+  const suspect = { volumeAvailable: true, volumeQuality: "SUSPECT" } as const;
+  const breakout = (over: Partial<Candle>[] = []) =>
+    [
+      bar(0, { high: 102, low: 98 }),
+      bar(1, { high: 103, low: 97 }),
+      bar(2, { high: 101, low: 99 }),
+      bar(3, { close: 104, volume: 2_000 }),
+    ].map((b, i) => ({ ...b, ...(over[i] ?? {}) }));
+  const hvb = registry.instantiate("HIGH_VOLUME_BREAKOUT", { lookback: 3 });
+
+  it("is named HIGH_VOLUME_BREAKOUT, the spec's name (D2)", () => {
+    expect(registry.has("HIGH_VOLUME_BREAKOUT")).toBe(true);
+    expect(registry.has("VOLUME_BREAKOUT")).toBe(false);
+  });
+
+  it("finds a volume breakout on trusted volume", () => {
+    expect(hvb.volumeTrusted(context(breakout()))).toBe(true);
+    expect(hvb.detect(context(breakout()))?.direction).toBe("BULLISH");
+  });
+
+  it("declines when the bar judged has untrustworthy volume", () => {
+    const bars = breakout([{}, {}, {}, suspect]);
+    expect(hvb.volumeTrusted(context(bars))).toBe(false);
+    expect(hvb.detect(context(bars))).toBeNull();
+  });
+
+  it("declines when a bar in its average has untrustworthy volume", () => {
+    expect(
+      hvb.detect(context(breakout([{}, { volumeAvailable: false }]))),
+    ).toBeNull();
+  });
+
+  /** Only the bars the answer rests on: an older bar outside the lookback does not matter. */
+  it("ignores bars outside its own window", () => {
+    const older = { ...bar(-1, suspect), ts: OPEN_TS - BAR_MS };
+    expect(hvb.detect(context([older, ...breakout()]))?.direction).toBe(
+      "BULLISH",
+    );
+  });
+
+  /**
+   * VWAP is volume-weighted over the session so far, so a VWAP reclaim is a
+   * volume-based conclusion too — and one untrusted bar since the open taints
+   * every VWAP after it.
+   */
+  const vwap = registry.instantiate("VWAP_RECLAIM");
+  const reclaim = (first: Partial<Candle> = {}) =>
+    context([bar(0, { close: 99, ...first }), bar(1, { close: 101 })], {
+      indicators: { vwap: 100 },
+      previousIndicators: { vwap: 100 },
+    });
+
+  it("declines a VWAP reclaim when the session's volume is untrustworthy", () => {
+    expect(vwap.detect(reclaim())?.direction).toBe("BULLISH");
+    expect(vwap.volumeTrusted(reclaim(suspect))).toBe(false);
+    expect(vwap.detect(reclaim(suspect))).toBeNull();
+  });
+
+  it("judges VWAP on today's session only", () => {
+    const yesterday = { ...bar(0, suspect), ts: OPEN_TS - 20 * BAR_MS };
+    const ctx = reclaim();
+    expect(
+      vwap.detect({ ...ctx, candles: [yesterday, ...ctx.candles] })?.direction,
+    ).toBe("BULLISH");
+  });
+
+  it("never asks a price-only detector about volume", () => {
+    const bars = [
+      bar(0, { high: 104, low: 96, ...suspect }),
+      bar(1, { high: 105, low: 95, ...suspect }),
+      bar(2, { high: 103, low: 97, ...suspect }),
+      bar(3, { close: 106, ...suspect }),
+    ];
+    const orb = registry.instantiate("ORB_BREAKOUT");
+    expect(orb.volumeBased).toBe(false);
+    expect(orb.volumeTrusted(context(bars))).toBe(true);
+    expect(orb.detect(context(bars))?.direction).toBe("BULLISH");
+  });
+
+  it("marks exactly the two volume-weighted detectors as volume-based", () => {
+    const based = registry
+      .ids()
+      .filter((id) => registry.instantiate(id).volumeBased);
+    expect(based.sort()).toEqual(["HIGH_VOLUME_BREAKOUT", "VWAP_RECLAIM"]);
   });
 });
 

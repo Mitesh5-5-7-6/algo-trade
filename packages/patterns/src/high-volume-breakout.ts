@@ -2,13 +2,15 @@ import { z } from "zod";
 import type { DetectionResult, PatternDetector } from "./contract.js";
 import { highestHigh, lowestLow, mean, priorBars } from "./shared.js";
 
-export const VolumeBreakoutParamsSchema = z.object({
+export const HighVolumeBreakoutParamsSchema = z.object({
   /** Bars whose high/low define the level being broken. */
   lookback: z.number().int().positive().default(20),
   /** Volume must exceed this multiple of the recent average. */
   volumeMultiple: z.number().positive().default(1.5),
 });
-export type VolumeBreakoutParams = z.infer<typeof VolumeBreakoutParamsSchema>;
+export type HighVolumeBreakoutParams = z.infer<
+  typeof HighVolumeBreakoutParamsSchema
+>;
 
 /**
  * A range break that volume confirms.
@@ -18,28 +20,33 @@ export type VolumeBreakoutParams = z.infer<typeof VolumeBreakoutParamsSchema>;
  * likely to fail, and pooling the two would hide exactly the distinction the
  * matrix is meant to surface.
  *
- * **Volume quality is the caller's problem.** Index symbols report no
- * meaningful volume (ARCHITECTURE_DECISION §20.6), and this detector cannot
- * tell a genuine zero from an absent feed — it simply will not fire, which is
- * the safe direction. Running it on an index and reading "no volume breakouts
- * occurred" as a market fact would be the mistake.
+ * **No conclusion from untrusted volume** (ARCHITECTURE_DECISION §20.6,
+ * Phase 5 D3). It declares its window — the prior `lookback` bars and the
+ * bar judged — and the registry declines the bar if any of them is not REAL.
+ * A sweep reports those declines, so "no volume breakouts occurred" is never
+ * read off a series whose volume nobody trusts. An average of zero still
+ * declines, as before: there is nothing to be a multiple of.
  */
-export const volumeBreakout: PatternDetector<VolumeBreakoutParams> = {
-  patternId: "VOLUME_BREAKOUT",
+export const highVolumeBreakout: PatternDetector<HighVolumeBreakoutParams> = {
+  patternId: "HIGH_VOLUME_BREAKOUT",
   detectorVersion: "1.0.0",
   definition:
     "The close breaks the highest high (bullish) or lowest low (bearish) of " +
     "the prior N bars, on volume above a multiple of their average.",
-  paramsSchema: VolumeBreakoutParamsSchema,
+  paramsSchema: HighVolumeBreakoutParamsSchema,
   requiredIndicators: () => [],
   warmupBars: (p) => p.lookback + 1,
+  volumeBars: (context, p) => [
+    ...priorBars(context.candles, p.lookback),
+    context.candle,
+  ],
 
   detect(context, p): DetectionResult | null {
     const prior = priorBars(context.candles, p.lookback);
     if (prior.length < p.lookback) return null;
 
     const averageVolume = mean(prior.map((bar) => bar.volume));
-    // No usable volume: decline rather than guess. See the note above.
+    // Nothing to be a multiple of: decline rather than guess.
     if (averageVolume <= 0) return null;
 
     const volume = context.candle.volume;

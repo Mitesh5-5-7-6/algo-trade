@@ -61,6 +61,13 @@ export interface SweepResult {
    * one of them is a fact about the market.
    */
   skippedForWarmup: Record<string, number>;
+  /**
+   * Warm bars each detector declined because the volume its answer rests on
+   * is not trusted (Phase 5 D3) — zero for a price-only detector. Reported for
+   * the same reason as warm-up: on the stored index year every bar is
+   * SUSPECT, and a volume detector's silence there is not a market fact.
+   */
+  declinedForVolume: Record<string, number>;
   /** Sessions encountered, in order — the unit session-anchored state resets on. */
   sessions: string[];
 }
@@ -135,10 +142,17 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
   const { symbol, interval, candles, detectors } = request;
   const occurrences: PatternOccurrence[] = [];
   const skippedForWarmup: Record<string, number> = {};
+  const declinedForVolume: Record<string, number> = {};
   const sessions: string[] = [];
 
   if (candles.length === 0 || detectors.length === 0) {
-    return { occurrences, barsScanned: 0, skippedForWarmup, sessions };
+    return {
+      occurrences,
+      barsScanned: 0,
+      skippedForWarmup,
+      declinedForVolume,
+      sessions,
+    };
   }
 
   // One fold per key, shared across detectors: three detectors wanting EMA(9)
@@ -155,6 +169,7 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
     }
     required.set(detector.patternId, keys);
     skippedForWarmup[detector.patternId] = 0;
+    declinedForVolume[detector.patternId] = 0;
   }
 
   const barMs = intervalMs(interval);
@@ -214,6 +229,11 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
           (skippedForWarmup[detector.patternId] ?? 0) + 1;
         continue;
       }
+      if (!detector.volumeTrusted(context)) {
+        declinedForVolume[detector.patternId] =
+          (declinedForVolume[detector.patternId] ?? 0) + 1;
+        continue;
+      }
       const occurrence = detector.detect(context);
       if (occurrence !== null) occurrences.push(occurrence);
     }
@@ -223,6 +243,7 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
     occurrences,
     barsScanned: barsInSweep,
     skippedForWarmup,
+    declinedForVolume,
     sessions,
   };
 }

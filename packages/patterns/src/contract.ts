@@ -91,6 +91,15 @@ export interface PatternDetector<Params> {
   /** Bars needed before the first valid detection. */
   warmupBars(params: Params): number;
   /**
+   * The bars whose VOLUME this detector's answer rests on, for a volume-based
+   * detector; absent for one that reads only price (Phase 5 D3).
+   *
+   * The registry refuses to judge when any of them has untrusted volume
+   * (`hasTrustedVolume`), so the check lives in one place and cannot be
+   * forgotten by a detector — a detector only has to say what it reads.
+   */
+  volumeBars?(context: PatternContext, params: Params): readonly Candle[];
+  /**
    * Judge the close of `context.candle`.
    *
    * Returns null when the structure is absent — which is the ordinary case and

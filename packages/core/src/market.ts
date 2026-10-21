@@ -146,6 +146,23 @@ export const CandleSchema = z.object({
 });
 export type Candle = z.infer<typeof CandleSchema>;
 
+/**
+ * Whether a bar's volume may support a conclusion (ARCHITECTURE_DECISION
+ * §20.6: where reliable volume is unavailable, volume-based conclusions are
+ * not drawn).
+ *
+ * Only REAL volume — and absence of both fields means REAL, because every bar
+ * written before they existed was built from ticks. SUSPECT is an unverified
+ * number, not a confirmed one, and `volumeAvailable: false` overrides any
+ * label: a bar that says its volume is missing is believed.
+ */
+export function hasTrustedVolume(candle: Candle): boolean {
+  return (
+    candle.volumeAvailable !== false &&
+    (candle.volumeQuality ?? "REAL") === "REAL"
+  );
+}
+
 /** Session phase written to hot:session by the session manager (plan/17 §6). */
 export const SessionPhaseSchema = z.enum(["pre-open", "open", "closed"]);
 export type SessionPhase = z.infer<typeof SessionPhaseSchema>;

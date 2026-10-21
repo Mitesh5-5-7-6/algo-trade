@@ -1,3 +1,4 @@
+import { hasTrustedVolume } from "@neelkanth/core";
 import type { IndicatorSpec } from "@neelkanth/indicators";
 import {
   toOccurrence,
@@ -13,7 +14,18 @@ export interface RunnableDetector {
   readonly definition: string;
   requiredIndicators(): readonly IndicatorSpec[];
   warmupBars(): number;
-  /** Detect on this bar's close, or null when the structure is absent. */
+  /** Whether this detector reads volume at all (Phase 5 D3). */
+  readonly volumeBased: boolean;
+  /**
+   * Whether the volume this bar's answer would rest on can be trusted. Always
+   * true for a price-only detector. A caller counts the falses, so "declined
+   * for volume" is reported rather than read as "found nothing".
+   */
+  volumeTrusted(context: PatternContext): boolean;
+  /**
+   * Detect on this bar's close, or null when the structure is absent — or
+   * when its volume cannot be trusted, which no caller can bypass.
+   */
   detect(context: PatternContext): PatternOccurrence | null;
 }
 
@@ -25,13 +37,19 @@ function instantiate<P>(
   // candle of every backfilled day, and re-validating there would be the most
   // expensive no-op in the system.
   const params = detector.paramsSchema.parse(rawParams);
+  const volumeTrusted = (context: PatternContext): boolean =>
+    detector.volumeBars === undefined ||
+    detector.volumeBars(context, params).every(hasTrustedVolume);
   return {
     patternId: detector.patternId,
     detectorVersion: detector.detectorVersion,
     definition: detector.definition,
     requiredIndicators: () => detector.requiredIndicators(params),
     warmupBars: () => detector.warmupBars(params),
+    volumeBased: detector.volumeBars !== undefined,
+    volumeTrusted,
     detect: (context) => {
+      if (!volumeTrusted(context)) return null;
       const result = detector.detect(context, params);
       return result === null
         ? null

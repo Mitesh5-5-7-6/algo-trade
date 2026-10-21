@@ -3,7 +3,7 @@ import { orbBreakout } from "./orb-breakout.js";
 import { emaCross } from "./ema-cross.js";
 import { rsiReversion } from "./rsi-reversion.js";
 import { vwapReclaim } from "./vwap-reclaim.js";
-import { volumeBreakout } from "./volume-breakout.js";
+import { highVolumeBreakout } from "./high-volume-breakout.js";
 
 export * from "./contract.js";
 export * from "./registry.js";
@@ -12,7 +12,7 @@ export * from "./orb-breakout.js";
 export * from "./ema-cross.js";
 export * from "./rsi-reversion.js";
 export * from "./vwap-reclaim.js";
-export * from "./volume-breakout.js";
+export * from "./high-volume-breakout.js";
 
 /**
  * The first five detectors (Phase 5).
@@ -27,7 +27,7 @@ export const BUILTIN_DETECTORS = [
   emaCross,
   rsiReversion,
   vwapReclaim,
-  volumeBreakout,
+  highVolumeBreakout,
 ] as const;
 
 export function registerBuiltinDetectors(registry: PatternRegistry): void {
@@ -35,7 +35,7 @@ export function registerBuiltinDetectors(registry: PatternRegistry): void {
   registry.register(emaCross);
   registry.register(rsiReversion);
   registry.register(vwapReclaim);
-  registry.register(volumeBreakout);
+  registry.register(highVolumeBreakout);
 }
 
 /** A registry pre-loaded with the built-in detectors. */

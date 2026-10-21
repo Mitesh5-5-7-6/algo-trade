@@ -172,6 +172,56 @@ describe("sweepPatterns — special sessions", () => {
   });
 });
 
+/**
+ * "Found nothing" and "could not look" are different facts. On SUSPECT volume
+ * the volume-based detectors could not look, and the sweep says so per
+ * detector, as it does for warm-up — while price-only detectors still judge.
+ */
+describe("sweepPatterns — volume quality (D3)", () => {
+  it("counts the bars each volume-based detector declined, and still runs the rest", () => {
+    const suspect = {
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    } as const;
+    const candles = [
+      bar(DAY_1_OPEN, 0, { high: 104, low: 96, ...suspect }),
+      bar(DAY_1_OPEN, 1, { high: 105, low: 95, ...suspect }),
+      bar(DAY_1_OPEN, 2, { high: 103, low: 97, ...suspect }),
+      bar(DAY_1_OPEN, 3, { close: 106, high: 107, volume: 5_000, ...suspect }),
+    ];
+    const result = sweepPatterns({
+      symbol: "NSE:SWEEP-EQ",
+      interval: "5m",
+      candles,
+      detectors: [
+        detector("ORB_BREAKOUT"),
+        detector("HIGH_VOLUME_BREAKOUT", { lookback: 2 }),
+      ],
+    });
+
+    expect(result.occurrences.map((o) => o.patternId)).toEqual([
+      "ORB_BREAKOUT",
+    ]);
+    // Warm for bars 2 and 3 (lookback + 1 = 3 bars), declined on both.
+    expect(result.declinedForVolume).toEqual({
+      ORB_BREAKOUT: 0,
+      HIGH_VOLUME_BREAKOUT: 2,
+    });
+    expect(result.skippedForWarmup["HIGH_VOLUME_BREAKOUT"]).toBe(2);
+  });
+
+  it("declines nothing on trusted volume", () => {
+    const candles = [0, 1, 2, 3].map((i) => bar(DAY_1_OPEN, i));
+    const result = sweepPatterns({
+      symbol: "NSE:SWEEP-EQ",
+      interval: "5m",
+      candles,
+      detectors: [detector("HIGH_VOLUME_BREAKOUT", { lookback: 2 })],
+    });
+    expect(result.declinedForVolume).toEqual({ HIGH_VOLUME_BREAKOUT: 0 });
+  });
+});
+
 describe("sweepPatterns — warm-up", () => {
   /**
    * An EMA has a value after one bar; it does not have a MEANING for another
@@ -316,7 +366,7 @@ describe("sweepPatterns — determinism and provenance", () => {
       symbol: "NSE:SWEEP-EQ",
       interval: "5m" as const,
       candles,
-      detectors: [detector("ORB_BREAKOUT"), detector("VOLUME_BREAKOUT")],
+      detectors: [detector("ORB_BREAKOUT"), detector("HIGH_VOLUME_BREAKOUT")],
     };
     expect(sweepPatterns(request)).toEqual(sweepPatterns(request));
   });
@@ -368,6 +418,7 @@ describe("sweepPatterns — determinism and provenance", () => {
       occurrences: [],
       barsScanned: 0,
       skippedForWarmup: {},
+      declinedForVolume: {},
       sessions: [],
     });
   });
