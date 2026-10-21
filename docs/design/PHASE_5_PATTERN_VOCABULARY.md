@@ -65,6 +65,20 @@ It predates Phases 1–4:
 5. **The volume detector is named `VOLUME_BREAKOUT`**; the spec and PLAN.md
    name it `HIGH_VOLUME_BREAKOUT`.
 
+### 2.3 Audit outcome (task 5.1)
+
+Ported as written, with what had moved under it:
+
+| Point              | Outcome                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — calendar       | `sessionOpenTsFor` is calendar arithmetic, so it now lives in `core` beside `startOfDayIST`; the sweep reads `istDateKey`, `sessionOpenTsFor` and `intervalMs` (which had moved too) from `core`. A Budget Sunday is swept as its own session, anchored to its own open — the sweep groups by IST date and never asks the weekday rule, so special sessions needed no code, only a test. |
+| 2 — canonical JSON | The params key is `core`'s `canonicalJson`; the private copy is gone. The two agreed on plain data and differed only on values parameters never hold. Pinned: the key must equal `canonicalJson(params)`, and a plain `JSON.stringify` fails three tests.                                                                                                                                |
+| Store test         | The repository's Mongo test predates the probe convention — without Mongo it failed rather than skipped, and never cleared between tests. It now probes, skips visibly, and runs strict (11/11).                                                                                                                                                                                         |
+
+Points 3–5 are tasks 5.2 and 5.3. Nothing else needed changing: the five
+detectors, the registry, the sweep's warm-up and session-anchoring rules, the
+runner and the six-field identity pass their baseline tests unmodified.
+
 ---
 
 ## 3. Design decisions

@@ -1,0 +1,30 @@
+{
+  "name": "@neelkanth/patterns",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The chart-pattern detector library — versioned, deterministic observations of market structure (RND_RESEARCH_SPECIFICATION §5.1)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@neelkanth/core": "workspace:*",
+    "@neelkanth/indicators": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}

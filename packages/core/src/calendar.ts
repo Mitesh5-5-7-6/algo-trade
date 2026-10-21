@@ -146,3 +146,11 @@ export const NSE_DEFAULT_SESSION: SessionConfig = {
   holidays: [],
   exchange: "NSE",
 };
+
+/** The regular-session open of the IST day containing `ts`, epoch ms. */
+export function sessionOpenTsFor(
+  ts: number,
+  config: SessionConfig = NSE_DEFAULT_SESSION,
+): number {
+  return startOfDayIST(ts) + parseHHMM(config.open) * 60_000;
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isTradingDayIST,
   istDateKey,
+  sessionOpenTsFor,
   startOfDayIST,
   tradingDaysBetween,
 } from "./calendar.js";
@@ -210,6 +211,31 @@ describe("isTradingDayIST", () => {
   it("opens a weekend day listed as a special session", () => {
     expect(isTradingDayIST("2026-02-01", NONE, new Set(["2026-02-01"]))).toBe(
       true,
+    );
+  });
+});
+
+describe("sessionOpenTsFor (Phase 5 — the sweep's session anchor)", () => {
+  it("is the regular open of the IST day the instant falls in", () => {
+    expect(sessionOpenTsFor(ist(2026, 0, 5, 11, 2))).toBe(
+      ist(2026, 0, 5, 9, 15),
+    );
+    // 00:30 IST is still that IST day, though it is the previous UTC date.
+    expect(sessionOpenTsFor(ist(2026, 0, 5, 0, 30))).toBe(
+      ist(2026, 0, 5, 9, 15),
+    );
+  });
+
+  it("reads the open from the session it is given", () => {
+    const muhurat = {
+      preOpen: "18:00",
+      open: "18:15",
+      close: "19:15",
+      holidays: [],
+      exchange: "NSE",
+    };
+    expect(sessionOpenTsFor(ist(2026, 10, 8, 18, 40), muhurat)).toBe(
+      ist(2026, 10, 8, 18, 15),
     );
   });
 });

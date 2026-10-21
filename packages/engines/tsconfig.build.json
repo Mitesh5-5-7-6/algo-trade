@@ -11,6 +11,7 @@
     { "path": "../contracts/tsconfig.build.json" },
     { "path": "../broker/tsconfig.build.json" },
     { "path": "../indicators/tsconfig.build.json" },
-    { "path": "../strategies/tsconfig.build.json" }
+    { "path": "../strategies/tsconfig.build.json" },
+    { "path": "../patterns/tsconfig.build.json" }
   ]
 }

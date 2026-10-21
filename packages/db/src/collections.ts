@@ -39,6 +39,14 @@ export const COLLECTIONS = {
    * `trades`: a replay is research evidence and must not expire.
    */
   replayRuns: "replay_runs",
+  /**
+   * Pattern detections — the other axis of the pattern × strategy matrix
+   * (RND_RESEARCH_SPECIFICATION §5.3). RESEARCH database only (Phase 5 D6).
+   *
+   * No TTL, for the same reason `trades` has none: this is the evidence every
+   * later statistic is computed from.
+   */
+  patternObservations: "pattern_observations",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -84,6 +92,32 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.orders)
       .createIndex({ strategyId: 1, createdAt: -1 }),
+
+    // pattern_observations — detections. No TTL: research evidence.
+    //
+    // Identity is all six fields. Dropping `detectorVersion` or `paramsKey`
+    // would make a re-definition or a parameter sweep overwrite the evidence
+    // earlier findings were built on, instead of sitting beside it.
+    db.collection(COLLECTIONS.patternObservations).createIndex(
+      {
+        patternId: 1,
+        detectorVersion: 1,
+        paramsKey: 1,
+        symbol: 1,
+        interval: 1,
+        ts: 1,
+      },
+      { unique: true, name: "observation_identity" },
+    ),
+    // "What happened to this symbol that day" — the per-instrument read.
+    db
+      .collection(COLLECTIONS.patternObservations)
+      .createIndex({ symbol: 1, ts: 1 }),
+    // "Every occurrence of this pattern across every symbol" — one row of the
+    // matrix, and the query the statistics engine runs most.
+    db
+      .collection(COLLECTIONS.patternObservations)
+      .createIndex({ patternId: 1, detectorVersion: 1, ts: 1 }),
     db.collection(COLLECTIONS.orders).createIndex({ brokerOrderId: 1 }),
     db.collection(COLLECTIONS.orders).createIndex({ symbol: 1, createdAt: -1 }),
 
