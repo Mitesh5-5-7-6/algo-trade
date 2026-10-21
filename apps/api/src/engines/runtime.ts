@@ -693,6 +693,13 @@ export async function startEngineRuntime(deps: {
       // From the runner rather than the database: asked on every closed bar
       // for every open position (D2).
       readExitRules: (strategyId) => runner.exitRulesFor(strategyId),
+      // Both halves of a trail (D4): in memory so the next bar is judged
+      // against it, and durably so a restart does not hand the position back
+      // its entry stop and silently widen the risk.
+      updateStopLoss: async (positionId, stopLoss) => {
+        positionEngine.setStopLoss(positionId, stopLoss);
+        await positions.setStopLoss(positionId, stopLoss);
+      },
     },
     // The same risk→order road a strategy signal takes (plan/12 §1), saying
     // whether an order came of it (audit A7): a blocked or rejected exit

@@ -117,7 +117,12 @@ export class ExitEngine {
         const trigger =
           ExitEngine.breach(position, candle) ??
           this.heldTooLong(position, candle);
-        if (trigger === null) continue;
+        if (trigger === null) {
+          // Judged against the levels the bar OPENED with; only now may the
+          // bar's extreme move the stop, and only for the next bar (Q3).
+          await this.trail(position, candle);
+          continue;
+        }
         await this.exit(position, trigger, candle.close, candle.ts);
       }
     } catch (error) {
@@ -145,6 +150,39 @@ export class ExitEngine {
     } catch (error) {
       this.deps.onError(error, { where: "onSessionTick" });
     }
+  }
+
+  /**
+   * Move the stop up behind a favourable bar (D4), for the bars after it.
+   *
+   * Called only once this bar has been judged. Trailing first would test the
+   * bar's low against a stop raised from its own high — assuming the high
+   * came first, which an OHLC bar does not say — and turned bars that took
+   * profit into stop-outs (design §5.1, audit A1).
+   *
+   * Only ever tightens: a stop that could loosen would let a protected
+   * position give its protection back. Persisted, because a restart that
+   * forgot the trail would hand the position its entry stop.
+   */
+  private async trail(
+    position: Position,
+    candle: EventPayload<"CANDLE_CLOSED">,
+  ): Promise<void> {
+    const pct = this.deps.ports.readExitRules(
+      position.strategyId,
+    )?.trailingStopPct;
+    if (pct === undefined) return;
+
+    const candidate =
+      position.side === "LONG"
+        ? candle.high * (1 - pct)
+        : candle.low * (1 + pct);
+    const current = position.stopLoss;
+    const tighter =
+      current === undefined ||
+      (position.side === "LONG" ? candidate > current : candidate < current);
+    if (tighter)
+      await this.deps.ports.updateStopLoss(position.positionId, candidate);
   }
 
   /**

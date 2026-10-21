@@ -194,3 +194,20 @@ describe("PositionEngine stamps open and close from the fills (§3.4)", () => {
     expect(closed?.closedAt).toBe(2000);
   });
 });
+
+/**
+ * Task 3.5 (D4): a trailed stop moves on the live position. The engine owns
+ * the in-memory view every consumer reads, so a trail that reached only the
+ * database would be forgotten by the next bar.
+ */
+describe("PositionEngine moves a live stop (§3.5)", () => {
+  it("updates the open position's stop in place", async () => {
+    const h = harness();
+    await h.engine.onOrderFilled(filled({ stopLoss: 95 }));
+    const id = h.engine.getPosition("str_1", "NSE:X-EQ")?.positionId ?? "";
+
+    h.engine.setStopLoss(id, 98);
+
+    expect(h.engine.getPosition("str_1", "NSE:X-EQ")?.stopLoss).toBe(98);
+  });
+});

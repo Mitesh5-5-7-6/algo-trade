@@ -53,7 +53,8 @@ function harness(options: {
 }) {
   const handedOff: Signal[] = [];
   const errors: Record<string, unknown>[] = [];
-  const live = options.positions ?? [position()];
+  const stops: { positionId: string; stopLoss: number }[] = [];
+  let live = options.positions ?? [position()];
   let lookups = 0;
 
   const engine = new ExitEngine({
@@ -71,6 +72,13 @@ function harness(options: {
         return Promise.resolve(options.inFlight ?? false);
       },
       readExitRules: () => options.rules ?? null,
+      updateStopLoss: (positionId, stopLoss) => {
+        stops.push({ positionId, stopLoss });
+        live = live.map((p) =>
+          p.positionId === positionId ? { ...p, stopLoss } : p,
+        );
+        return Promise.resolve();
+      },
     },
     handoff: (signal) => {
       handedOff.push(signal);
@@ -80,7 +88,7 @@ function harness(options: {
     onError: (_error, context) => errors.push(context),
   });
 
-  return { engine, handedOff, errors, lookups: () => lookups };
+  return { engine, handedOff, errors, stops, lookups: () => lookups };
 }
 
 describe("the exit guard survives a restart (§3.1, D3)", () => {
@@ -208,5 +216,84 @@ describe("time exit (§3.4, D2)", () => {
     await h.engine.onCandleClosed(bar({ ts: OPEN_TS + 30 * MIN, low: 98 }));
 
     expect(h.handedOff[0]?.exitReason).toBe("STOP_LOSS");
+  });
+});
+
+/**
+ * Task 3.5 (D4) and design §5.1 Q3. A trailing stop is a stop: it reports
+ * STOP_LOSS. And a bar is judged against the levels it OPENED with; the trail
+ * moves after judging, for the next bar. Trailing first assumed the bar's high
+ * came before its low — which OHLC does not say — and turned bars that took
+ * profit into stop-outs (audit A1).
+ */
+describe("trailing stop (§3.5, D4, Q3)", () => {
+  it("tightens the stop behind a favourable bar and persists it", async () => {
+    const h = harness({
+      positions: [position({ stopLoss: 95 })],
+      rules: { trailingStopPct: 0.02 },
+    });
+    await h.engine.onCandleClosed(bar({ high: 110, low: 108, close: 109 }));
+
+    expect(h.stops).toEqual([{ positionId: "pos_1", stopLoss: 107.8 }]);
+    expect(h.handedOff).toEqual([]);
+  });
+
+  /** A stop that could loosen is not a stop. */
+  it("never widens the stop on an adverse bar", async () => {
+    const h = harness({
+      positions: [position({ stopLoss: 108 })],
+      rules: { trailingStopPct: 0.02 },
+    });
+    await h.engine.onCandleClosed(bar({ high: 101, low: 100, close: 100 }));
+
+    expect(h.stops).toEqual([]);
+  });
+
+  /**
+   * Q3 rules 1 and 2. The bar ran up to 110 and back down to 100: it is
+   * judged against the 95 it opened with, so it does not stop out on a level
+   * it set itself. The raised stop catches the NEXT bar.
+   */
+  it("judges a bar against the stop it opened with, then trails for the next", async () => {
+    const h = harness({
+      positions: [position({ stopLoss: 95 })],
+      rules: { trailingStopPct: 0.02 },
+    });
+    await h.engine.onCandleClosed(bar({ high: 110, low: 100, close: 101 }));
+    expect(h.handedOff).toEqual([]);
+    expect(h.stops).toEqual([{ positionId: "pos_1", stopLoss: 107.8 }]);
+
+    await h.engine.onCandleClosed(
+      bar({ ts: OPEN_TS + 300_000, high: 108, low: 107, close: 107 }),
+    );
+    expect(h.handedOff).toHaveLength(1);
+    expect(h.handedOff[0]?.exitReason).toBe("STOP_LOSS");
+  });
+
+  /**
+   * The design §5.1 bar. Only the target was touched against the levels the
+   * bar opened with — and TAKE_PROFIT is the truth in either intrabar order.
+   * Trailing first reported STOP_LOSS here.
+   */
+  it("reports the take-profit the bar actually reached", async () => {
+    const h = harness({
+      positions: [position({ stopLoss: 95, target: 110 })],
+      rules: { trailingStopPct: 0.02 },
+    });
+    await h.engine.onCandleClosed(bar({ high: 111, low: 105, close: 108 }));
+
+    expect(h.handedOff).toHaveLength(1);
+    expect(h.handedOff[0]?.exitReason).toBe("TAKE_PROFIT");
+  });
+
+  it("mirrors for a SHORT", async () => {
+    const h = harness({
+      positions: [position({ side: "SHORT", stopLoss: 110 })],
+      rules: { trailingStopPct: 0.02 },
+    });
+    await h.engine.onCandleClosed(bar({ high: 95, low: 90, close: 92 }));
+
+    expect(h.stops[0]?.stopLoss).toBeCloseTo(91.8, 6);
+    expect(h.handedOff).toEqual([]);
   });
 });

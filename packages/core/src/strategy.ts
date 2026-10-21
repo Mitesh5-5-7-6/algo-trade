@@ -25,6 +25,16 @@ export const ExitRulesSchema = z.object({
    * rule anybody wrote.
    */
   maxHoldMinutes: z.number().int().positive().optional(),
+  /**
+   * Trail the stop this far behind the best price seen (D4).
+   *
+   * A fraction of price, not an absolute: the same strategy runs on
+   * instruments two orders of magnitude apart, and an absolute trail would be
+   * a different rule on each. A trailed stop still reports STOP_LOSS — it
+   * changes where the stop sits, not why the position closed. It moves after
+   * a bar is judged, effective from the next bar (design §5.1 Q3).
+   */
+  trailingStopPct: z.number().gt(0).lt(1).optional(),
 });
 export type ExitRules = z.infer<typeof ExitRulesSchema>;
 

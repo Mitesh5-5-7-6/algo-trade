@@ -68,6 +68,21 @@ export class PositionEngine {
     return [...this.positions.values()].filter((p) => p.status === "OPEN");
   }
 
+  /**
+   * Move a live position's stop (Phase 3 D4).
+   *
+   * The engine owns the in-memory view every consumer reads, so a trail that
+   * only reached the database would be forgotten by the very next bar.
+   */
+  setStopLoss(positionId: string, stopLoss: number): void {
+    for (const [key, position] of this.positions) {
+      if (position.positionId === positionId) {
+        this.positions.set(key, { ...position, stopLoss });
+        return;
+      }
+    }
+  }
+
   getPosition(strategyId: string, symbol: string): Position | null {
     const position = this.positions.get(PositionEngine.key(strategyId, symbol));
     return position && position.status === "OPEN" ? position : null;

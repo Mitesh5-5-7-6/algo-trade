@@ -197,6 +197,38 @@ describe("PositionsRepository (plan/13 §8)", () => {
   });
 });
 
+describe("PositionsRepository moves a stop (Phase 3 D4)", () => {
+  /**
+   * A trail persists only the stop, as a targeted $set. The Exit Engine knows
+   * the stop and nothing else; writing back a stale copy of the quantity or
+   * realised P&L over the position engine's view would be a far larger bug.
+   */
+  it("changes the stop and nothing else", async () => {
+    const repo = new PositionsRepository(connection.db);
+    const base: Position = {
+      positionId: "pos_trail",
+      symbol: "NSE:X-EQ",
+      strategyId: "str_1",
+      side: "LONG",
+      qty: 10,
+      avgEntryPrice: 100,
+      stopLoss: 95,
+      status: "OPEN",
+      realizedPnl: -5,
+      unrealizedPnl: 0,
+      openedAt: 1,
+      mode: "paper",
+    };
+    await repo.upsert(base);
+    await repo.setStopLoss("pos_trail", 98.5);
+
+    const [stored] = (await repo.findOpen()).filter(
+      (p) => p.positionId === "pos_trail",
+    );
+    expect(stored).toEqual({ ...base, stopLoss: 98.5 });
+  });
+});
+
 describe("SignalsRepository (plan/07 §4 split retention)", () => {
   const signal = (overrides: Partial<Signal> = {}): Signal => ({
     signalId: "sig_1",

@@ -35,6 +35,14 @@ export interface ExitPorts {
    * does.
    */
   readExitRules(strategyId: string): ExitRules | null;
+  /**
+   * Move a position's stop, so a trail survives the process that set it (D4).
+   *
+   * Held in the position rather than in the engine: a restart that forgot
+   * where the trail had reached would hand the position back its ENTRY stop,
+   * silently widening the risk on a trade that had already been protected.
+   */
+  updateStopLoss(positionId: string, stopLoss: number): Promise<void>;
 }
 
 /**
