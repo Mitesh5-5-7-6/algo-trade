@@ -101,6 +101,15 @@ volume cannot support. One regime index (by default `NSE:NIFTY50-INDEX`)
 labels every symbol, because a regime describes the market, not the
 instrument. Pinned like the detectors.
 
+**Settled in 6.3.** `apps/api/src/counterfactual/regime.ts`. The EMA is the
+shared indicator fold (SMA-seeded), not the market view's private one (seeded
+with the first close): the rule is the view's, the arithmetic is the one every
+indicator uses. A symbol's bar takes the latest regime-index label at or
+before it, never a later one. Proven over every prefix of a three-session
+series; pinned to `{version, counts, sha256}`; three mutants killed — a label
+read one bar ahead, a changed period, volume creeping in. A fourth (trusting
+an unwarmed EMA) is equivalent: the fold reads nothing until it is seeded.
+
 ### D5 — Attribution is declared, versioned, and only looks forward to the decision
 
 `ATTRIBUTION_MODEL_VERSION` "1". For an occurrence of pattern P on symbol X at
