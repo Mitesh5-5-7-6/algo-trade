@@ -121,8 +121,25 @@ export function requireMongo(
  * buried the real `ECONNREFUSED`. Two indistinguishable causes for one symptom
  * is exactly what Phase 0 exists to remove.
  */
+/**
+ * Close a probe — and drop the suite's own database first.
+ *
+ * Every suite has its own isolated database, and used to leave it behind,
+ * dropped only at its next run's start. On the scratch cluster that is a
+ * free tier capped at 500 collections, each left-behind database holds ~21,
+ * and the cap was reached: a suite's `ensureIndexes` was refused "cannot
+ * create a new collection — already using 500 of 500". Dropping at the end
+ * keeps only the suites running right now. Guarded by the same rule the probe
+ * enforces: only ever a neelkanth_it_* or neelkanth_ci_* database.
+ */
 export async function closeProbe(probe: MongoProbe | undefined): Promise<void> {
-  if (probe?.reachable === true) await probe.connection.close();
+  if (probe?.reachable !== true) return;
+  const { db } = probe.connection;
+  try {
+    if (ISOLATED.test(db.databaseName)) await db.dropDatabase();
+  } finally {
+    await probe.connection.close();
+  }
 }
 
 /** One unmissable block per skipped suite, on stderr. */
