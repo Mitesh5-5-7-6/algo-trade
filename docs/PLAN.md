@@ -545,6 +545,33 @@ model, parameter versioning.
 Never conclude `78% win rate` without also knowing sample size, period, market
 regime, costs, slippage and out-of-sample status.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_7_STATISTICAL_VALIDATION.md](design/PHASE_7_STATISTICAL_VALIDATION.md),
+which is the detailed design for this phase and keeps each task's dependencies.
+
+| ID  | Task                                                                                          | STATUS | Commit | Evidence |
+| --- | --------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 7.1 | Statistics primitives, pinned to reference values (D1)                                        | READY  | —      | —        |
+| 7.2 | A matrix cell carries its dispersion; counterfactual version 2 (D2)                           | READY  | —      | —        |
+| 7.3 | The hypothesis: schema, rules, fingerprint, registry (D3)                                     | READY  | —      | —        |
+| 7.4 | The gate: one out-of-sample test — minimum sample, interval, p-value, version check (D4, D5)  | READY  | —      | —        |
+| 7.5 | Families: Holm correction; a finding that cannot be said without its context (D6, D7)         | READY  | —      | —        |
+| 7.6 | Kept in `strategy_experiments`, research database only; operator CLI (D8)                     | READY  | —      | —        |
+| 7.7 | Acceptance: a family registered on the first half of the real year, tested once on the second | READY  | —      | —        |
+
+**Nothing of this phase exists on any branch.** It is built on Phase 6's
+counterfactual run, which supplies every cell's `n` and, from 7.2, its spread.
+
+### Done when
+
+A family of hypotheses formed on the first half of the stored year, registered
+before any test, is tested once each on the second half: every verdict carries
+sample size, interval, p-value, costs, slippage, regime, versions and
+out-of-sample status; small samples are refused; the family correction is
+applied and shown; and a second test of a hypothesis is refused.
+
 ---
 
 ## 13. Phase 8 — Daily research
