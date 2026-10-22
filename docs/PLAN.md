@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | COMPLETE |
-| 7     | Statistical validation             | COMPLETE |
-| 8     | Daily research                     | COMPLETE |
-| 9     | Periodic research                  | COMPLETE |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | COMPLETE    |
+| 7     | Statistical validation             | COMPLETE    |
+| 8     | Daily research                     | COMPLETE    |
+| 9     | Periodic research                  | COMPLETE    |
+| 10    | Research knowledge base            | IN PROGRESS |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -668,7 +668,7 @@ and a revised daily report recomputes exactly the windows that read it.
 
 ## 15. Phase 10 — Research knowledge base
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -684,15 +684,15 @@ Structured around the decisions in
 [PHASE_10_KNOWLEDGE_BASE.md](design/PHASE_10_KNOWLEDGE_BASE.md), which is the
 detailed design for this phase and keeps each task's dependencies.
 
-| ID   | Task                                                                                                                                            | STATUS | Commit | Evidence |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 10.1 | The knowledge document: kinds, facets, source reference, context-carrying text (D1, D2)                                                         | READY  | —      | —        |
-| 10.2 | Rendering every source kind into documents — days, Trades, charts, windows, experiments, hypotheses and findings, detector definitions (D1, D2) | READY  | —      | —        |
-| 10.3 | The indexer: idempotent, superseded sources re-indexed, `documents` with structured and text indexes (D3, D7)                                   | READY  | —      | —        |
-| 10.4 | Search: structured and text, `asOf` (D4, D5)                                                                                                    | READY  | —      | —        |
-| 10.5 | Similar sessions: standardised day features, nearest neighbours, no lookahead (D4, D5)                                                          | READY  | —      | —        |
-| 10.6 | Read models: findPatterns, tradeHistory, experimentHistory, strategyMatrix — `n`, dates and versions on every answer (D6)                       | READY  | —      | —        |
-| 10.7 | Acceptance: the real year indexed; the spec's questions answered; a re-index adds nothing; a revision re-indexes exactly its documents          | READY  | —      | —        |
+| ID   | Task                                                                                                                                            | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                     |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 10.1 | The knowledge document: kinds, facets, source reference, context-carrying text (D1, D2)                                                         | COMPLETE | `e18a07f` | `apps/api/src/knowledge/document.ts`: `KnowledgeDocumentSchema` (kind, subject, facets, source reference, text), `makeDocument`, `contextProblem` — a result without its n and date is refused. `apps/api/src/knowledge/document.test.ts`; two mutants killed. Design D1, D2 |
+| 10.2 | Rendering every source kind into documents — days, Trades, charts, windows, experiments, hypotheses and findings, detector definitions (D1, D2) | READY    | —         | —                                                                                                                                                                                                                                                                            |
+| 10.3 | The indexer: idempotent, superseded sources re-indexed, `documents` with structured and text indexes (D3, D7)                                   | READY    | —         | —                                                                                                                                                                                                                                                                            |
+| 10.4 | Search: structured and text, `asOf` (D4, D5)                                                                                                    | READY    | —         | —                                                                                                                                                                                                                                                                            |
+| 10.5 | Similar sessions: standardised day features, nearest neighbours, no lookahead (D4, D5)                                                          | READY    | —         | —                                                                                                                                                                                                                                                                            |
+| 10.6 | Read models: findPatterns, tradeHistory, experimentHistory, strategyMatrix — `n`, dates and versions on every answer (D6)                       | READY    | —         | —                                                                                                                                                                                                                                                                            |
+| 10.7 | Acceptance: the real year indexed; the spec's questions answered; a re-index adds nothing; a revision re-indexes exactly its documents          | READY    | —         | —                                                                                                                                                                                                                                                                            |
 
 **Nothing of this phase exists on any branch.** It indexes what Phases 4–9
 produce. **Semantic search by embeddings is deferred** by the operator's
