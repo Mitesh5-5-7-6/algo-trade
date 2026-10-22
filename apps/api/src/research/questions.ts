@@ -29,13 +29,23 @@ const pooled = (agg: Aggregate): PairRow[] =>
 /** The week (spec Phase 9): recurrence, what worked, what failed repeatedly. */
 export interface WeeklyAnswers {
   tradingDays: number;
-  /** Pairs that occurred on enough of the week's days — the findings that repeat across days. */
+  /**
+   * Patterns that occurred on enough of the week's days — the findings that
+   * repeat across days — each with the strategies that acted on it (entered,
+   * signalled or held), and what their Trades on it made. A strategy that
+   * only ever stood aside is left out: it says nothing about what worked.
+   */
   recurred: {
     patternId: string;
-    strategyType: string;
     daysOccurred: number;
     occurrences: number;
-    trades: Tally;
+    strategies: {
+      strategyType: string;
+      entered: number;
+      signalled: number;
+      holding: number;
+      trades: Tally;
+    }[];
   }[];
   /** Strategies that made money on a pattern this week, with n. */
   worked: { patternId: string; strategyType: string; trades: Tally }[];
@@ -56,14 +66,33 @@ export function weeklyAnswers(
   const need = Math.ceil(tradingDays * t.recurrenceShare);
   return {
     tradingDays,
-    recurred: rows
-      .filter((p) => tradingDays > 0 && p.daysOccurred >= need)
-      .map((p) => ({
-        patternId: p.patternId,
-        strategyType: p.strategyType,
-        daysOccurred: p.daysOccurred,
-        occurrences: p.occurrences,
-        trades: p.trades,
+    // Every strategy sees every occurrence, so a pattern's days and count are
+    // the same on each of its rows; the first stands for all.
+    recurred: [...new Set(rows.map((p) => p.patternId))]
+      .map((patternId) => rows.filter((p) => p.patternId === patternId))
+      .filter(
+        ([first]) =>
+          first !== undefined && tradingDays > 0 && first.daysOccurred >= need,
+      )
+      .map((pairs) => ({
+        patternId: pairs[0]?.patternId ?? "",
+        daysOccurred: Math.max(...pairs.map((p) => p.daysOccurred)),
+        occurrences: Math.max(...pairs.map((p) => p.occurrences)),
+        strategies: pairs
+          .filter(
+            (p) =>
+              p.relations.ENTERED +
+                p.relations.SIGNALLED +
+                p.relations.HOLDING >
+              0,
+          )
+          .map((p) => ({
+            strategyType: p.strategyType,
+            entered: p.relations.ENTERED,
+            signalled: p.relations.SIGNALLED,
+            holding: p.relations.HOLDING,
+            trades: p.trades,
+          })),
       })),
     worked: rows
       .filter((p) => p.trades.n > 0 && p.trades.net > 0)

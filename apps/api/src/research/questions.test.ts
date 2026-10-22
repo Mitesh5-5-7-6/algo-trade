@@ -58,7 +58,7 @@ const agg = (pairs: PairRow[], conditions: ConditionRow[] = []): Aggregate => ({
 
 describe("the week — recurring behaviour (9.3, D4)", () => {
   /** 60% of a four-day (holiday) week is three days. */
-  it("finds pairs that recurred across the week's trading days", () => {
+  it("finds patterns that recurred across the week's trading days", () => {
     const week = agg([
       pair("ORB_BREAKOUT", "ORB", "ALL", tally(4, 20, { losingDays: 1 }), 3),
       pair("EMA_CROSS", "ORB", "ALL", tally(1, -5), 2),
@@ -68,6 +68,24 @@ describe("the week — recurring behaviour (9.3, D4)", () => {
       ["ORB_BREAKOUT", 3],
     ]);
     expect(a.worked.map((r) => r.patternId)).toEqual(["ORB_BREAKOUT"]);
+  });
+
+  /** Which patterns recurred — and which strategies did anything with them. */
+  it("lists each recurring pattern once, with only the strategies that acted on it", () => {
+    const stoodAside = pair("ORB_BREAKOUT", "RSI", "ALL", tally(0, 0), 3);
+    stoodAside.relations = { ENTERED: 0, SIGNALLED: 0, HOLDING: 0, FLAT: 3 };
+    const a = weeklyAnswers(
+      agg([pair("ORB_BREAKOUT", "ORB", "ALL", tally(3, 12), 3), stoodAside]),
+      4,
+    );
+    expect(a.recurred).toHaveLength(1);
+    expect(
+      a.recurred[0]?.strategies.map((s) => [
+        s.strategyType,
+        s.entered,
+        s.trades.net,
+      ]),
+    ).toEqual([["ORB", 3, 12]]);
   });
 
   /** Two holidays leave three trading days: 60% of three is two, not the three a five-day week would need. */
