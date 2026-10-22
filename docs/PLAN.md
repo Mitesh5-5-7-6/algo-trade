@@ -594,6 +594,32 @@ Load candles → Compute features → Detect patterns → Find strategy signals
 Output: Daily Research Report, Pattern Observations, Strategy Observations,
 Trade Evidence, Chart Specifications. **No PNG is the source of truth.**
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_8_DAILY_RESEARCH.md](design/PHASE_8_DAILY_RESEARCH.md), which is the
+detailed design for this phase and keeps each task's dependencies.
+
+| ID  | Task                                                                                                           | STATUS | Commit | Evidence |
+| --- | -------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 8.1 | The day's run: K sessions ending at D, reporting D alone; independent of later bars and of the batch (D1)      | READY  | —      | —        |
+| 8.2 | Trade evidence: entry to exit, excursions, what preceded the entry (D2)                                        | READY  | —      | —        |
+| 8.3 | Observations: day features, patterns compared across strategies, each strategy's day (D3)                      | READY  | —      | —        |
+| 8.4 | Chart specifications for the day and each Trade; volume overlays only on real volume (D4)                      | READY  | —      | —        |
+| 8.5 | The report: inputs fingerprinted, versioned, kept in `research_reports`; staleness (D5)                        | READY  | —      | —        |
+| 8.6 | Every completed, unreported day, automatically and idempotently; CLI (D6)                                      | READY  | —      | —        |
+| 8.7 | Acceptance: the real year reported; a re-run adds nothing; a revised bar is caught and recomputed as version 2 | READY  | —      | —        |
+
+**Nothing of this phase exists on any branch.** It is built on Phase 6's
+counterfactual run, one trading day at a time.
+
+### Done when
+
+Every trading day of the stored year has a report per instrument, produced by
+one command that adds nothing when run again; each report is reproducible from
+its day alone; and a revised bar marks exactly the reports that read it stale,
+recomputed as new versions beside the old.
+
 ---
 
 ## 14. Phase 9 — Weekly / monthly / quarterly research
