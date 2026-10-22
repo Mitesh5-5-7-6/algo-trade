@@ -9,6 +9,7 @@ import {
   type Hypothesis,
 } from "./hypothesis.js";
 import {
+  binomialLowerTail,
   binomialUpperTail,
   meanInterval,
   meanPValue,
@@ -17,8 +18,12 @@ import {
   type Interval,
 } from "./stats.js";
 
-/** Bumped whenever how the gate judges a claim changes (Phase 7 D5). */
-export const GATE_POLICY_VERSION = "1";
+/**
+ * Bumped whenever how the gate judges a claim changes (Phase 7 D5). 2: a
+ * "less" win-rate claim's p-value is the lower tail computed directly, not
+ * 1 − an upper tail, which cancelled to 0 below ~1e-16 (found by 7.7).
+ */
+export const GATE_POLICY_VERSION = "2";
 
 export type Verdict = "SUPPORTED" | "NOT_SUPPORTED" | "INSUFFICIENT_SAMPLE";
 
@@ -185,7 +190,7 @@ function judge(h: Hypothesis, run: CounterfactualRun): WindowEvaluation {
     pValue =
       h.direction === "greater"
         ? binomialUpperTail(stats.wins, stats.n, h.threshold)
-        : 1 - binomialUpperTail(stats.wins + 1, stats.n, h.threshold);
+        : binomialLowerTail(stats.wins, stats.n, h.threshold);
   } else {
     const mean = estimate ?? 0;
     const sd =

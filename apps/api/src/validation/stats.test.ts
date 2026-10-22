@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  binomialLowerTail,
   binomialUpperTail,
   holmAdjust,
   meanInterval,
@@ -70,6 +71,31 @@ describe("the exact binomial tail", () => {
     );
     expect(binomialUpperTail(0, 10, 0.3)).toBe(1);
     expect(binomialUpperTail(11, 10, 0.3)).toBe(0);
+  });
+});
+
+/**
+ * Found by the 7.7 acceptance run: a lower tail computed as 1 − P(X ≥ k+1)
+ * cancels to zero once it is below ~1e-16, and printed p = 0 for a claim
+ * whose true p was ~1e-17. The lower tail is computed directly.
+ */
+describe("the exact binomial lower tail", () => {
+  it("P(X ≤ 1 | 100, ½) = 101 / 2^100, not zero", () => {
+    const exact = 101 / 2 ** 100;
+    expect(binomialLowerTail(1, 100, 0.5) / exact).toBeCloseTo(1, 10);
+  });
+  it("is the upper tail of the complement, and agrees where both are large", () => {
+    expect(binomialLowerTail(88, 319, 0.5)).toBeCloseTo(
+      binomialUpperTail(231, 319, 0.5),
+      25,
+    );
+    expect(binomialLowerTail(88, 319, 0.5)).toBeGreaterThan(0);
+    expect(binomialLowerTail(40, 100, 0.5)).toBeCloseTo(
+      0.028443966820490392,
+      10,
+    );
+    expect(binomialLowerTail(10, 10, 0.3)).toBe(1);
+    expect(binomialLowerTail(-1, 10, 0.3)).toBe(0);
   });
 });
 

@@ -124,6 +124,18 @@ describe("the gate (7.4, D5)", () => {
     expect(weak.outOfSample.verdict).toBe("NOT_SUPPORTED");
   });
 
+  /** 7.7's finding: a tiny "less" p-value must not cancel to zero. */
+  it("keeps a vanishing p-value positive, and says so exactly", () => {
+    const t = testHypothesis(
+      claim({ metric: "winRate", direction: "less", threshold: 0.5 }),
+      IS,
+      withCell(OOS, { n: 100, wins: 1, winRate: 0.01 }),
+      2_000,
+    );
+    expect((t.outOfSample.pValue ?? 0) / (101 / 2 ** 100)).toBeCloseTo(1, 8);
+    expect(t.gatePolicyVersion).toBe("2");
+  });
+
   it("judges an expectancy by its spread: a one-sided z-test", () => {
     // mean −50, sd 200, n 100: z = −2.5, P(Z ≤ −2.5) = 0.00621.
     const strong = testHypothesis(

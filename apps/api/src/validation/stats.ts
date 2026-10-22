@@ -134,6 +134,17 @@ export function binomialUpperTail(k: number, n: number, p: number): number {
   return Math.min(1, Math.exp(max + Math.log(sum)));
 }
 
+/**
+ * Exact one-sided binomial tail P(X ≤ k), computed as the upper tail of the
+ * complement — P(Y ≥ n − k) for Y ~ Bin(n, 1 − p) — never as 1 − P(X ≥ k+1),
+ * which cancels to zero below ~1e-16.
+ */
+export function binomialLowerTail(k: number, n: number, p: number): number {
+  if (k < 0) return 0;
+  if (k >= n) return 1;
+  return binomialUpperTail(n - k, n, 1 - p);
+}
+
 /** Sample standard deviation (n − 1); 0 for fewer than two values. */
 export function sampleStdDev(values: readonly number[]): number {
   const n = values.length;
