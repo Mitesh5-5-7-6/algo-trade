@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | COMPLETE |
-| 7     | Statistical validation             | COMPLETE |
-| 8     | Daily research                     | READY    |
-| 9     | Periodic research                  | READY    |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | COMPLETE    |
+| 7     | Statistical validation             | COMPLETE    |
+| 8     | Daily research                     | IN PROGRESS |
+| 9     | Periodic research                  | READY       |
+| 10    | Research knowledge base            | READY       |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -580,7 +580,7 @@ applied and shown; and a second test of a hypothesis is refused.
 
 ## 13. Phase 8 — Daily research
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -600,15 +600,15 @@ Structured around the decisions in
 [PHASE_8_DAILY_RESEARCH.md](design/PHASE_8_DAILY_RESEARCH.md), which is the
 detailed design for this phase and keeps each task's dependencies.
 
-| ID  | Task                                                                                                           | STATUS | Commit | Evidence |
-| --- | -------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 8.1 | The day's run: K sessions ending at D, reporting D alone; independent of later bars and of the batch (D1)      | READY  | —      | —        |
-| 8.2 | Trade evidence: entry to exit, excursions, what preceded the entry (D2)                                        | READY  | —      | —        |
-| 8.3 | Observations: day features, patterns compared across strategies, each strategy's day (D3)                      | READY  | —      | —        |
-| 8.4 | Chart specifications for the day and each Trade; volume overlays only on real volume (D4)                      | READY  | —      | —        |
-| 8.5 | The report: inputs fingerprinted, versioned, kept in `research_reports`; staleness (D5)                        | READY  | —      | —        |
-| 8.6 | Every completed, unreported day, automatically and idempotently; CLI (D6)                                      | READY  | —      | —        |
-| 8.7 | Acceptance: the real year reported; a re-run adds nothing; a revised bar is caught and recomputed as version 2 | READY  | —      | —        |
+| ID  | Task                                                                                                           | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                        |
+| --- | -------------------------------------------------------------------------------------------------------------- | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8.1 | The day's run: K sessions ending at D, reporting D alone; independent of later bars and of the batch (D1)      | COMPLETE | `b28f941` | `apps/api/src/research/day.ts`: `runDay` over the K = 5 sessions ending at D, reporting D alone; `evaluateMarket` split out of `apps/api/src/counterfactual/run.ts`. `apps/api/src/research/day.test.ts`: independent of bars after D and of where the loaded range begins, dependent on the declared lookback; three mutants killed. Design D1 |
+| 8.2 | Trade evidence: entry to exit, excursions, what preceded the entry (D2)                                        | READY    | —         | —                                                                                                                                                                                                                                                                                                                                               |
+| 8.3 | Observations: day features, patterns compared across strategies, each strategy's day (D3)                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                               |
+| 8.4 | Chart specifications for the day and each Trade; volume overlays only on real volume (D4)                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                               |
+| 8.5 | The report: inputs fingerprinted, versioned, kept in `research_reports`; staleness (D5)                        | READY    | —         | —                                                                                                                                                                                                                                                                                                                                               |
+| 8.6 | Every completed, unreported day, automatically and idempotently; CLI (D6)                                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                               |
+| 8.7 | Acceptance: the real year reported; a re-run adds nothing; a revised bar is caught and recomputed as version 2 | READY    | —         | —                                                                                                                                                                                                                                                                                                                                               |
 
 **Nothing of this phase exists on any branch.** It is built on Phase 6's
 counterfactual run, one trading day at a time.
