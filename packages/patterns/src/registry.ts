@@ -12,6 +12,8 @@ export interface RunnableDetector {
   readonly patternId: string;
   readonly detectorVersion: string;
   readonly definition: string;
+  /** The parameters it runs at, resolved — defaults filled in. */
+  readonly params: Record<string, unknown>;
   requiredIndicators(): readonly IndicatorSpec[];
   warmupBars(): number;
   /** Whether this detector reads volume at all (Phase 5 D3). */
@@ -44,6 +46,7 @@ function instantiate<P>(
     patternId: detector.patternId,
     detectorVersion: detector.detectorVersion,
     definition: detector.definition,
+    params: params as Record<string, unknown>,
     requiredIndicators: () => detector.requiredIndicators(params),
     warmupBars: () => detector.warmupBars(params),
     volumeBased: detector.volumeBars !== undefined,
