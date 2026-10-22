@@ -318,6 +318,51 @@ describe("the matrix (6.4, D6)", () => {
     expect(rowsFor(rows, "ORB_BREAKOUT", ALL, SYM)[0]?.trades.net).toBe(3);
   });
 
+  /**
+   * Each symbol's replay numbers its Trades from one, so two symbols' runs of
+   * one strategy share Trade ids. Found by the 6.8 acceptance run: keyed by
+   * id alone, one symbol's Trades overwrote the other's.
+   */
+  it("keeps two symbols' Trades apart though their replays share Trade ids", () => {
+    const OTHER = "NSE:Y-EQ";
+    const onX = trade(bar(30), 20, 10, { tradeId: "trd_1" });
+    const onY = trade(bar(30), 20, -4, {
+      tradeId: "trd_1",
+      symbol: OTHER,
+      dataProvenance: {
+        symbol: OTHER,
+        interval: "5m",
+        barTs: bar(30),
+        source: "BROKER_HISTORICAL",
+      },
+    });
+    const runs: StrategyRun[] = [
+      run("A", [onX]),
+      {
+        strategyType: "A",
+        symbol: OTHER,
+        trail: { trades: [onY], signals: [], riskLogs: [] },
+      },
+    ];
+    const occ = [
+      occurrence(30),
+      {
+        ...occurrence(30),
+        symbol: OTHER,
+        dataProvenance: { ...occurrence(30).dataProvenance, symbol: OTHER },
+      },
+    ];
+    const rows = buildMatrix(
+      attribute(occ, runs, timeline, "5m"),
+      runs,
+      timeline,
+    );
+    const [pooled] = rowsFor(rows, "ORB_BREAKOUT");
+    expect(pooled?.relations?.ENTERED).toBe(2);
+    expect(pooled?.trades).toMatchObject({ n: 2, net: 6 });
+    expect(rowsFor(rows, "ORB_BREAKOUT", ALL, OTHER)[0]?.trades.net).toBe(-4);
+  });
+
   it("does not depend on the order its inputs arrive in", () => {
     const t = [
       trade(bar(5), 10, 1),

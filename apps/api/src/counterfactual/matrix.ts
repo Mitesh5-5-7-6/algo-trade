@@ -118,7 +118,7 @@ export function buildMatrix(
   const tradeById = new Map<string, Trade>();
   for (const run of runs)
     for (const t of run.trail.trades)
-      tradeById.set(`${run.strategyType}|${t.tradeId}`, t);
+      tradeById.set(tradeKey(run.strategyType, run.symbol, t.tradeId), t);
 
   interface Cell {
     patternId: string;
@@ -171,8 +171,12 @@ export function buildMatrix(
         cell.occurrences += 1;
         cell.relations[a.relation] += 1;
         if (a.relation === "ENTERED" && a.tradeId !== undefined) {
-          const trade = tradeById.get(`${a.strategyType}|${a.tradeId}`);
-          if (trade !== undefined) cell.trades.set(a.tradeId, trade);
+          const key = tradeKey(a.strategyType, a.symbol, a.tradeId);
+          const trade = tradeById.get(key);
+          // An entry the runs do not hold is broken input, never a smaller cell.
+          if (trade === undefined)
+            throw new Error(`attribution names ${key}, which no run holds`);
+          cell.trades.set(key, trade);
         }
       }
   }
@@ -245,6 +249,19 @@ export function buildMatrix(
     const b = rowKey(y);
     return a < b ? -1 : a > b ? 1 : 0;
   });
+}
+
+/**
+ * A Trade's identity across runs. Each symbol's replay numbers its Trades
+ * from one, so an id alone collides between two symbols' runs of the same
+ * strategy (found by the 6.8 acceptance run).
+ */
+function tradeKey(
+  strategyType: string,
+  symbol: string,
+  tradeId: string,
+): string {
+  return [strategyType, symbol, tradeId].join("|");
 }
 
 /** Baseline rows first, then patterns; `ALL` before any symbol or regime. */
