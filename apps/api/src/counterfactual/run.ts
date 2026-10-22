@@ -32,6 +32,7 @@ import { DEFAULT_SLIPPAGE } from "../golden/pipeline.js";
 import {
   attribute,
   DEFAULT_ATTRIBUTION_MODEL,
+  type Attribution,
   type AttributionModel,
   type StrategyRun,
 } from "./attribution.js";
@@ -41,6 +42,7 @@ import {
   DEFAULT_REGIME_MODEL,
   regimeTimeline,
   type RegimeModel,
+  type RegimeTimeline,
 } from "./regime.js";
 
 /**
@@ -139,6 +141,43 @@ export interface CounterfactualRun {
 export async function runCounterfactual(
   request: CounterfactualRequest,
 ): Promise<CounterfactualRun> {
+  const evaluation = await evaluateMarket(request);
+  const { manifest, patterns } = evaluation;
+  const matrix = buildMatrix(
+    evaluation.attributions,
+    evaluation.runs,
+    evaluation.timeline,
+  );
+  return {
+    manifest,
+    patterns,
+    matrix,
+    fingerprint: createHash("sha256")
+      .update(canonicalJson({ manifest, patterns, matrix }))
+      .digest("hex"),
+  };
+}
+
+/**
+ * Everything a counterfactual run is made of, before it is pooled into a
+ * matrix: the replays' trails, every occurrence, every attribution, the
+ * regime timeline. Daily research (Phase 8) reads these per Trade and per
+ * occurrence; the matrix is one way to summarise them.
+ */
+export interface MarketEvaluation {
+  manifest: CounterfactualManifest;
+  patterns: PatternSummary[];
+  runs: StrategyRun[];
+  occurrences: PatternOccurrence[];
+  attributions: Attribution[];
+  timeline: RegimeTimeline;
+  interval: CandleInterval;
+}
+
+/** The counterfactual run, unpooled (see `runCounterfactual`). */
+export async function evaluateMarket(
+  request: CounterfactualRequest,
+): Promise<MarketEvaluation> {
   const regime = request.regime ?? DEFAULT_REGIME_MODEL;
   const attribution = request.attribution ?? DEFAULT_ATTRIBUTION_MODEL;
   const candles = [...request.candles].sort(
@@ -227,10 +266,12 @@ export async function runCounterfactual(
     });
   }
 
-  const matrix = buildMatrix(
-    attribute(occurrences, runs, timeline, interval, attribution),
+  const attributions = attribute(
+    occurrences,
     runs,
     timeline,
+    interval,
+    attribution,
   );
 
   const dataset = datasetOf(candles, interval);
@@ -271,10 +312,11 @@ export async function runCounterfactual(
   return {
     manifest,
     patterns,
-    matrix,
-    fingerprint: createHash("sha256")
-      .update(canonicalJson({ manifest, patterns, matrix }))
-      .digest("hex"),
+    runs,
+    occurrences,
+    attributions,
+    timeline,
+    interval,
   };
 }
 
