@@ -66,6 +66,12 @@ export const COLLECTIONS = {
    * apart by `period`. Untimed, never edited: a revision is a new version.
    */
   researchReports: "research_reports",
+  /**
+   * The knowledge base's documents (ADR §10.1, Phase 10) — RESEARCH database
+   * only. Derived from research records and rebuilt from them; never the
+   * evidence itself. Untimed.
+   */
+  documents: "documents",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -153,6 +159,32 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.researchReports)
       .createIndex({ period: 1, sessions: 1 }),
+
+    // documents — one per research item; queried by facet and by text.
+    db
+      .collection(COLLECTIONS.documents)
+      .createIndex({ docId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.documents)
+      .createIndex({ kind: 1, "subject.toDate": -1 }),
+    db
+      .collection(COLLECTIONS.documents)
+      .createIndex({ "facets.symbols": 1, "subject.toDate": -1 }),
+    db
+      .collection(COLLECTIONS.documents)
+      .createIndex({ "facets.patterns": 1, "subject.toDate": -1 }),
+    db
+      .collection(COLLECTIONS.documents)
+      .createIndex({ "facets.strategies": 1, "subject.toDate": -1 }),
+    db
+      .collection(COLLECTIONS.documents)
+      .createIndex({ "source.collection": 1, "source.id": 1 }),
+    db
+      .collection(COLLECTIONS.documents)
+      .createIndex(
+        { title: "text", text: "text" },
+        { name: "document_text", weights: { title: 3, text: 1 } },
+      ),
 
     // patterns — one definition per detector version.
     db
