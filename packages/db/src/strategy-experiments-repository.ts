@@ -12,7 +12,11 @@ import { COLLECTIONS } from "./collections.js";
  */
 export const StrategyExperimentDocSchema = z.object({
   experimentId: z.string().min(1),
-  kind: z.enum(["COUNTERFACTUAL"]),
+  /**
+   * COUNTERFACTUAL — a Phase 6 run. HYPOTHESIS — a claim registered before
+   * its test (Phase 7 D3). HYPOTHESIS_TEST — that claim tested, once (D4).
+   */
+  kind: z.enum(["COUNTERFACTUAL", "HYPOTHESIS", "HYPOTHESIS_TEST"]),
   createdAt: z.number().int().nonnegative(),
   fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
   manifest: z.record(z.string(), z.unknown()),
@@ -45,6 +49,17 @@ export class StrategyExperimentsRepository {
       { projection: { _id: 0 } },
     );
     return doc === null ? null : StrategyExperimentDocSchema.parse(doc);
+  }
+
+  /** Every experiment of one kind, oldest first. */
+  async listByKind(
+    kind: StrategyExperimentDoc["kind"],
+  ): Promise<StrategyExperimentDoc[]> {
+    const docs = await this.collection
+      .find({ kind }, { projection: { _id: 0 } })
+      .sort({ createdAt: 1, experimentId: 1 })
+      .toArray();
+    return docs.map((doc) => StrategyExperimentDocSchema.parse(doc));
   }
 
   /** Every run of this exact experiment, oldest first. */

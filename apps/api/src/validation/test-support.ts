@@ -24,6 +24,7 @@ export function hypothesis(over: Partial<Hypothesis> = {}): Hypothesis {
       symbols: ["NSE:NIFTY50-INDEX"],
       indexSymbols: ["NSE:NIFTY50-INDEX"],
       interval: "5m",
+      hours: { open: "09:15", close: "15:30", squareOff: "15:12" },
       allocatedCapital: 1_000_000,
       limits: goldenBudget().limits,
       seed: 0,

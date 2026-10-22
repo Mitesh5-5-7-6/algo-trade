@@ -84,9 +84,17 @@ describe("a hypothesis (7.3, D3)", () => {
     ).toBe(true);
   });
 
-  it("is fingerprinted by its definition — not by when it was registered, nor key order", () => {
+  it("is fingerprinted by the claim — not its id, family, wording, registration time, nor key order", () => {
     const a = hypothesisFingerprint(hypothesis());
     expect(hypothesisFingerprint(hypothesis({ registeredAt: 9_999 }))).toBe(a);
+    expect(hypothesisFingerprint(hypothesis({ hypothesisId: "H-0042" }))).toBe(
+      a,
+    );
+    expect(hypothesisFingerprint(hypothesis({ family: "F-other" }))).toBe(a);
+    expect(hypothesisFingerprint(hypothesis({ statement: "reworded" }))).toBe(
+      a,
+    );
+    expect(hypothesisFingerprint(hypothesis({ minSample: 50 }))).not.toBe(a);
     const reordered = Object.fromEntries(
       Object.entries(hypothesis()).reverse(),
     ) as Hypothesis;

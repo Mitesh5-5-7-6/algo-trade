@@ -49,6 +49,12 @@ export const HypothesisRunSchema = z.object({
   symbols: z.array(z.string().min(1)).min(1),
   indexSymbols: z.array(z.string().min(1)),
   interval: z.string().min(1),
+  /** Session hours shape the sessions, so they shape what a run measures. */
+  hours: z.object({
+    open: z.string().regex(/^\d{2}:\d{2}$/),
+    close: z.string().regex(/^\d{2}:\d{2}$/),
+    squareOff: z.string().regex(/^\d{2}:\d{2}$/),
+  }),
   allocatedCapital: z.number().positive(),
   limits: RiskLimitsSchema,
   seed: z.number().int(),
@@ -116,13 +122,20 @@ export const HypothesisSchema = z
 export type Hypothesis = z.infer<typeof HypothesisSchema>;
 
 /**
- * The definition's fingerprint: everything but when it was registered, so the
- * same claim registered twice is recognisably the same claim.
+ * The claim's fingerprint: its substance — cell, metric, direction,
+ * threshold, alpha, minimum sample, windows, run and pins — and none of its
+ * labels. Not its id, family, wording or registration time: the same claim
+ * renamed, reworded or filed in another family is still the same claim, and
+ * registering it again would earn it a second test (found by 7.6's store
+ * test, when the id was still inside the fingerprint).
  */
 export function hypothesisFingerprint(h: Hypothesis): string {
-  const definition: Partial<Hypothesis> = { ...h };
-  delete definition.registeredAt;
-  return createHash("sha256").update(canonicalJson(definition)).digest("hex");
+  const claim: Partial<Hypothesis> = { ...h };
+  delete claim.hypothesisId;
+  delete claim.family;
+  delete claim.statement;
+  delete claim.registeredAt;
+  return createHash("sha256").update(canonicalJson(claim)).digest("hex");
 }
 
 /** The next id after those already registered: H-0001, H-0002, … */
