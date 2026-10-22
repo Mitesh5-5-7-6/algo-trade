@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | READY    |
-| 7     | Statistical validation             | READY    |
-| 8     | Daily research                     | READY    |
-| 9     | Periodic research                  | READY    |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | IN PROGRESS |
+| 7     | Statistical validation             | READY       |
+| 8     | Daily research                     | READY       |
+| 9     | Periodic research                  | READY       |
+| 10    | Research knowledge base            | READY       |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -479,7 +479,7 @@ version is pinned to what it detects.
 
 ## 11. Phase 6 — Counterfactual strategy evaluation
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -497,6 +497,27 @@ VWAP_RECLAIM
 
 Evaluate occurrence count, entries, exits, win/loss, expectancy, drawdown,
 costs, slippage and market regime.
+
+### Tasks
+
+Structured around the decisions in
+[PHASE_6_COUNTERFACTUAL_EVALUATION.md](design/PHASE_6_COUNTERFACTUAL_EVALUATION.md),
+which is the detailed design for this phase and keeps each task's dependencies.
+
+| ID  | Task                                                                                                               | STATUS | Commit | Evidence |
+| --- | ------------------------------------------------------------------------------------------------------------------ | ------ | ------ | -------- |
+| 6.1 | The replay returns its trail — complete Signals, risk decisions and Trades — record and fingerprint unchanged (D3) | READY  | —      | —        |
+| 6.2 | Eligibility: every registered strategy evaluated or excluded with its reason (D1)                                  | READY  | —      | —        |
+| 6.3 | The regime label: index trend, versioned, volume-free, pinned, lookahead-proven (D4)                               | READY  | —      | —        |
+| 6.4 | Attribution and the matrix — relations, metrics, baseline, sample sizes (D5, D6)                                   | READY  | —      | —        |
+| 6.5 | The counterfactual run: each strategy alone per symbol, manifest and fingerprint (D2, D7)                          | READY  | —      | —        |
+| 6.6 | Kept in `strategy_experiments`, research database only; operator CLI (D7)                                          | READY  | —      | —        |
+| 6.7 | Acceptance: the real year twice — identical fingerprints, and the question answered                                | READY  | —      | —        |
+
+**Nothing of this phase exists on any branch.** Unlike Phases 4 and 5 it is
+built here, on Phase 4's replay and Phase 5's sweep. Only `EMA_CROSSOVER`,
+`RSI` and `ORB` can be replayed today; the five index-option strategies are
+excluded with their reasons, never silently.
 
 ### Done when
 
