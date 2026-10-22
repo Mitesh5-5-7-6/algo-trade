@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | COMPLETE    |
-| 6     | Counterfactual strategy evaluation | COMPLETE    |
-| 7     | Statistical validation             | COMPLETE    |
-| 8     | Daily research                     | COMPLETE    |
-| 9     | Periodic research                  | IN PROGRESS |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | COMPLETE |
+| 7     | Statistical validation             | COMPLETE |
+| 8     | Daily research                     | COMPLETE |
+| 9     | Periodic research                  | COMPLETE |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -628,7 +628,7 @@ recomputed as new versions beside the old.
 
 ## 14. Phase 9 — Weekly / monthly / quarterly research
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 Aggregate daily evidence. Weekly: find recurring behaviour. Monthly: find
 persistent weaknesses and opportunities. Quarterly: check whether findings
@@ -640,17 +640,21 @@ Structured around the decisions in
 [PHASE_9_PERIODIC_RESEARCH.md](design/PHASE_9_PERIODIC_RESEARCH.md), which is
 the detailed design for this phase and keeps each task's dependencies.
 
-| ID  | Task                                                                                                                                          | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 9.1 | Trading-calendar windows from a declared calendar; coverage — gaps and unexpected days (D1, D2)                                               | COMPLETE | `0c4ec1f` | `apps/api/src/research/windows.ts`: ISO weeks, months and quarters; trading days from a declared calendar; `coverageOf` naming gaps and unexpected days; completeness; calendar fingerprint. `apps/api/src/research/windows.test.ts`, 11 tests (a Holi week of four days, the Budget Sunday in its week, 53 weeks in 2026); three mutants killed. Design D1, D2                                                                                                                        |
-| 9.2 | One aggregation over daily reports: pattern × strategy × regime, strategy, condition; day-level consistency (D3)                              | COMPLETE | `41db399` | `apps/api/src/research/aggregate.ts`: pairs per pattern × strategy × regime, strategies, conditions (strategy, entry regime, preceding patterns); every Tally with n, net, expectancy, costs and day-level consistency; Trades keyed by date. `apps/api/src/research/aggregate.test.ts`, 9 tests; three mutants killed. Design D3                                                                                                                                                      |
-| 9.3 | The questions: weekly recurrence, monthly weaknesses and opportunities, quarterly survival (D4)                                               | COMPLETE | `f66f21d` | `apps/api/src/research/questions.ts`: `weeklyAnswers` (recurrence against the week's trading days, what worked, repeated failure), `monthlyAnswers` (weaknesses and opportunities among conditions with enough Trades, extremes, regime sign change), `quarterlyAnswers` (SURVIVES / REGIME_DEPENDENT / UNSTABLE / INSUFFICIENT, with the rule that decided it); thresholds on every answer. `apps/api/src/research/questions.test.ts`, 12 tests; four mutants killed. Design D4       |
-| 9.4 | The window report: daily reports it read, versioned, kept in `research_reports`; staleness (D5)                                               | COMPLETE | `b59c6f4` | `apps/api/src/research/window-report.ts`: `buildWindowReport` (calendar, per-instrument coverage, aggregate, answers, the daily reports it read) and `isWindowStale` (a superseded daily or a filled gap; nothing outside its span). `apps/api/src/research/window-report.test.ts`, 9 tests, two mutants killed. `packages/db/src/research-reports-repository.ts` holds WEEK, MONTH and QUARTER beside DAY (strict 5/5). Design D5                                                     |
-| 9.5 | Every complete, unreported window, automatically and idempotently; CLI (D6)                                                                   | COMPLETE | `c6a1124` | `apps/api/src/research/periodic-store.ts`: `runPeriodicResearch` — every complete, unreported window; stale ones recomputed as new versions on request; idempotent. `apps/api/src/research/periodic-store.integration.test.ts` (strict 4/4): incomplete windows left, a re-run adding nothing, gaps named, one revised bar recomputing exactly its two weeks, nothing but `research_reports` changed. `apps/api/scripts/periodic-research.mts` requires a declared calendar. Design D6 |
-| 9.6 | Acceptance: the real year's weeks, months and quarters under the exchange's published calendar; a daily revision reaching exactly its windows | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ID  | Task                                                                                                                                          | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 9.1 | Trading-calendar windows from a declared calendar; coverage — gaps and unexpected days (D1, D2)                                               | COMPLETE | `0c4ec1f` | `apps/api/src/research/windows.ts`: ISO weeks, months and quarters; trading days from a declared calendar; `coverageOf` naming gaps and unexpected days; completeness; calendar fingerprint. `apps/api/src/research/windows.test.ts`, 11 tests (a Holi week of four days, the Budget Sunday in its week, 53 weeks in 2026); three mutants killed. Design D1, D2                                                                                                                                                                                                                                        |
+| 9.2 | One aggregation over daily reports: pattern × strategy × regime, strategy, condition; day-level consistency (D3)                              | COMPLETE | `41db399` | `apps/api/src/research/aggregate.ts`: pairs per pattern × strategy × regime, strategies, conditions (strategy, entry regime, preceding patterns); every Tally with n, net, expectancy, costs and day-level consistency; Trades keyed by date. `apps/api/src/research/aggregate.test.ts`, 9 tests; three mutants killed. Design D3                                                                                                                                                                                                                                                                      |
+| 9.3 | The questions: weekly recurrence, monthly weaknesses and opportunities, quarterly survival (D4)                                               | COMPLETE | `f66f21d` | `apps/api/src/research/questions.ts`: `weeklyAnswers` (recurrence against the week's trading days, what worked, repeated failure), `monthlyAnswers` (weaknesses and opportunities among conditions with enough Trades, extremes, regime sign change), `quarterlyAnswers` (SURVIVES / REGIME_DEPENDENT / UNSTABLE / INSUFFICIENT, with the rule that decided it); thresholds on every answer. `apps/api/src/research/questions.test.ts`, 12 tests; four mutants killed. Design D4                                                                                                                       |
+| 9.4 | The window report: daily reports it read, versioned, kept in `research_reports`; staleness (D5)                                               | COMPLETE | `b59c6f4` | `apps/api/src/research/window-report.ts`: `buildWindowReport` (calendar, per-instrument coverage, aggregate, answers, the daily reports it read) and `isWindowStale` (a superseded daily or a filled gap; nothing outside its span). `apps/api/src/research/window-report.test.ts`, 9 tests, two mutants killed. `packages/db/src/research-reports-repository.ts` holds WEEK, MONTH and QUARTER beside DAY (strict 5/5). Design D5                                                                                                                                                                     |
+| 9.5 | Every complete, unreported window, automatically and idempotently; CLI (D6)                                                                   | COMPLETE | `c6a1124` | `apps/api/src/research/periodic-store.ts`: `runPeriodicResearch` — every complete, unreported window; stale ones recomputed as new versions on request; idempotent. `apps/api/src/research/periodic-store.integration.test.ts` (strict 4/4): incomplete windows left, a re-run adding nothing, gaps named, one revised bar recomputing exactly its two weeks, nothing but `research_reports` changed. `apps/api/scripts/periodic-research.mts` requires a declared calendar. Design D6                                                                                                                 |
+| 9.6 | Acceptance: the real year's weeks, months and quarters under the exchange's published calendar; a daily revision reaching exactly its windows | COMPLETE | `0205981` | The stored year's 71 windows (53 weeks, 13 months, 5 quarters) researched through `apps/api/scripts/periodic-research.mts` on a scratch copy under `apps/api/scripts/calendars/nse-2025-26.json`: coverage clean inside the data, gaps only at its edges; without a calendar the same weeks would show 19 gap days; a second run adding nothing; one revised bar recomputing exactly 2026-W10, W11, 2026-03 and 2026-Q1 as version 2; the settings calendar refused (F1). Strict `pnpm test:integration` at `0205981`: 1,392 tests, 0 skipped. Record in `docs/design/PHASE_9_PERIODIC_RESEARCH.md` §7 |
 
-**Nothing of this phase exists on any branch.** It aggregates Phase 8's daily
-reports. **No trading calendar is configured anywhere** (design finding F1):
+**Phase sign-off:** `pnpm test:integration` on `0205981` — strict, against
+real MongoDB and Redis — 1,392 tests, 0 skipped; and the stored year's 71 weeks, months and
+quarters researched through the CLI on a scratch copy under the exchange's
+published calendar — coverage clean inside the data, a second run adding
+nothing, one revised bar recomputing exactly its two weeks, month and quarter
+(design §7). **No trading calendar is configured in settings** (finding F1):
 windows are built from a declared calendar, never inferred from missing bars.
 
 ### Done when
@@ -848,10 +852,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 8 are complete. The immediate priority is **Phase 9 — Weekly /
-monthly / quarterly research**.
+Phases 0 to 9 are complete. The immediate priority is **Phase 10 — Research
+knowledge base**.
 
-Do not begin Phase 10 until Phase 9's acceptance criteria pass. Do not begin
+Do not begin Phase 11 until Phase 10's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 

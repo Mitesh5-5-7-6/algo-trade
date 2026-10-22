@@ -148,6 +148,69 @@ that read it, as new versions beside the old.
 
 ---
 
+## 7. Acceptance (task 9.6)
+
+The real year's bars copied to a scratch database (the research database
+stays read-only), researched day by day (Phase 8: 494 reports, 59 s), then
+by window through `scripts/periodic-research.mts` at `0205981`.
+
+**The calendar.** `apps/api/scripts/calendars/nse-2025-26.json`: the NSE
+equity holidays for 2025 (from 29 September) and 2026 as the brokers
+publish them — NSE's own circular was not reachable, and the file says so
+— with the Budget Sunday (2026-02-01) and the 2026 Muhurat Sunday as
+special sessions. 2025-10-21, Diwali Laxmi Pujan, is _not_ a holiday in
+it: the stored data holds 13 bars that day, 13:45–14:45 IST, the Muhurat
+session. Asked for the settings calendar instead, the CLI refused: no
+`marketHolidays` (F1).
+
+| Run                                                                              |                                        Reported |                                  Recomputed | Current |
+| -------------------------------------------------------------------------------- | ----------------------------------------------: | ------------------------------------------: | ------: |
+| 1 — the year                                                                     | **71** (53 weeks, 13 months, 5 quarters), 6.9 s |                                           0 |       0 |
+| 2 — again                                                                        |                                               0 |                                           0 |      71 |
+| — one NIFTY bar on 2026-03-02 revised; the daily run recomputes its 10 reports — |                                                 |                                             |         |
+| 3 — with `--recompute-stale`                                                     |                                               0 | **4**: 2026-W10, 2026-W11, 2026-03, 2026-Q1 |      67 |
+| 4 — again                                                                        |                                               0 |                                           0 |      71 |
+
+- **Coverage: the published calendar and the stored data agree on every
+  day.** Every window inside the data is clean. The only gaps are the
+  dataset's own edges — September 2025 before the 29th, and 29 September –
+  1 October 2026 after its end — named in the windows that hold them.
+- **And without a calendar:** built, not kept, the same 53 weeks would show
+  19 gap days — the 15 holidays and the four days past the data's end — and
+  the Budget Sunday as _unexpected_. That is the failure §5.5 describes,
+  made visible rather than silent.
+- **Exactly the windows a revision reaches:** the revised day's five daily
+  reports fall in weeks 10 and 11, March and Q1, and nothing else was
+  recomputed.
+- `pnpm test:integration`, strict: 1,392 tests, 0 skipped.
+
+What the windows say, before any statistics. **Week 2026-W10** (four
+sessions; Holi closed): all three patterns recurred on all four days;
+ORB lost on its ORB_BREAKOUT Trades on four days of four (10 Trades,
+−4,288) and RSI on RSI_REVERSION on three (11, −2,210) — _failed
+repeatedly_. **March 2026**: the costliest condition was RSI after an
+RSI_REVERSION in a BEARISH regime (51 Trades, −152.5 a Trade); no
+strategy's expectancy changed sign between regimes. **Quarters**:
+EMA_CROSSOVER and ORB on their own patterns SURVIVE in 2025-Q4, 2026-Q1
+and 2026-Q3 — they lose in every regime and every month; RSI is
+INSUFFICIENT in every quarter, because it trades almost only in a BEARISH
+regime and one regime cannot show survival across regimes.
+
+The first acceptance run's weekly answer listed a pattern once per
+strategy, including strategies that never touched it; recurrence was
+restructured per pattern (`0de8fd6`) and the acceptance redone.
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                                                                                                                     | Owner       |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| P1  | F1: no `marketHolidays` in any settings document — the live Session Manager still believes every weekday is a trading day. The calendar file is the research's input; configuring settings from it is an operational step, not done here. | operations  |
+| P2  | The calendar's source is broker-published lists that agree with each other and with the stored data; NSE's circular was not reached.                                                                                                      | operations  |
+| P3  | Settings carry no special sessions (Phase 4 R2); only a declared calendar file can.                                                                                                                                                       | later       |
+| P4  | Windows are calendar quarters, not the Indian financial year's.                                                                                                                                                                           | by design   |
+| P5  | Thresholds (60%, two days, ten Trades, five a month) are declared, not derived; every report carries them so a reader can disagree.                                                                                                       | by design   |
+| P6  | Nothing schedules the CLI (Phase 8 L1), and the windows pool instruments — a per-instrument view is the daily reports'.                                                                                                                   | R&D runtime |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §14
