@@ -634,6 +634,32 @@ Aggregate daily evidence. Weekly: find recurring behaviour. Monthly: find
 persistent weaknesses and opportunities. Quarterly: check whether findings
 survive different market regimes. All windows use the trading calendar.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_9_PERIODIC_RESEARCH.md](design/PHASE_9_PERIODIC_RESEARCH.md), which is
+the detailed design for this phase and keeps each task's dependencies.
+
+| ID  | Task                                                                                                                                          | STATUS | Commit | Evidence |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 9.1 | Trading-calendar windows from a declared calendar; coverage — gaps and unexpected days (D1, D2)                                               | READY  | —      | —        |
+| 9.2 | One aggregation over daily reports: pattern × strategy × regime, strategy, condition; day-level consistency (D3)                              | READY  | —      | —        |
+| 9.3 | The questions: weekly recurrence, monthly weaknesses and opportunities, quarterly survival (D4)                                               | READY  | —      | —        |
+| 9.4 | The window report: daily reports it read, versioned, kept in `research_reports`; staleness (D5)                                               | READY  | —      | —        |
+| 9.5 | Every complete, unreported window, automatically and idempotently; CLI (D6)                                                                   | READY  | —      | —        |
+| 9.6 | Acceptance: the real year's weeks, months and quarters under the exchange's published calendar; a daily revision reaching exactly its windows | READY  | —      | —        |
+
+**Nothing of this phase exists on any branch.** It aggregates Phase 8's daily
+reports. **No trading calendar is configured anywhere** (design finding F1):
+windows are built from a declared calendar, never inferred from missing bars.
+
+### Done when
+
+Every complete week, month and quarter of the stored year has a report built
+from the exchange's trading calendar — coverage stated, gaps named, each answer
+carrying its `n` — produced by one command that adds nothing when run again;
+and a revised daily report recomputes exactly the windows that read it.
+
 ---
 
 ## 15. Phase 10 — Research knowledge base
