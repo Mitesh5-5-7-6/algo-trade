@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  CandlesRepository,
   COLLECTIONS,
   ensureIndexes,
   type MongoConnection,
@@ -13,6 +12,7 @@ import {
   probeMongo,
   type MongoProbe,
 } from "../test-support/infra.js";
+import { seedCandles } from "../test-support/candles.js";
 import { goldenBudget, historicalBars } from "../replay/test-support.js";
 import { DEFAULT_REGIME_MODEL } from "../counterfactual/regime.js";
 import { counterfactualFromStore } from "../counterfactual/store.js";
@@ -88,9 +88,10 @@ beforeAll(async () => {
   connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
-  const candles = new CandlesRepository(connection.db);
-  for (const bar of await historicalBars([0, 1, 2, 3], (d) => 1 + d * 0.05))
-    await candles.upsert(bar);
+  await seedCandles(
+    connection.db,
+    await historicalBars([0, 1, 2, 3], (d) => 1 + d * 0.05),
+  );
   // Pins read off the in-sample run, as registration would.
   const { run } = await counterfactualFromStore(connection.db, {
     symbols: [SYM],

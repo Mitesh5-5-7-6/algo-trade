@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  CandlesRepository,
   COLLECTIONS,
   ensureIndexes,
   type MongoConnection,
@@ -13,6 +12,7 @@ import {
   probeMongo,
   type MongoProbe,
 } from "../test-support/infra.js";
+import { seedCandles } from "../test-support/candles.js";
 import { replayFromStore, type StoredReplayRequest } from "./store.js";
 import { runHistoricalReplay } from "./run.js";
 import { emaStrategy, goldenBudget, historicalBars } from "./test-support.js";
@@ -84,8 +84,7 @@ beforeAll(async () => {
   connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
-  const candles = new CandlesRepository(connection.db);
-  for (const bar of await historicalBars([0, 1])) await candles.upsert(bar);
+  await seedCandles(connection.db, await historicalBars([0, 1]));
 }, 120_000);
 
 beforeEach(async (ctx) => {

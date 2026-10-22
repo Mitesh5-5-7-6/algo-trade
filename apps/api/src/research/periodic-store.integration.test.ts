@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  CandlesRepository,
   COLLECTIONS,
   ensureIndexes,
   ResearchReportsRepository,
@@ -11,6 +10,7 @@ import {
   probeMongo,
   type MongoProbe,
 } from "../test-support/infra.js";
+import { seedCandles } from "../test-support/candles.js";
 import { goldenBudget, historicalBars } from "../replay/test-support.js";
 import { DEFAULT_REGIME_MODEL } from "../counterfactual/regime.js";
 import { runDailyResearch, type DailyResearchRequest } from "./store.js";
@@ -79,12 +79,10 @@ beforeEach(async (ctx) => {
   }
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
-  const candles = new CandlesRepository(connection.db);
-  for (const bar of await historicalBars(
-    WEEKDAYS,
-    (d) => 1 + (d % 5) * 0.04 + d * 0.01,
-  ))
-    await candles.upsert(bar);
+  await seedCandles(
+    connection.db,
+    await historicalBars(WEEKDAYS, (d) => 1 + (d % 5) * 0.04 + d * 0.01),
+  );
   await runDailyResearch(connection.db, daily());
 }, 300_000);
 
