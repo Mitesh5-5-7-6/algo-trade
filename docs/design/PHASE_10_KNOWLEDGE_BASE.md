@@ -156,6 +156,68 @@ exactly the documents built from it.
 
 ---
 
+## 7. Acceptance (task 10.7)
+
+The research database holds the year's bars and nothing else — no research
+has been written to it; every earlier acceptance wrote to a scratch copy. So
+the year's bars were copied to a scratch database (the research database
+stays read-only) and researched there exactly as the research database would
+be: daily research (494 reports, 66 s), periodic research (71 windows under
+the published calendar), one counterfactual run over the year, a family of
+two hypotheses registered and tested, the detector catalog. Then indexed and
+asked through `scripts/knowledge.mts` at `252ec49`.
+
+| Run                                                                               |            Added | Replaced | Unchanged | Removed |
+| --------------------------------------------------------------------------------- | ---------------: | -------: | --------: | ------: |
+| dry run — nothing written                                                         |            4,949 |        0 |         0 |       0 |
+| 1 — the year                                                                      | **4,949**, 5.4 s |        0 |         0 |       0 |
+| 2 — again                                                                         |                0 |        0 |     4,949 |       0 |
+| — one NIFTY bar on 2026-03-02 revised; 10 daily and 4 window reports recomputed — |                  |          |           |         |
+| 3 — after the revision                                                            |                0 |   **96** |     4,853 |       0 |
+| 4 — again                                                                         |                0 |        0 |     4,949 |       0 |
+
+By kind: 494 days, 1,940 Trades, 2,434 charts (a day's and each Trade's),
+71 windows, 1 counterfactual run, 2 hypotheses, 2 findings, 5 detector
+definitions.
+
+- **A revision re-indexes exactly its documents:** the 96 replaced are every
+  document built from the 14 recomputed reports, and nothing else — none
+  changed that a recomputed report did not build, none such left unchanged.
+- **The spec's questions, answered with their context.** _Pattern
+  retrieval_ — ORB_BREAKOUT in a BEARISH regime: 811 occurrences over 494
+  daily reports, 2025-09-29 .. 2026-09-28, each with what every strategy did
+  and how its Trade ended. _Strategy history_ — ORB's Trades after an
+  ORB_BREAKOUT: n = 638, 181 wins, net −94,404, −148 a Trade, under the
+  slippage and charges models named in the answer. _One pattern against
+  every strategy_ — EMA_CROSS: n = 1,470; EMA_CROSSOVER entered on 710,
+  ORB on 30, RSI on none; the five derivative and option-chain strategies
+  named as excluded, with why. _Experiment history_ — RSI: the year's
+  counterfactual run, H-0001 and its finding, SUPPORTED at n = 277 out of
+  sample, under gate policy 2. _Similar sessions_ — 2026-03-02 on NIFTY,
+  as of that day: a pool of 211 sessions, 2025-09-29 .. 2026-03-02, the
+  nearest five.
+- **Never past asOf:** week 2026-W10's report is not known on 2026-03-04
+  and is on 2026-03-08; similar sessions standardises over the 211 sessions
+  up to the day, not the year.
+- `pnpm test:integration`, strict: 1,443 tests across 13 packages, 0 skipped, 0 failed.
+
+**Found by the acceptance, and fixed:**
+
+| #   | Finding                                                                                                                                                                                                     | Fix                                                                                                                                                                                                                                             |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | "gap down" found nothing: a day's text gave its gap only as a signed number — and MongoDB's English text index drops "up" and "down" as stop words, so the words alone would not tell the direction either. | A gap is rendered in words, "with a gap down of 1.60% from the prior close" (`KNOWLEDGE_INDEX_VERSION` 2, so every document was re-rendered once); a phrase query, `"gap down"`, keeps the stop words — documented on the query and in the CLI. |
+| F2  | The read models' provenance named model versions but not the data version Phase 11 requires on every answer.                                                                                                | `data`: the bar sources and ingestion versions behind the answer — after the revision, the Trades of 2026-03-02 name ingestion version 999, the revised bar's.                                                                                  |
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                                                                            | Owner       |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| K1  | The research database holds no research yet: the knowledge base indexes it once the research CLIs are run against it — daily, periodic, counterfactual, hypotheses — then `knowledge.mts index`. | operations  |
+| K2  | Similar sessions compares across instruments by default, and NIFTY and BANKNIFTY move together: a day's nearest is often the other index the same day. `--same-symbol` restricts it.             | by design   |
+| K3  | Text search is MongoDB's English text index — stemmed, stop words dropped, no synonyms. Embeddings are deferred (Q1).                                                                            | Phase 11    |
+| K4  | experimentHistory answers from at most 200 documents (`MAX_RESULTS`) — far above the 5 experiment documents a year produces today.                                                               | later       |
+| K5  | Nothing schedules the index (as Phase 8 L1): it is run after the research.                                                                                                                       | R&D runtime |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §15

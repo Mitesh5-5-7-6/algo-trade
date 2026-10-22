@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | COMPLETE    |
-| 6     | Counterfactual strategy evaluation | COMPLETE    |
-| 7     | Statistical validation             | COMPLETE    |
-| 8     | Daily research                     | COMPLETE    |
-| 9     | Periodic research                  | COMPLETE    |
-| 10    | Research knowledge base            | IN PROGRESS |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | COMPLETE |
+| 7     | Statistical validation             | COMPLETE |
+| 8     | Daily research                     | COMPLETE |
+| 9     | Periodic research                  | COMPLETE |
+| 10    | Research knowledge base            | COMPLETE |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -668,7 +668,7 @@ and a revised daily report recomputes exactly the windows that read it.
 
 ## 15. Phase 10 — Research knowledge base
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -684,19 +684,24 @@ Structured around the decisions in
 [PHASE_10_KNOWLEDGE_BASE.md](design/PHASE_10_KNOWLEDGE_BASE.md), which is the
 detailed design for this phase and keeps each task's dependencies.
 
-| ID   | Task                                                                                                                                            | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 10.1 | The knowledge document: kinds, facets, source reference, context-carrying text (D1, D2)                                                         | COMPLETE | `e18a07f` | `apps/api/src/knowledge/document.ts`: `KnowledgeDocumentSchema` (kind, subject, facets, source reference, text), `makeDocument`, `contextProblem` — a result without its n and date is refused. `apps/api/src/knowledge/document.test.ts`; two mutants killed. Design D1, D2                                                                                                                                                                                                   |
-| 10.2 | Rendering every source kind into documents — days, Trades, charts, windows, experiments, hypotheses and findings, detector definitions (D1, D2) | COMPLETE | `396a7be` | `apps/api/src/knowledge/render.ts`: daily reports into DAY, TRADE and CHART documents; windows, counterfactual runs, hypotheses and family-corrected findings, detector definitions — each sourced, deterministic, carrying its context. `apps/api/src/knowledge/render.test.ts` renders real reports, runs and definitions; two mutants killed. Design D1, D2                                                                                                                 |
-| 10.3 | The indexer: idempotent, superseded sources re-indexed, `documents` with structured and text indexes (D3, D7)                                   | COMPLETE | `89304ac` | `apps/api/src/knowledge/indexer.ts`: `indexResearch` — every current source rendered, added, replaced or unchanged by fingerprint, retired documents removed; one read and one bulk write. `packages/db/src/documents-repository.ts`: `documents` with facet and text indexes. `apps/api/src/knowledge/indexer.integration.test.ts` (strict 4/4): idempotent, a revision re-indexing exactly its days and weeks, nothing but `documents` written; mutant killed. Design D3, D7 |
-| 10.4 | Search: structured and text, `asOf` (D4, D5)                                                                                                    | COMPLETE | `3fa07b6` | `apps/api/src/knowledge/search.ts`: `searchKnowledge` — facets, subject-date overlap, text ranked by relevance with stable ties, `asOf` on every query; `filterOf`. `apps/api/src/knowledge/search.integration.test.ts` (strict 6/6); the asOf mutant killed. Design D4, D5                                                                                                                                                                                                    |
-| 10.5 | Similar sessions: standardised day features, nearest neighbours, no lookahead (D4, D5)                                                          | COMPLETE | `8d13a4d` | `apps/api/src/knowledge/similar.ts`: `similarSessions` — return, gap, relative range, realised volatility, regime, pattern counts, standardised over the pool of sessions on or before `asOf` only, Euclidean, nearest K, stable ties; `findSimilarSessions` over the newest DAY reports. `apps/api/src/knowledge/similar.test.ts` (11/11), `similar.integration.test.ts` (strict 3/3); 9 mutants killed. Design D4, D5 |
-| 10.6 | Read models: findPatterns, tradeHistory, experimentHistory, strategyMatrix — `n`, dates and versions on every answer (D6)                       | COMPLETE | `5238e9b` | `apps/api/src/knowledge/read.ts`: `findPatterns`, `tradeHistory`, `strategyMatrix`, `experimentHistory` — every answer a `Provenance` (n, sessions read, asOf, versions, cost models); `readDailyReports` never past asOf. `apps/api/src/knowledge/read.test.ts` (10/10), `read.integration.test.ts` (strict 3/3); 12 mutants killed. Design D6 |
-| 10.7 | Acceptance: the real year indexed; the spec's questions answered; a re-index adds nothing; a revision re-indexes exactly its documents          | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ID   | Task                                                                                                                                            | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 10.1 | The knowledge document: kinds, facets, source reference, context-carrying text (D1, D2)                                                         | COMPLETE | `e18a07f` | `apps/api/src/knowledge/document.ts`: `KnowledgeDocumentSchema` (kind, subject, facets, source reference, text), `makeDocument`, `contextProblem` — a result without its n and date is refused. `apps/api/src/knowledge/document.test.ts`; two mutants killed. Design D1, D2                                                                                                                                                                                                                                                                                      |
+| 10.2 | Rendering every source kind into documents — days, Trades, charts, windows, experiments, hypotheses and findings, detector definitions (D1, D2) | COMPLETE | `396a7be` | `apps/api/src/knowledge/render.ts`: daily reports into DAY, TRADE and CHART documents; windows, counterfactual runs, hypotheses and family-corrected findings, detector definitions — each sourced, deterministic, carrying its context. `apps/api/src/knowledge/render.test.ts` renders real reports, runs and definitions; two mutants killed. Design D1, D2                                                                                                                                                                                                    |
+| 10.3 | The indexer: idempotent, superseded sources re-indexed, `documents` with structured and text indexes (D3, D7)                                   | COMPLETE | `89304ac` | `apps/api/src/knowledge/indexer.ts`: `indexResearch` — every current source rendered, added, replaced or unchanged by fingerprint, retired documents removed; one read and one bulk write. `packages/db/src/documents-repository.ts`: `documents` with facet and text indexes. `apps/api/src/knowledge/indexer.integration.test.ts` (strict 4/4): idempotent, a revision re-indexing exactly its days and weeks, nothing but `documents` written; mutant killed. Design D3, D7                                                                                    |
+| 10.4 | Search: structured and text, `asOf` (D4, D5)                                                                                                    | COMPLETE | `3fa07b6` | `apps/api/src/knowledge/search.ts`: `searchKnowledge` — facets, subject-date overlap, text ranked by relevance with stable ties, `asOf` on every query; `filterOf`. `apps/api/src/knowledge/search.integration.test.ts` (strict 6/6); the asOf mutant killed. Design D4, D5                                                                                                                                                                                                                                                                                       |
+| 10.5 | Similar sessions: standardised day features, nearest neighbours, no lookahead (D4, D5)                                                          | COMPLETE | `8d13a4d` | `apps/api/src/knowledge/similar.ts`: `similarSessions` — return, gap, relative range, realised volatility, regime, pattern counts, standardised over the pool of sessions on or before `asOf` only, Euclidean, nearest K, stable ties; `findSimilarSessions` over the newest DAY reports. `apps/api/src/knowledge/similar.test.ts` (11/11), `similar.integration.test.ts` (strict 3/3); 9 mutants killed. Design D4, D5                                                                                                                                           |
+| 10.6 | Read models: findPatterns, tradeHistory, experimentHistory, strategyMatrix — `n`, dates and versions on every answer (D6)                       | COMPLETE | `5238e9b` | `apps/api/src/knowledge/read.ts`: `findPatterns`, `tradeHistory`, `strategyMatrix`, `experimentHistory` — every answer a `Provenance` (n, sessions read, asOf, versions, cost models); `readDailyReports` never past asOf. `apps/api/src/knowledge/read.test.ts` (10/10), `read.integration.test.ts` (strict 3/3); 12 mutants killed. Design D6                                                                                                                                                                                                                   |
+| 10.7 | Acceptance: the real year indexed; the spec's questions answered; a re-index adds nothing; a revision re-indexes exactly its documents          | COMPLETE | `252ec49` | `apps/api/scripts/knowledge.mts`: index (idempotent, `--dry-run`), search, similar and the read models, every one honouring `--as-of`. The real year, rebuilt on a scratch copy, indexed into 4,949 documents; a second run adds nothing; one revised bar re-indexes exactly the 96 documents of its 14 recomputed reports; the spec's questions answered with n, dates, versions, data version and costs; findings F1 (gap wording, stop words) and F2 (data version) fixed. `docs/design/PHASE_10_KNOWLEDGE_BASE.md` §7; strict sign-off 1,443 tests, 0 skipped |
 
-**Nothing of this phase exists on any branch.** It indexes what Phases 4–9
-produce. **Semantic search by embeddings is deferred** by the operator's
-decision at opening (design Q1): everything here is deterministic.
+**Phase sign-off:** `pnpm test:integration` on `252ec49` — strict, against
+real MongoDB and Redis — 1,443 tests across 13 packages, 0 skipped, 0 failed; and the stored year's research, rebuilt on a
+scratch copy, indexed through the CLI into 4,949 documents — a second run adding
+nothing, one revised bar re-indexing exactly the 96 documents its 14 recomputed
+reports build, the spec's questions answered with n, dates, versions and costs
+(design §7). **The research database holds no research yet** (K1). **Semantic
+search by embeddings is deferred** by the operator's decision at opening
+(design Q1): everything here is deterministic.
 
 ### Done when
 
@@ -880,10 +885,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 9 are complete. The immediate priority is **Phase 10 — Research
-knowledge base**.
+Phases 0 to 10 are complete. The immediate priority is **Phase 11 — AI
+research agent**.
 
-Do not begin Phase 11 until Phase 10's acceptance criteria pass. Do not begin
+Do not begin Phase 12 until Phase 11's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 
