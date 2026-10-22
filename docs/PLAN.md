@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | COMPLETE |
-| 7     | Statistical validation             | READY    |
-| 8     | Daily research                     | READY    |
-| 9     | Periodic research                  | READY    |
-| 10    | Research knowledge base            | READY    |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | COMPLETE    |
+| 7     | Statistical validation             | IN PROGRESS |
+| 8     | Daily research                     | READY       |
+| 9     | Periodic research                  | READY       |
+| 10    | Research knowledge base            | READY       |
+| 11    | AI research agent                  | READY       |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -530,7 +530,7 @@ Research can answer: "When this pattern occurred, how did each strategy behave?"
 
 ## 12. Phase 7 — Statistical validation
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -551,15 +551,15 @@ Structured around the decisions in
 [PHASE_7_STATISTICAL_VALIDATION.md](design/PHASE_7_STATISTICAL_VALIDATION.md),
 which is the detailed design for this phase and keeps each task's dependencies.
 
-| ID  | Task                                                                                          | STATUS | Commit | Evidence |
-| --- | --------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 7.1 | Statistics primitives, pinned to reference values (D1)                                        | READY  | —      | —        |
-| 7.2 | A matrix cell carries its dispersion; counterfactual version 2 (D2)                           | READY  | —      | —        |
-| 7.3 | The hypothesis: schema, rules, fingerprint, registry (D3)                                     | READY  | —      | —        |
-| 7.4 | The gate: one out-of-sample test — minimum sample, interval, p-value, version check (D4, D5)  | READY  | —      | —        |
-| 7.5 | Families: Holm correction; a finding that cannot be said without its context (D6, D7)         | READY  | —      | —        |
-| 7.6 | Kept in `strategy_experiments`, research database only; operator CLI (D8)                     | READY  | —      | —        |
-| 7.7 | Acceptance: a family registered on the first half of the real year, tested once on the second | READY  | —      | —        |
+| ID  | Task                                                                                          | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                   |
+| --- | --------------------------------------------------------------------------------------------- | -------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7.1 | Statistics primitives, pinned to reference values (D1)                                        | COMPLETE | `1952399` | `apps/api/src/validation/stats.ts`: normal CDF and quantile, Wilson interval, exact binomial tail, sample spread, mean interval and one-sided z-test, Holm correction. `apps/api/src/validation/stats.test.ts` pins each against SciPy, R, statsmodels or exact values (binomial to 1e-12); four mutants killed. Design D1 |
+| 7.2 | A matrix cell carries its dispersion; counterfactual version 2 (D2)                           | READY    | —         | —                                                                                                                                                                                                                                                                                                                          |
+| 7.3 | The hypothesis: schema, rules, fingerprint, registry (D3)                                     | READY    | —         | —                                                                                                                                                                                                                                                                                                                          |
+| 7.4 | The gate: one out-of-sample test — minimum sample, interval, p-value, version check (D4, D5)  | READY    | —         | —                                                                                                                                                                                                                                                                                                                          |
+| 7.5 | Families: Holm correction; a finding that cannot be said without its context (D6, D7)         | READY    | —         | —                                                                                                                                                                                                                                                                                                                          |
+| 7.6 | Kept in `strategy_experiments`, research database only; operator CLI (D8)                     | READY    | —         | —                                                                                                                                                                                                                                                                                                                          |
+| 7.7 | Acceptance: a family registered on the first half of the real year, tested once on the second | READY    | —         | —                                                                                                                                                                                                                                                                                                                          |
 
 **Nothing of this phase exists on any branch.** It is built on Phase 6's
 counterfactual run, which supplies every cell's `n` and, from 7.2, its spread.
