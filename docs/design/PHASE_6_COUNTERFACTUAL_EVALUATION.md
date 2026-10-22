@@ -160,7 +160,8 @@ a new collection for the same concept. Research database only; it reads
 | 6.4 | Attribution and the matrix — relations, metrics, baseline, sample sizes (D5, D6)                                            | 6.1, 6.3   |
 | 6.5 | The counterfactual run: each strategy alone per symbol, manifest and fingerprint, deterministic (D2, D7)                    | 6.2, 6.4   |
 | 6.6 | Kept in `strategy_experiments`, research database only; operator CLI (D7)                                                   | 6.5        |
-| 6.7 | Acceptance: the real year twice — identical fingerprints, and the question answered                                         | 6.6        |
+| 6.7 | Fix F2 — a strategy with no indicators runs on its own (§5); added in 6.6, on the operator's decision                       | 6.6        |
+| 6.8 | Acceptance: the real year twice — identical fingerprints, and the question answered                                         | 6.6, 6.7   |
 
 ---
 
