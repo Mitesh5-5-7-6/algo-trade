@@ -216,35 +216,60 @@ function refuseUnreplayable(
   candles: readonly Candle[],
   interval: CandleInterval,
 ): void {
-  const registry = createStrategyRegistry();
   const held = new Set(candles.map((c) => c.symbol));
   for (const symbol of strategy.symbols) {
-    const instance = registry.instantiate(
+    const exclusion = replayExclusion(
       strategy.type,
       strategy.params,
       symbol,
+      interval,
+      held,
     );
-    if (instance.requiresOptionChain()) {
-      throw new Error(
-        `${strategy.type} cannot be replayed: it needs an option chain, and no chain history exists`,
-      );
-    }
-    if (instance.derivative() !== null) {
-      throw new Error(
-        `${strategy.type} cannot be replayed: it trades a derivative contract, and the dataset holds no contract prices`,
-      );
-    }
-    if (instance.interval !== interval) {
-      throw new Error(
-        `${strategy.type} decides on ${instance.interval} bars, but the dataset is ${interval}`,
-      );
-    }
-    if (!held.has(symbol)) {
-      throw new Error(
-        `the dataset holds no bars for ${symbol}, which the strategy trades`,
-      );
-    }
+    if (exclusion !== null) throw new Error(exclusion.reason);
   }
+}
+
+/** Why a strategy cannot be replayed on a symbol (design D8). */
+export interface ReplayExclusion {
+  kind: "OPTION_CHAIN" | "DERIVATIVE" | "INTERVAL" | "NO_BARS";
+  reason: string;
+}
+
+/**
+ * The one rule for what a dataset can replay — the refusal above throws on
+ * it, and Phase 6's eligibility reports it (Phase 6 D1), so a strategy the
+ * counterfactual lists as excluded is exactly one a replay would refuse.
+ * Null means replayable.
+ */
+export function replayExclusion(
+  type: string,
+  params: unknown,
+  symbol: string,
+  interval: CandleInterval,
+  heldSymbols: ReadonlySet<string>,
+): ReplayExclusion | null {
+  const instance = createStrategyRegistry().instantiate(type, params, symbol);
+  if (instance.requiresOptionChain())
+    return {
+      kind: "OPTION_CHAIN",
+      reason: `${type} cannot be replayed: it needs an option chain, and no chain history exists`,
+    };
+  if (instance.derivative() !== null)
+    return {
+      kind: "DERIVATIVE",
+      reason: `${type} cannot be replayed: it trades a derivative contract, and the dataset holds no contract prices`,
+    };
+  if (instance.interval !== interval)
+    return {
+      kind: "INTERVAL",
+      reason: `${type} decides on ${instance.interval} bars, but the dataset is ${interval}`,
+    };
+  if (!heldSymbols.has(symbol))
+    return {
+      kind: "NO_BARS",
+      reason: `the dataset holds no bars for ${symbol}, which the strategy trades`,
+    };
+  return null;
 }
 
 function singleInterval(candles: readonly Candle[]): CandleInterval {
