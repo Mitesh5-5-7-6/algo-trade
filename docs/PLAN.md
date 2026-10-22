@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | COMPLETE    |
-| 6     | Counterfactual strategy evaluation | COMPLETE    |
-| 7     | Statistical validation             | IN PROGRESS |
-| 8     | Daily research                     | READY       |
-| 9     | Periodic research                  | READY       |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | COMPLETE |
+| 7     | Statistical validation             | COMPLETE |
+| 8     | Daily research                     | READY    |
+| 9     | Periodic research                  | READY    |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -530,7 +530,7 @@ Research can answer: "When this pattern occurred, how did each strategy behave?"
 
 ## 12. Phase 7 — Statistical validation
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -551,18 +551,22 @@ Structured around the decisions in
 [PHASE_7_STATISTICAL_VALIDATION.md](design/PHASE_7_STATISTICAL_VALIDATION.md),
 which is the detailed design for this phase and keeps each task's dependencies.
 
-| ID  | Task                                                                                          | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| --- | --------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 7.1 | Statistics primitives, pinned to reference values (D1)                                        | COMPLETE | `1952399` | `apps/api/src/validation/stats.ts`: normal CDF and quantile, Wilson interval, exact binomial tail, sample spread, mean interval and one-sided z-test, Holm correction. `apps/api/src/validation/stats.test.ts` pins each against SciPy, R, statsmodels or exact values (binomial to 1e-12); four mutants killed. Design D1                                                                                                                                                                                                                        |
-| 7.2 | A matrix cell carries its dispersion; counterfactual version 2 (D2)                           | COMPLETE | `fdfda8c` | `TradeStats` in `apps/api/src/counterfactual/matrix.ts` carries `netStdDev` and `perUnitStdDev` (sample, null below two Trades), tested in `apps/api/src/counterfactual/matrix.test.ts`; `COUNTERFACTUAL_VERSION` 2 in `apps/api/src/counterfactual/run.ts`. Design D2                                                                                                                                                                                                                                                                            |
-| 7.3 | The hypothesis: schema, rules, fingerprint, registry (D3)                                     | COMPLETE | `ece6892` | `apps/api/src/validation/hypothesis.ts`: `HypothesisSchema` (cell, metric, direction, threshold, alpha, minimum sample with a floor of 30, in- and out-of-sample windows, run, pinned versions), `hypothesisFingerprint`, `nextHypothesisId`, `pinsFor`. `apps/api/src/validation/hypothesis.test.ts`: every refusal, fingerprint independence from registration time and key order, pins read off a real run; three mutants killed. Design D3                                                                                                    |
-| 7.4 | The gate: one out-of-sample test — minimum sample, interval, p-value, version check (D4, D5)  | COMPLETE | `4f1e278` | `apps/api/src/validation/gate.ts`: `testHypothesis` refuses a test before registration, a run outside its window, or a run under unpinned versions; returns INSUFFICIENT_SAMPLE below the minimum; judges a win rate by the exact binomial tail and Wilson interval, an expectancy by a one-sided z-test on the cell's spread; verdict out of sample only. `apps/api/src/validation/gate.test.ts`, checked against hand arithmetic; six mutants killed. Design D4, D5                                                                             |
-| 7.5 | Families: Holm correction; a finding that cannot be said without its context (D6, D7)         | COMPLETE | `6503d16` | `apps/api/src/validation/family.ts`: `familyFindings` (Holm across every registered member, untested and too-small at p = 1; one alpha; edited or twice-tested claims refused) and `FindingSchema` / `describeFinding` (a finding without its n, period, regime, costs, slippage, versions or out-of-sample status cannot be said). `apps/api/src/validation/family.test.ts` against R's p.adjust; four mutants killed. Design D6, D7                                                                                                             |
-| 7.6 | Kept in `strategy_experiments`, research database only; operator CLI (D8)                     | COMPLETE | `e1d920d` | `apps/api/src/validation/store.ts`: `registerHypothesis` (once, and never the same claim twice), `testRegistered` (in- and out-of-sample runs under the pinned settings, insert-once — a second test refused), `familyReport`; kept in `strategy_experiments` as HYPOTHESIS and HYPOTHESIS_TEST. `apps/api/src/validation/store.integration.test.ts` strict 4/4, trading untouched; the hypothesis fingerprint is the claim's substance. `apps/api/scripts/hypotheses.mts` register / test / report, research or scratch database only. Design D8 |
-| 7.7 | Acceptance: a family registered on the first half of the real year, tested once on the second | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ID  | Task                                                                                          | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --- | --------------------------------------------------------------------------------------------- | -------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7.1 | Statistics primitives, pinned to reference values (D1)                                        | COMPLETE | `1952399` | `apps/api/src/validation/stats.ts`: normal CDF and quantile, Wilson interval, exact binomial tail, sample spread, mean interval and one-sided z-test, Holm correction. `apps/api/src/validation/stats.test.ts` pins each against SciPy, R, statsmodels or exact values (binomial to 1e-12); four mutants killed. Design D1                                                                                                                                                                                                                                                   |
+| 7.2 | A matrix cell carries its dispersion; counterfactual version 2 (D2)                           | COMPLETE | `fdfda8c` | `TradeStats` in `apps/api/src/counterfactual/matrix.ts` carries `netStdDev` and `perUnitStdDev` (sample, null below two Trades), tested in `apps/api/src/counterfactual/matrix.test.ts`; `COUNTERFACTUAL_VERSION` 2 in `apps/api/src/counterfactual/run.ts`. Design D2                                                                                                                                                                                                                                                                                                       |
+| 7.3 | The hypothesis: schema, rules, fingerprint, registry (D3)                                     | COMPLETE | `ece6892` | `apps/api/src/validation/hypothesis.ts`: `HypothesisSchema` (cell, metric, direction, threshold, alpha, minimum sample with a floor of 30, in- and out-of-sample windows, run, pinned versions), `hypothesisFingerprint`, `nextHypothesisId`, `pinsFor`. `apps/api/src/validation/hypothesis.test.ts`: every refusal, fingerprint independence from registration time and key order, pins read off a real run; three mutants killed. Design D3                                                                                                                               |
+| 7.4 | The gate: one out-of-sample test — minimum sample, interval, p-value, version check (D4, D5)  | COMPLETE | `4f1e278` | `apps/api/src/validation/gate.ts`: `testHypothesis` refuses a test before registration, a run outside its window, or a run under unpinned versions; returns INSUFFICIENT_SAMPLE below the minimum; judges a win rate by the exact binomial tail and Wilson interval, an expectancy by a one-sided z-test on the cell's spread; verdict out of sample only. `apps/api/src/validation/gate.test.ts`, checked against hand arithmetic; six mutants killed. Design D4, D5                                                                                                        |
+| 7.5 | Families: Holm correction; a finding that cannot be said without its context (D6, D7)         | COMPLETE | `6503d16` | `apps/api/src/validation/family.ts`: `familyFindings` (Holm across every registered member, untested and too-small at p = 1; one alpha; edited or twice-tested claims refused) and `FindingSchema` / `describeFinding` (a finding without its n, period, regime, costs, slippage, versions or out-of-sample status cannot be said). `apps/api/src/validation/family.test.ts` against R's p.adjust; four mutants killed. Design D6, D7                                                                                                                                        |
+| 7.6 | Kept in `strategy_experiments`, research database only; operator CLI (D8)                     | COMPLETE | `e1d920d` | `apps/api/src/validation/store.ts`: `registerHypothesis` (once, and never the same claim twice), `testRegistered` (in- and out-of-sample runs under the pinned settings, insert-once — a second test refused), `familyReport`; kept in `strategy_experiments` as HYPOTHESIS and HYPOTHESIS_TEST. `apps/api/src/validation/store.integration.test.ts` strict 4/4, trading untouched; the hypothesis fingerprint is the claim's substance. `apps/api/scripts/hypotheses.mts` register / test / report, research or scratch database only. Design D8                            |
+| 7.7 | Acceptance: a family registered on the first half of the real year, tested once on the second | COMPLETE | `c93a97b` | Family `F-2026H2` — eight claims formed on the first half of the stored year (2025-09-29 .. 2026-03-27), registered before any test through `apps/api/scripts/hypotheses.mts`, tested once each on the second (2026-03-30 .. 2026-09-28) on a scratch copy: four SUPPORTED, one NOT_SUPPORTED, three INSUFFICIENT_SAMPLE; Holm across all eight; a re-registered claim and a second test refused; every finding rendered with its context. Strict `pnpm test:integration` at `c93a97b`: 1,303 tests, 0 skipped. Record in `docs/design/PHASE_7_STATISTICAL_VALIDATION.md` §6 |
 
-**Nothing of this phase exists on any branch.** It is built on Phase 6's
-counterfactual run, which supplies every cell's `n` and, from 7.2, its spread.
+**Phase sign-off:** `pnpm test:integration` on `c93a97b` — strict, against
+real MongoDB and Redis — 1,303 tests, 0 skipped; and a family of eight claims formed on the
+first half of the stored year, registered before any test, tested once each
+on the second half through the CLI — four supported, one not, three refused
+for sample size, a re-registration and a second test refused (design §6).
+Built here, on Phase 6's counterfactual run.
 
 ### Done when
 
@@ -788,10 +792,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 6 are complete. The immediate priority is **Phase 7 —
-Statistical validation**.
+Phases 0 to 7 are complete. The immediate priority is **Phase 8 — Daily
+research**.
 
-Do not begin Phase 8 until Phase 7's acceptance criteria pass. Do not begin
+Do not begin Phase 9 until Phase 8's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 

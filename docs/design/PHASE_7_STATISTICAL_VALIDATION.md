@@ -148,6 +148,64 @@ hypothesis is refused.
 
 ---
 
+## 6. Acceptance (task 7.7)
+
+The real year's NIFTY and BANKNIFTY bars, copied to a scratch database (the
+research database stays read-only, as in Phases 5 and 6), split at the
+half: **in sample** 2025-09-29 .. 2026-03-27 (123 sessions), **out of
+sample** 2026-03-30 .. 2026-09-28. Driven end to end through
+`scripts/hypotheses.mts` at `c93a97b`, gate policy 2.
+
+1. Only the in-sample matrix was printed, and eight claims were formed from
+   it as family `F-2026H2`, α 0.05, minimum sample 30 — four strong, one
+   marginal, three on cells too thin to judge.
+2. All eight were **registered before any test**. The same claim, renamed
+   and refiled in another family, was refused: "already registered as
+   H-0001".
+3. The family was **tested once**, out of sample:
+
+| ID     | Claim                                               | n (OOS) | Estimate |       p | Holm-adjusted | Verdict             | In sample      |
+| ------ | --------------------------------------------------- | ------: | -------: | ------: | ------------: | ------------------- | -------------- |
+| H-0001 | EMA_CROSSOVER on EMA_CROSS: expectancy < 0          |     359 |  −128.44 | 2.0e-30 |       1.4e-29 | SUPPORTED           | n 352, −136.07 |
+| H-0002 | RSI on RSI_REVERSION: expectancy < 0                |     277 |  −158.78 | 5.1e-56 |       4.1e-55 | SUPPORTED           | n 284, −142.61 |
+| H-0003 | ORB on ORB_BREAKOUT: expectancy < 0                 |     319 |  −154.90 | 1.5e-26 |       8.9e-26 | SUPPORTED           | n 319, −141.04 |
+| H-0004 | ORB on ORB_BREAKOUT: win rate < 50%                 |     319 |    27.6% | 3.0e-16 |       1.5e-15 | SUPPORTED           | n 319, 29.1%   |
+| H-0005 | ORB on ORB_BREAKOUT, BEARISH: win rate > 30%        |     153 |    26.1% |   0.871 |          1.00 | NOT_SUPPORTED       | n 152, 32.2%   |
+| H-0006 | EMA_CROSSOVER on EMA_CROSS, BEARISH: win rate > 15% |      23 |     4.3% |       — |             — | INSUFFICIENT_SAMPLE | n 36, 16.7%    |
+| H-0007 | RSI, every Trade, BULLISH: expectancy per unit > 0  |      13 |  −149.55 |       — |             — | INSUFFICIENT_SAMPLE | n 8, +0.95     |
+| H-0008 | ORB on EMA_CROSS: win rate > 35%                    |      12 |    16.7% |       — |             — | INSUFFICIENT_SAMPLE | n 18, 38.9%    |
+
+4. A **second test** of H-0001 was refused: "has already been tested; a
+   hypothesis is tested once".
+5. Every finding was rendered with its n, period, regime, costs, slippage,
+   versions and out-of-sample status — by the only function that can render
+   one. `pnpm test:integration`, strict: 1,303 tests, 0 skipped.
+
+**What it shows.** The gate does what it is for. H-0007 is the case this
+phase exists for: in sample, RSI in a bullish regime _made money_ — +0.95
+per unit, on eight Trades. Out of sample it lost 149.55 per unit on
+thirteen. Neither number was judged; both were shown with their n. H-0005
+and H-0008 looked like edges in sample (32% and 39%) and fell to 26% and
+17%. The four supported claims are all that these three strategies, at
+their defaults, lose money net of costs — the same in both halves.
+
+**The first run found a defect and was discarded.** It printed p = 0 for
+H-0004: the lower tail cancelled to zero. Fixed in `c93a97b` (policy 2),
+and the acceptance redone from a fresh scratch copy; a recorded test cannot
+be re-run, by design, so the first registry was dropped, not amended.
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                                                                                                                                                                                                                                         | Owner     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| S1  | Pre-registration on historical data cannot prove a claim was formed blind. These eight were formed by an analyst who had already seen Phase 6's full-year numbers, which include the out-of-sample half. The registry fixes the claim and allows one test; it cannot certify what was seen. Data arriving after registration is the only clean out-of-sample. | process   |
+| S2  | The expectancy test is a normal approximation, valid at n ≥ 30 for finite variance; heavy-tailed trade P&L may want a bootstrap.                                                                                                                                                                                                                              | later     |
+| S3  | Trades are assumed independent; within a session, and across a trending week, they are not.                                                                                                                                                                                                                                                                   | later     |
+| S4  | Claims in a family overlap — H-0003 and H-0004 judge the same Trades. Holm stays valid under any dependence, but conservatively.                                                                                                                                                                                                                              | by design |
+| S5  | Only absolute claims (a metric against a threshold); comparative ones — a cell against its complement, one strategy against another — are not built.                                                                                                                                                                                                          | later     |
+| S6  | One in/out split; rolling walk-forward is Phase 13.                                                                                                                                                                                                                                                                                                           | Phase 13  |
+| S7  | Index P&L in points on a synthetic instrument (Phase 4 R4); three of eight strategies evaluable (Phase 6 C1).                                                                                                                                                                                                                                                 | carried   |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §12
