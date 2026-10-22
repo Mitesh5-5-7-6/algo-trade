@@ -230,6 +230,25 @@ describe("trade statistics (6.4, D6)", () => {
     expect(s.maxDrawdown).toBe(50);
   });
 
+  /**
+   * Phase 7 D2: an expectancy cannot be given an interval without the spread
+   * of the Trades behind it. Nets 30, −10, 0: mean 6.667, sample sd 20.817.
+   */
+  it("carries the spread of net per Trade and per unit", () => {
+    const s = tradeStats([
+      trade(bar(1), 10, 30),
+      trade(bar(2), 20, -10),
+      trade(bar(3), 30, 0),
+    ]);
+    expect(s.netStdDev).toBeCloseTo(20.8167, 4);
+    expect(s.perUnitStdDev).toBeCloseTo(2.0817, 4);
+    // One Trade has no spread to speak of: null, not zero.
+    expect(tradeStats([trade(bar(1), 10, 30)])).toMatchObject({
+      netStdDev: null,
+      perUnitStdDev: null,
+    });
+  });
+
   it("claims no rate it has no Trades for", () => {
     expect(tradeStats([])).toMatchObject({
       n: 0,

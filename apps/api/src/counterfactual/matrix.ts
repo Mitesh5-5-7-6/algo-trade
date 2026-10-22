@@ -6,6 +6,7 @@ import {
   type StrategyRun,
 } from "./attribution.js";
 import { regimeAt, type Regime, type RegimeTimeline } from "./regime.js";
+import { sampleStdDev } from "../validation/stats.js";
 
 /** "Regardless of" this dimension — the pooled row. */
 export const ALL = "ALL";
@@ -25,6 +26,13 @@ export interface TradeStats {
   expectancy: number | null;
   /** Mean of net ÷ quantity — comparable across strategies that size differently. */
   expectancyPerUnit: number | null;
+  /**
+   * Sample standard deviation of net per Trade, and of net per unit (Phase 7
+   * D2) — what an expectancy's interval is built from. Null below two Trades:
+   * one value has no spread to speak of.
+   */
+  netStdDev: number | null;
+  perUnitStdDev: number | null;
   /** Largest peak-to-trough fall of cumulative net, Trades in exit order. */
   maxDrawdown: number;
   meanHoldMinutes: number | null;
@@ -67,6 +75,8 @@ export function tradeStats(trades: readonly Trade[]): TradeStats {
   let peak = 0;
   let maxDrawdown = 0;
   const exits: Record<string, number> = {};
+  const nets: number[] = [];
+  const perUnits: number[] = [];
   for (const t of ordered) {
     const tradeNet = t.netPnl ?? 0;
     gross += t.grossPnl ?? 0;
@@ -74,6 +84,8 @@ export function tradeStats(trades: readonly Trade[]): TradeStats {
     slippage += t.slippage;
     net += tradeNet;
     perUnit += tradeNet / t.quantity;
+    nets.push(tradeNet);
+    perUnits.push(tradeNet / t.quantity);
     hold += ((t.exitTime ?? t.entryTime) - t.entryTime) / 60_000;
     if (tradeNet > 0) wins += 1;
     else if (tradeNet < 0) losses += 1;
@@ -93,6 +105,8 @@ export function tradeStats(trades: readonly Trade[]): TradeStats {
     net: round4(net),
     expectancy: n === 0 ? null : round4(net / n),
     expectancyPerUnit: n === 0 ? null : round4(perUnit / n),
+    netStdDev: n < 2 ? null : round4(sampleStdDev(nets)),
+    perUnitStdDev: n < 2 ? null : round4(sampleStdDev(perUnits)),
     maxDrawdown: round4(maxDrawdown),
     meanHoldMinutes: n === 0 ? null : round4(hold / n),
     exits: Object.fromEntries(

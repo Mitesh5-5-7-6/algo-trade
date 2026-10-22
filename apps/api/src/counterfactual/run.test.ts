@@ -120,7 +120,8 @@ describe("a counterfactual run (6.5)", () => {
 
   it("names every model, version and detector it was measured with (D7)", async () => {
     const { manifest } = await runCounterfactual(await request());
-    expect(manifest.counterfactualVersion).toBe("1");
+    // 2 since Phase 7 D2: cells carry their spread.
+    expect(manifest.counterfactualVersion).toBe("2");
     expect(manifest.models).toMatchObject({
       positionSizing: expect.any(String) as string,
       exit: expect.any(String) as string,

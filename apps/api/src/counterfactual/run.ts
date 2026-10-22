@@ -43,8 +43,12 @@ import {
   type RegimeModel,
 } from "./regime.js";
 
-/** Bumped when what a counterfactual run records, or how, changes. */
-export const COUNTERFACTUAL_VERSION = "1";
+/**
+ * Bumped when what a counterfactual run records, or how, changes. 2: cells
+ * carry the spread of their Trades (Phase 7 D2) — so a version-1 fingerprint,
+ * like Phase 6's recorded ones, stays true of version 1.
+ */
+export const COUNTERFACTUAL_VERSION = "2";
 
 /** One counterfactual evaluation: every strategy, the same market (Phase 6). */
 export interface CounterfactualRequest {
