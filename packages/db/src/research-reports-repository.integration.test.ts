@@ -102,6 +102,26 @@ describe("ResearchReportsRepository (8.5, D5)", () => {
     expect(reading.map((r) => r.date)).toEqual(["2026-03-02", "2026-03-03"]);
   });
 
+  /** Phase 9: weeks, months and quarters live beside the days, versioned the same way. */
+  it("keeps window reports beside daily ones", async () => {
+    const repo = new ResearchReportsRepository(connection.db);
+    const week = (version: number): ResearchReportDoc => ({
+      ...report("2026-03-02", "ALL", version, ["2026-03-02", "2026-03-04"]),
+      reportId: `WEEK|2026-W10|ALL|v${String(version)}`,
+      period: "WEEK",
+    });
+    await repo.save(report("2026-03-02", "NSE:A"));
+    await repo.save(week(1));
+    await repo.save(week(2));
+    expect((await repo.latest("WEEK", "2026-03-02", "ALL"))?.version).toBe(2);
+    expect((await repo.latest("DAY", "2026-03-02", "NSE:A"))?.version).toBe(1);
+    expect(
+      (await repo.latestInRange("WEEK", "2026-03-01", "2026-03-31")).map(
+        (r) => r.reportId,
+      ),
+    ).toEqual(["WEEK|2026-W10|ALL|v2"]);
+  });
+
   it("refuses two documents for one version, and has no TTL", async () => {
     const repo = new ResearchReportsRepository(connection.db);
     await repo.save(report("2026-03-02", "NSE:A"));

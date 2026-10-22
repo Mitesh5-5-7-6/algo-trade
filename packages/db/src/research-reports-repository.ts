@@ -10,7 +10,9 @@ import { COLLECTIONS } from "./collections.js";
  */
 export const ResearchReportDocSchema = z.object({
   reportId: z.string().min(1),
-  period: z.enum(["DAY"]),
+  /** DAY (Phase 8); WEEK, MONTH, QUARTER (Phase 9) — one collection, told apart here. */
+  period: z.enum(["DAY", "WEEK", "MONTH", "QUARTER"]),
+  /** The day reported — or, for a window, its first calendar day. */
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   symbol: z.string().min(1),
   /** 1, then 2 when a revised bar forces a recomputation (spec §5.8). */
@@ -23,6 +25,7 @@ export const ResearchReportDocSchema = z.object({
   report: z.record(z.string(), z.unknown()),
 });
 export type ResearchReportDoc = z.infer<typeof ResearchReportDocSchema>;
+export type ResearchPeriod = ResearchReportDoc["period"];
 
 /** `research_reports` — research evidence, untimed, never edited (ADR §10.4, spec §5.8). */
 export class ResearchReportsRepository {
@@ -45,7 +48,7 @@ export class ResearchReportsRepository {
 
   /** The newest version of one report, or null. */
   async latest(
-    period: "DAY",
+    period: ResearchPeriod,
     date: string,
     symbol: string,
   ): Promise<ResearchReportDoc | null> {
@@ -58,7 +61,7 @@ export class ResearchReportsRepository {
 
   /** The newest version of every report in `[fromDate, toDate]`, by date then symbol. */
   async latestInRange(
-    period: "DAY",
+    period: ResearchPeriod,
     fromDate: string,
     toDate: string,
   ): Promise<ResearchReportDoc[]> {
@@ -82,7 +85,7 @@ export class ResearchReportsRepository {
 
   /** The newest version of every report that read a session — what a revision of it reaches. */
   async latestReading(
-    period: "DAY",
+    period: ResearchPeriod,
     session: string,
   ): Promise<ResearchReportDoc[]> {
     const docs = await this.collection
@@ -99,7 +102,7 @@ export class ResearchReportsRepository {
 
   /** Every version of one report, oldest first. */
   async versions(
-    period: "DAY",
+    period: ResearchPeriod,
     date: string,
     symbol: string,
   ): Promise<ResearchReportDoc[]> {
