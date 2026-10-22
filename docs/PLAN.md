@@ -678,6 +678,34 @@ Store research reports, patterns, pattern observations, strategy experiments,
 backtests, walk-forward results, trade evidence, documents, chart specifications
 and AI analysis. The knowledge base becomes the foundation for the AI agent.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_10_KNOWLEDGE_BASE.md](design/PHASE_10_KNOWLEDGE_BASE.md), which is the
+detailed design for this phase and keeps each task's dependencies.
+
+| ID   | Task                                                                                                                                            | STATUS | Commit | Evidence |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 10.1 | The knowledge document: kinds, facets, source reference, context-carrying text (D1, D2)                                                         | READY  | —      | —        |
+| 10.2 | Rendering every source kind into documents — days, Trades, charts, windows, experiments, hypotheses and findings, detector definitions (D1, D2) | READY  | —      | —        |
+| 10.3 | The indexer: idempotent, superseded sources re-indexed, `documents` with structured and text indexes (D3, D7)                                   | READY  | —      | —        |
+| 10.4 | Search: structured and text, `asOf` (D4, D5)                                                                                                    | READY  | —      | —        |
+| 10.5 | Similar sessions: standardised day features, nearest neighbours, no lookahead (D4, D5)                                                          | READY  | —      | —        |
+| 10.6 | Read models: findPatterns, tradeHistory, experimentHistory, strategyMatrix — `n`, dates and versions on every answer (D6)                       | READY  | —      | —        |
+| 10.7 | Acceptance: the real year indexed; the spec's questions answered; a re-index adds nothing; a revision re-indexes exactly its documents          | READY  | —      | —        |
+
+**Nothing of this phase exists on any branch.** It indexes what Phases 4–9
+produce. **Semantic search by embeddings is deferred** by the operator's
+decision at opening (design Q1): everything here is deterministic.
+
+### Done when
+
+The stored year's research is indexed by one idempotent command into
+`documents`, searchable by facet, by text and by session similarity, never past
+an `asOf`; the agent's read models answer pattern retrieval, strategy history and
+experiment history with `n`, dates and versions on every answer; and a revised
+source re-indexes exactly the documents built from it.
+
 ---
 
 ## 16. Phase 11 — AI research agent
