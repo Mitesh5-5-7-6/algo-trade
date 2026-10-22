@@ -60,6 +60,12 @@ export const COLLECTIONS = {
    * new collection for the same concept. Untimed: research evidence.
    */
   strategyExperiments: "strategy_experiments",
+  /**
+   * Research reports (ADR §10.1, spec §6.1) — RESEARCH database only. Daily,
+   * weekly, monthly and quarterly research are this one collection, told
+   * apart by `period`. Untimed, never edited: a revision is a new version.
+   */
+  researchReports: "research_reports",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -132,6 +138,21 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.strategyExperiments)
       .createIndex({ fingerprint: 1 }),
+
+    // research_reports — one per (period, date, symbol, version).
+    db
+      .collection(COLLECTIONS.researchReports)
+      .createIndex({ reportId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.researchReports)
+      .createIndex(
+        { period: 1, date: 1, symbol: 1, version: 1 },
+        { unique: true, name: "report_identity" },
+      ),
+    // "Which reports read this session?" — what a revised bar reaches (§5.8).
+    db
+      .collection(COLLECTIONS.researchReports)
+      .createIndex({ period: 1, sessions: 1 }),
 
     // patterns — one definition per detector version.
     db

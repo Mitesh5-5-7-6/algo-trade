@@ -16,3 +16,4 @@ export * from "./replay-runs-repository.js";
 export * from "./pattern-observations-repository.js";
 export * from "./pattern-catalog-repository.js";
 export * from "./strategy-experiments-repository.js";
+export * from "./research-reports-repository.js";
