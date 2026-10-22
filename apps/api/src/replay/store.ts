@@ -40,7 +40,13 @@ export async function replayFromStore(
   db: Db,
   request: StoredReplayRequest,
 ): Promise<{ run: ReplayRun; saved: boolean }> {
-  const candles = await loadCandles(db, request);
+  const candles = await loadCandles(
+    db,
+    request.symbols,
+    request.interval,
+    request.fromDate,
+    request.toDate,
+  );
   const run = await runHistoricalReplay({
     strategy: request.strategy,
     candles,
@@ -64,17 +70,19 @@ export async function replayFromStore(
   return { run, saved };
 }
 
-async function loadCandles(
+/** Stored bars for the symbols over IST dates, both ends inclusive — read only. */
+export async function loadCandles(
   db: Db,
-  request: StoredReplayRequest,
+  symbols: readonly string[],
+  interval: CandleInterval,
+  fromDate: string,
+  toDate: string,
 ): Promise<Candle[]> {
   const repo = new CandlesRepository(db);
-  const fromTs = istDayStart(request.fromDate);
-  const toTs = istDayStart(request.toDate) + DAY_MS; // half-open, toDate inclusive
+  const fromTs = istDayStart(fromDate);
+  const toTs = istDayStart(toDate) + DAY_MS; // half-open, toDate inclusive
   const perSymbol = await Promise.all(
-    request.symbols.map((symbol) =>
-      repo.findRange(symbol, request.interval, fromTs, toTs),
-    ),
+    symbols.map((symbol) => repo.findRange(symbol, interval, fromTs, toTs)),
   );
   return perSymbol.flat();
 }

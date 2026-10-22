@@ -54,6 +54,12 @@ export const COLLECTIONS = {
    * how it can still be read.
    */
   patterns: "patterns",
+  /**
+   * Strategy experiments (ADR §10.1) — RESEARCH database only. Phase 6 keeps
+   * its counterfactual runs here, `kind: "COUNTERFACTUAL"`, rather than in a
+   * new collection for the same concept. Untimed: research evidence.
+   */
+  strategyExperiments: "strategy_experiments",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -116,6 +122,17 @@ export async function ensureIndexes(db: Db): Promise<void> {
       },
       { unique: true, name: "observation_identity" },
     ),
+    // strategy_experiments — one per experiment; findable by kind and result.
+    db
+      .collection(COLLECTIONS.strategyExperiments)
+      .createIndex({ experimentId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.strategyExperiments)
+      .createIndex({ kind: 1, createdAt: -1 }),
+    db
+      .collection(COLLECTIONS.strategyExperiments)
+      .createIndex({ fingerprint: 1 }),
+
     // patterns — one definition per detector version.
     db
       .collection(COLLECTIONS.patterns)
