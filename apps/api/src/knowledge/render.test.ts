@@ -91,6 +91,23 @@ describe("a daily report, rendered (10.2)", () => {
     expect(valid(docs)).toBe(true);
   });
 
+  /** Acceptance F1: "gap down" must find a gap-down day — the words, not only the number. */
+  it("names a gap in the words it is searched by", () => {
+    const withGap = (gapPct: number | null): string => {
+      const report = { ...daily, features: { ...daily.features, gapPct } };
+      const doc = renderDailyReport({ ...dayDoc, report }).find(
+        (d) => d.kind === "DAY",
+      );
+      return doc?.text ?? "";
+    };
+    expect(withGap(-0.0211)).toContain(
+      "opened with a gap down of 2.11% from the prior close",
+    );
+    expect(withGap(0.005)).toContain("opened with a gap up of 0.50%");
+    expect(withGap(0)).toContain("no gap");
+    expect(withGap(null)).toContain("with no prior session in the run");
+  });
+
   it("points every document at the report it came from, and dates it to the day", () => {
     for (const d of renderDailyReport(dayDoc)) {
       expect(d.source).toEqual({

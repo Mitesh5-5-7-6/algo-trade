@@ -113,6 +113,15 @@ afterAll(async () => {
 });
 
 describe("indexing the research database (10.3, D3)", () => {
+  it("a dry run says what a run would do, and writes nothing", async () => {
+    const dry = await indexResearch(connection.db, { dryRun: true });
+    expect(dry.added).toBeGreaterThan(0);
+    expect(
+      await connection.db.collection(COLLECTIONS.documents).countDocuments(),
+    ).toBe(0);
+    expect(await indexResearch(connection.db)).toEqual(dry);
+  }, 300_000);
+
   it("renders every source into documents, once each, and a second run changes nothing", async () => {
     const first = await indexResearch(connection.db);
     expect(first.byKind).toMatchObject({ DAY: 10, WINDOW: 2, DETECTOR: 5 });

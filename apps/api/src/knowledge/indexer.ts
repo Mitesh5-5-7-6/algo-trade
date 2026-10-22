@@ -72,9 +72,13 @@ export async function renderAll(db: Db): Promise<KnowledgeDocument[]> {
  * records produce is added, replaced when its content or source moved, or
  * left unchanged; every document no record produces any more is removed.
  * Idempotent — a second run changes nothing. Reads the research
- * collections; writes `documents` only.
+ * collections; writes `documents` only — or, with `dryRun`, nothing: the
+ * outcome is what a run would do.
  */
-export async function indexResearch(db: Db): Promise<IndexOutcome> {
+export async function indexResearch(
+  db: Db,
+  options: { dryRun?: boolean } = {},
+): Promise<IndexOutcome> {
   const repo = new DocumentsRepository(db);
   const docs = await renderAll(db);
   const ids = new Set<string>();
@@ -104,10 +108,12 @@ export async function indexResearch(db: Db): Promise<IndexOutcome> {
     }
     changed.push(doc);
   }
-  await repo.replaceMany(changed);
-  outcome.removed = await repo.remove(
-    [...kept.keys()].filter((id) => !ids.has(id)),
-  );
+  const gone = [...kept.keys()].filter((id) => !ids.has(id));
+  if (options.dryRun === true) outcome.removed = gone.length;
+  else {
+    await repo.replaceMany(changed);
+    outcome.removed = await repo.remove(gone);
+  }
   outcome.byKind = Object.fromEntries(
     Object.entries(outcome.byKind).sort(([a], [b]) => (a < b ? -1 : 1)),
   );

@@ -142,6 +142,8 @@ describe("read models over the research database (10.6)", () => {
     expect(trades.versions.dailyResearch).toEqual(["1"]);
     expect(trades.versions.strategies.length).toBeGreaterThan(0);
     expect(trades.costs).toHaveLength(1);
+    expect(trades.data.sources.length).toBeGreaterThan(0);
+    expect(trades.data.ingestionVersions.length).toBeGreaterThan(0);
     const cost = trades.costs[0] as
       | { slippage: { version: string }; transactionCost: { version: string } }
       | undefined;

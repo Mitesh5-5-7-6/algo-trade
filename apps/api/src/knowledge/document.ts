@@ -3,7 +3,7 @@ import { z } from "zod";
 import { canonicalJson } from "@neelkanth/core";
 
 /** Bumped whenever what a document holds, or how it is rendered, changes (Phase 10 D3). */
-export const KNOWLEDGE_INDEX_VERSION = "1";
+export const KNOWLEDGE_INDEX_VERSION = "2";
 
 /**
  * What a document is about. One per kind of research item; backtests,

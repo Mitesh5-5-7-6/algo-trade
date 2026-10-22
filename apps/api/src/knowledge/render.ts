@@ -27,6 +27,16 @@ import {
 const num = (x: number | null): string => (x === null ? "—" : x.toFixed(2));
 const pct = (x: number | null): string =>
   x === null ? "—" : `${(x * 100).toFixed(1)}%`;
+/**
+ * A gap in the words it is searched by — "gap up", "gap down" — and not only
+ * as a signed number, which a text search cannot find (Phase 10 acceptance F1).
+ */
+const gapWords = (gap: number | null): string =>
+  gap === null
+    ? "with no prior session in the run"
+    : gap === 0
+      ? "level with the prior close, no gap"
+      : `with a gap ${gap > 0 ? "up" : "down"} of ${(Math.abs(gap) * 100).toFixed(2)}% from the prior close`;
 const istTime = (ms: number): string =>
   new Date(ms + 19_800_000).toISOString().slice(11, 16);
 const reportRef = (doc: ResearchReportDoc): SourceRef => ({
@@ -68,7 +78,7 @@ export function renderDailyReport(doc: ResearchReportDoc): KnowledgeDocument[] {
     },
     title: `${r.symbol}, ${r.date}`,
     text:
-      `${r.date} ${r.symbol}: opened ${f.gapPct === null ? "with no prior session in the run" : `${pct(f.gapPct)} from the prior close`}, ` +
+      `${r.date} ${r.symbol}: opened ${gapWords(f.gapPct)}, ` +
       `closed ${pct(f.returnPct)} on the open (range ${num(f.range)}, 5m volatility ${f.realisedVolatility === null ? "—" : f.realisedVolatility.toFixed(5)}), ` +
       `${f.regimeAtClose} at the close; ${String(f.bars)} bars (volume ${volume})${f.specialSession ? ", a special session" : ""}. ` +
       `Patterns: ${[...patternCounts.entries()].map(([p, n]) => `${p} ×${String(n)}`).join(", ") || "none"}. ` +

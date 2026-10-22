@@ -38,6 +38,11 @@ export interface Provenance {
     /** PATTERN@version. */
     detectors: string[];
   };
+  /**
+   * The data version (spec Phase 11): where the bars came from and the
+   * ingestion versions they carry — a revised bar shows here as a new one.
+   */
+  data: { sources: string[]; ingestionVersions: number[] };
   /** Every distinct slippage and transaction-cost model the money was costed with. */
   costs: { slippage: unknown; transactionCost: unknown }[];
 }
@@ -52,6 +57,8 @@ export interface ReportScope {
 }
 
 const sorted = (xs: Iterable<string>): string[] => [...new Set(xs)].sort();
+const numbers = (xs: Iterable<number>): number[] =>
+  [...new Set(xs)].sort((a, b) => a - b);
 const lower = (a: string | undefined, b: string | undefined) =>
   a === undefined ? b : b === undefined ? a : a < b ? a : b;
 
@@ -135,6 +142,12 @@ export function reportProvenance(
       gatePolicy: [],
       strategies: sorted(strategies),
       detectors: sorted(detectors),
+    },
+    data: {
+      sources: sorted(reports.flatMap((r) => Object.keys(r.features.sources))),
+      ingestionVersions: numbers(
+        reports.flatMap((r) => r.features.ingestionVersions),
+      ),
     },
     costs: distinctCosts(reports.map((r) => r.models)),
   };
@@ -379,6 +392,8 @@ export function experimentHistoryOf(
   const strategies: string[] = [];
   const detectors: string[] = [];
   const costs: Record<string, unknown>[] = [];
+  const sources: string[] = [];
+  const ingestion: number[] = [];
   for (const e of behind) {
     if (e.kind === "COUNTERFACTUAL") {
       const m = e.manifest as {
@@ -392,7 +407,13 @@ export function experimentHistoryOf(
           definition: { patternId: string; detectorVersion: string };
         }[];
         models: Record<string, { version: string }>;
+        dataset: {
+          sources: Record<string, number>;
+          ingestionVersions: number[];
+        };
       };
+      sources.push(...Object.keys(m.dataset.sources));
+      ingestion.push(...m.dataset.ingestionVersions);
       counterfactual.push(m.counterfactualVersion);
       for (const s of m.strategies)
         if (s.eligible && s.strategyVersion !== undefined)
@@ -450,6 +471,7 @@ export function experimentHistoryOf(
       strategies: sorted(strategies),
       detectors: sorted(detectors),
     },
+    data: { sources: sorted(sources), ingestionVersions: numbers(ingestion) },
     costs: distinctCosts(costs),
     entries,
   };

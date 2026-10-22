@@ -6,7 +6,12 @@ export const MAX_RESULTS = 200;
 
 /** A knowledge query (Phase 10 D4, D5). Every list facet matches any of its values. */
 export interface KnowledgeQuery {
-  /** Free text, ranked by relevance; absent for a purely structured query. */
+  /**
+   * Free text, ranked by relevance; absent for a purely structured query.
+   * MongoDB drops English stop words — "up", "down", "above", "below" among
+   * them — so `gap down` is a search for "gap"; quote a phrase, `"gap down"`,
+   * to keep them (Phase 10 acceptance F1).
+   */
   text?: string;
   kinds?: KnowledgeKind[];
   symbols?: string[];

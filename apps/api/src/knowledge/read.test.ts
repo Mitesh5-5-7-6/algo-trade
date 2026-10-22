@@ -84,6 +84,10 @@ const report = (
     date,
     symbol: SYM,
     dailyResearchVersion: "1",
+    features: {
+      sources: { FYERS: 75 },
+      ingestionVersions: date === "2026-03-09" ? [1, 2] : [1],
+    },
     models: models(slippageBps),
     patterns,
     trades,
@@ -175,6 +179,7 @@ describe("provenance on every answer (10.6, D6)", () => {
         detectors: ["ORB_BREAKOUT@1.0.0"],
       },
     });
+    expect(a.data).toEqual({ sources: ["FYERS"], ingestionVersions: [1, 2] });
     // Two distinct slippage models were in force; each is named once.
     expect(a.costs.map((c) => c.slippage)).toEqual([
       { version: "1", model: { bps: 2 } },
