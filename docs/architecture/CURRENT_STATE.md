@@ -1,7 +1,7 @@
 # Current State — Neelkanth Trader
 
 **Status:** Audit baseline — Phase 0 durability work applied
-**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23. **Phase 2 entries** — the Trade entity and entry ↔ exit linkage (§1, §2, §3.4, §3.5) — re-audited at `09e6e89`, 2026-10-03; **Phase 3's** — the exit engine (§1, §2, §4.1) — at `13d013f`; **Phase 4's** — replay (§1, §2, §4.2) — at `56a801c`; **Phase 5's** — pattern vocabulary (§1, §6) — at `9314c60`; every other entry still stands at `9c1a9bc`
+**Audited against:** branch `new-ai-agent-v1` at `9c1a9bc`, working tree, 2026-09-23. **Phase 2 entries** — the Trade entity and entry ↔ exit linkage (§1, §2, §3.4, §3.5) — re-audited at `09e6e89`, 2026-10-03; **Phase 3's** — the exit engine (§1, §2, §4.1) — at `13d013f`; **Phase 4's** — replay (§1, §2, §4.2) — at `56a801c`; **Phase 6's** — counterfactual evaluation (§5.9, §6) — at `954ace2`; **Phase 5's** — pattern vocabulary (§1, §6) — at `9314c60`; every other entry still stands at `9c1a9bc`
 **Execution order:** [PLAN.md](../PLAN.md) — this document says what exists, never what to build next
 **Governed by:** [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md)
 
@@ -245,11 +245,10 @@ Found while repairing §5.1, and deliberately **not** fixed with it.
 
 Recorded for completeness. None of these exist in any form, and each is gated on the blocking chain in §3.
 
-The pattern vocabulary left this table at Phase 5: [packages/patterns](../../packages/patterns) holds five versioned detectors, [packages/engines/src/patterns/](../../packages/engines/src/patterns) the sweep, and `patterns` / `pattern_observations` the catalogue and evidence, written only by [apps/api/src/patterns/sweep-store.ts](../../apps/api/src/patterns/sweep-store.ts) ([../design/PHASE_5_PATTERN_VOCABULARY.md](../design/PHASE_5_PATTERN_VOCABULARY.md) §6).
+Counterfactual strategy evaluation left it at Phase 6: [apps/api/src/counterfactual/](../../apps/api/src/counterfactual) replays every eligible strategy alone per symbol over the same stored market, lists the rest with their reason, attributes each pattern occurrence to each strategy's behaviour, and keeps the matrix in `strategy_experiments` ([../design/PHASE_6_COUNTERFACTUAL_EVALUATION.md](../design/PHASE_6_COUNTERFACTUAL_EVALUATION.md) §7). The pattern vocabulary left this table at Phase 5: [packages/patterns](../../packages/patterns) holds five versioned detectors, [packages/engines/src/patterns/](../../packages/engines/src/patterns) the sweep, and `patterns` / `pattern_observations` the catalogue and evidence, written only by [apps/api/src/patterns/sweep-store.ts](../../apps/api/src/patterns/sweep-store.ts) ([../design/PHASE_5_PATTERN_VOCABULARY.md](../design/PHASE_5_PATTERN_VOCABULARY.md) §6).
 
 | Subsystem                                | Phase |
 | ---------------------------------------- | ----- |
-| Counterfactual strategy evaluation       | 6     |
 | Statistical gate and hypothesis registry | 7     |
 | Daily research records                   | 8     |
 | Weekly / monthly / quarterly aggregation | 9     |

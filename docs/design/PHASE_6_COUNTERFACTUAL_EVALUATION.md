@@ -184,6 +184,70 @@ earned — with the sample size on every row.
 
 ---
 
+## 7. Acceptance (task 6.8)
+
+The stored year — `NSE:NIFTY50-INDEX` and `NSE:NIFTYBANK-INDEX`,
+2025-09-29 .. 2026-09-28, 247 sessions, 36,926 bars — every registered
+strategy evaluated or excluded on each symbol, the five detectors at their
+defaults, regime on NIFTY50, a zero-bar attribution window, ₹10,00,000 and the
+default limits, by `counterfactualFromStore` at `954ace2`.
+
+- **Twice against `neelkanth_research`, read-only** (about 17 s each):
+  fingerprint `ee8b2264…b063` both times — and a third time, rerun.
+- **Every strategy accounted for:** `EMA_CROSSOVER`, `RSI`, `ORB` evaluated
+  on each symbol; the three contract-trading index-option strategies excluded
+  as `DERIVATIVE`, the two chain-dependent ones as `OPTION_CHAIN`.
+- **Kept, on a scratch copy** of the same bars (the research database stays
+  read-only): two runs under the research fingerprint in
+  `strategy_experiments`, a duplicate id refused; then dropped.
+- **129 rows, `n` on every one.** `pnpm test:integration`, strict: 1,261 tests, 0 skipped.
+
+**When this pattern occurred, how did each strategy behave?** All symbols,
+all regimes; P&L in index points (Phase 4 R4):
+
+| Pattern                            |  Occ. | Strategy      |                                                         Entered | Signalled | Holding |  Flat |   n | Win % | Expectancy |     Net | of which charges + slippage |
+| ---------------------------------- | ----: | ------------- | --------------------------------------------------------------: | --------: | ------: | ----: | --: | ----: | ---------: | ------: | --------------------------: |
+| EMA_CROSS                          | 1,470 | EMA_CROSSOVER |                                                             710 |         0 |     475 |   285 | 710 |  17.0 |    −131.96 | −93,694 |                      78,616 |
+|                                    |       | ORB           |                                                              30 |         0 |     514 |   926 |  30 |  30.0 |    −143.21 |  −4,296 |                       3,346 |
+|                                    |       | RSI           |                                                               0 |         0 |     157 | 1,313 |   0 |     — |          — |       0 |                           0 |
+| ORB_BREAKOUT                       | 1,653 | ORB           |                                                             638 |         0 |     630 |   385 | 638 |  28.4 |    −147.97 | −94,404 |                      70,368 |
+|                                    |       | EMA_CROSSOVER |                                                              55 |         0 |     521 | 1,077 |  55 |   9.1 |    −182.51 | −10,038 |                       6,119 |
+|                                    |       | RSI           |                                                              14 |         4 |     278 | 1,357 |  14 |  42.9 |     −97.64 |  −1,367 |                       1,504 |
+| RSI_REVERSION                      | 1,239 | RSI           |                                                             566 |        86 |       4 |   583 | 566 |  15.2 |    −152.68 | −86,418 |                      62,159 |
+|                                    |       | ORB           |                                                              16 |         0 |     554 |   669 |  16 |  43.8 |    −179.75 |  −2,876 |                       1,716 |
+|                                    |       | EMA_CROSSOVER |                                                               2 |         0 |     237 | 1,000 |   2 |     0 |    −194.97 |    −390 |                         225 |
+| VWAP_RECLAIM, HIGH_VOLUME_BREAKOUT |     0 | —             | declined on every warm bar: `SUSPECT` index volume (Phase 5 D3) |           |         |       |     |       |            |         |                             |
+
+Baselines — every Trade, regardless of pattern: `EMA_CROSSOVER` 725 Trades,
+net −95,622; `ORB` 638, −94,404; `RSI` 577, −88,394.
+
+What the table shows, before any statistics (that is Phase 7): each strategy
+acts on its own pattern and almost never on another's; by regime,
+`EMA_CROSSOVER` entered on 651 of 720 crosses in a `BULLISH` regime and 59
+of 750 in a `BEARISH` one, and `RSI` on 550 of 684 reversions in a
+`BEARISH` regime against 16 of 553 in a `BULLISH` one — the risk gate and
+each strategy's direction rules, made visible; and every evaluated strategy
+lost money over the year — on its own pattern, charges and slippage were 72 to
+84 per cent of the loss. All three are observations with sample sizes, not
+findings.
+
+**Two defects the acceptance found, both fixed before it was recorded:** F2
+(ORB never ran on its own — `c657874`), and Trades from two symbols colliding
+in the matrix (`954ace2`), which had shown EMA_CROSSOVER entering 710 times
+and holding 368 Trades.
+
+**Still standing:**
+
+| #   | Limit                                                                                                                   | Owner        |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ------------ |
+| C1  | Three of eight strategies can be evaluated; five need contract prices or chain history.                                 | data         |
+| C2  | Index P&L is in index points on a synthetic instrument, charged as if it traded (Phase 4 R4).                           | by design    |
+| C3  | The regime is one volume-free trend label; after warm-up it is almost never `NEUTRAL`, so it is effectively two-valued. | later        |
+| C4  | Two of five detectors observe nothing on `SUSPECT` index volume (Phase 5 P1).                                           | data         |
+| C5  | One attribution window per run; comparing windows is a set of declared runs, not built here.                            | Phase 7      |
+| C6  | Rates are shown with `n`, not tested — significance is the statistical gate's.                                          | Phase 7      |
+| C7  | F1: live risk still confirms index trend with VWAP from `SUSPECT` volume.                                               | trading core |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §11

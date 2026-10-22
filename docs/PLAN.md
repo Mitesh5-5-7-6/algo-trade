@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | COMPLETE    |
-| 6     | Counterfactual strategy evaluation | IN PROGRESS |
-| 7     | Statistical validation             | READY       |
-| 8     | Daily research                     | READY       |
-| 9     | Periodic research                  | READY       |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | COMPLETE |
+| 7     | Statistical validation             | READY    |
+| 8     | Daily research                     | READY    |
+| 9     | Periodic research                  | READY    |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -479,7 +479,7 @@ version is pinned to what it detects.
 
 ## 11. Phase 6 — Counterfactual strategy evaluation
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -504,21 +504,23 @@ Structured around the decisions in
 [PHASE_6_COUNTERFACTUAL_EVALUATION.md](design/PHASE_6_COUNTERFACTUAL_EVALUATION.md),
 which is the detailed design for this phase and keeps each task's dependencies.
 
-| ID  | Task                                                                                                                                         | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 6.1 | The replay returns its trail — complete Signals, risk decisions and Trades — record and fingerprint unchanged (D3)                           | COMPLETE | `ff1ab69` | `runReplayWithTrail` in `apps/api/src/golden/pipeline.ts` and `ReplayRun.trail` in `apps/api/src/replay/run.ts` hand out the complete Signals, risk decisions and Trades. `apps/api/src/replay/trail.test.ts` pins the fixed request's fingerprint to its pre-trail value; every Trade complete and linked to its opening Signal; every strategy Signal timed and stamped with its bar; every actionable Signal decided once. Golden record byte-identical; two mutants killed                                                                               |
-| 6.2 | Eligibility: every registered strategy evaluated or excluded with its reason (D1)                                                            | COMPLETE | `7f3c906` | `apps/api/src/counterfactual/eligibility.ts` lists every registered strategy, eligible or excluded with its reason, by `replayExclusion` — the rule the replay's refusal in `apps/api/src/replay/run.ts` now throws on. `apps/api/src/counterfactual/eligibility.test.ts`: 8 strategies; EMA_CROSSOVER, RSI, ORB evaluated; three DERIVATIVE, two OPTION_CHAIN; agreement with the replay checked by running each type. Two mutants killed                                                                                                                   |
-| 6.3 | The regime label: index trend, versioned, volume-free, pinned, lookahead-proven (D4)                                                         | COMPLETE | `53d0bed` | `apps/api/src/counterfactual/regime.ts`: `REGIME_MODEL_VERSION` 1, the regime index's close against its EMA(21) through the shared fold, volume-free, continuous across sessions; `regimeAt` gives any bar the latest label at or before it. `apps/api/src/counterfactual/regime.test.ts`: every-prefix lookahead proof, volume-independence, pinned outputs; three mutants killed, one equivalent. Design D4                                                                                                                                                |
-| 6.4 | Attribution and the matrix — relations, metrics, baseline, sample sizes (D5, D6)                                                             | COMPLETE | `7cdabdc` | `apps/api/src/counterfactual/attribution.ts` (ENTERED / SIGNALLED / HOLDING / FLAT, declared window, forward-only, session-bounded, regime at the bar) and `apps/api/src/counterfactual/matrix.ts` (rows per pattern, strategy, symbol, regime with ALL pools and a per-strategy baseline; n, wins, losses, win rate, gross, charges, slippage, net, expectancy, drawdown, hold, exits). `apps/api/src/counterfactual/matrix.test.ts`, 15 tests; five mutants killed. Design D5, D6                                                                          |
-| 6.5 | The counterfactual run: each strategy alone per symbol, manifest and fingerprint (D2, D7)                                                    | COMPLETE | `891e87a` | `apps/api/src/counterfactual/run.ts`: every eligible strategy replayed alone per symbol over the same dataset, the rest listed with their exclusion; sweep, regime, attribution and matrix; a manifest naming dataset, strategy versions and replay fingerprints, detector definitions and params, and every model; a fingerprint. `apps/api/src/counterfactual/run.test.ts`: baseline equals each strategy's own replay, relations sum to occurrences, order-independent fingerprint, declared models change the matrix; four mutants killed. Design D2, D7 |
-| 6.6 | Kept in `strategy_experiments`, research database only; operator CLI (D7)                                                                    | COMPLETE | `6163d32` | `apps/api/src/counterfactual/store.ts` reads `candles` and writes one `strategy_experiments` document; `packages/db/src/strategy-experiments-repository.ts` keeps it insert-once, untimed (strict 4/4). `apps/api/src/counterfactual/store.integration.test.ts` (strict): no trading repository named, trading collections unchanged, kept run equals the pure one, dry run keeps nothing; two mutants killed. `apps/api/scripts/counterfactual.mts` writes only to the research or a scratch database. Finding F2 in the design §5                          |
-| 6.7 | Fix F2: a strategy that declares no indicators runs on its own — the Indicator Engine publishes for every series a strategy is registered on | COMPLETE | `c657874` | `IndicatorEngine.track` in `packages/engines/src/indicators/indicator-engine.ts` and `provisionSeries` in `packages/engines/src/indicators/register-spec.ts`, used by `apps/api/src/engines/runtime.ts` and `apps/api/src/golden/pipeline.ts`: a series a strategy is registered on publishes on every closed bar. `packages/engines/src/indicators/indicator-engine.test.ts` and `apps/api/src/replay/run.test.ts` (ORB alone decides); three mutants killed; golden record and replay fingerprint unchanged. `docs/architecture/CURRENT_STATE.md` §5.9     |
-| 6.8 | Acceptance: the real year twice — identical fingerprints, and the question answered                                                          | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ID  | Task                                                                                                                                         | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 6.1 | The replay returns its trail — complete Signals, risk decisions and Trades — record and fingerprint unchanged (D3)                           | COMPLETE | `ff1ab69` | `runReplayWithTrail` in `apps/api/src/golden/pipeline.ts` and `ReplayRun.trail` in `apps/api/src/replay/run.ts` hand out the complete Signals, risk decisions and Trades. `apps/api/src/replay/trail.test.ts` pins the fixed request's fingerprint to its pre-trail value; every Trade complete and linked to its opening Signal; every strategy Signal timed and stamped with its bar; every actionable Signal decided once. Golden record byte-identical; two mutants killed                                                                                                  |
+| 6.2 | Eligibility: every registered strategy evaluated or excluded with its reason (D1)                                                            | COMPLETE | `7f3c906` | `apps/api/src/counterfactual/eligibility.ts` lists every registered strategy, eligible or excluded with its reason, by `replayExclusion` — the rule the replay's refusal in `apps/api/src/replay/run.ts` now throws on. `apps/api/src/counterfactual/eligibility.test.ts`: 8 strategies; EMA_CROSSOVER, RSI, ORB evaluated; three DERIVATIVE, two OPTION_CHAIN; agreement with the replay checked by running each type. Two mutants killed                                                                                                                                      |
+| 6.3 | The regime label: index trend, versioned, volume-free, pinned, lookahead-proven (D4)                                                         | COMPLETE | `53d0bed` | `apps/api/src/counterfactual/regime.ts`: `REGIME_MODEL_VERSION` 1, the regime index's close against its EMA(21) through the shared fold, volume-free, continuous across sessions; `regimeAt` gives any bar the latest label at or before it. `apps/api/src/counterfactual/regime.test.ts`: every-prefix lookahead proof, volume-independence, pinned outputs; three mutants killed, one equivalent. Design D4                                                                                                                                                                   |
+| 6.4 | Attribution and the matrix — relations, metrics, baseline, sample sizes (D5, D6)                                                             | COMPLETE | `7cdabdc` | `apps/api/src/counterfactual/attribution.ts` (ENTERED / SIGNALLED / HOLDING / FLAT, declared window, forward-only, session-bounded, regime at the bar) and `apps/api/src/counterfactual/matrix.ts` (rows per pattern, strategy, symbol, regime with ALL pools and a per-strategy baseline; n, wins, losses, win rate, gross, charges, slippage, net, expectancy, drawdown, hold, exits). `apps/api/src/counterfactual/matrix.test.ts`, 15 tests; five mutants killed. Design D5, D6                                                                                             |
+| 6.5 | The counterfactual run: each strategy alone per symbol, manifest and fingerprint (D2, D7)                                                    | COMPLETE | `891e87a` | `apps/api/src/counterfactual/run.ts`: every eligible strategy replayed alone per symbol over the same dataset, the rest listed with their exclusion; sweep, regime, attribution and matrix; a manifest naming dataset, strategy versions and replay fingerprints, detector definitions and params, and every model; a fingerprint. `apps/api/src/counterfactual/run.test.ts`: baseline equals each strategy's own replay, relations sum to occurrences, order-independent fingerprint, declared models change the matrix; four mutants killed. Design D2, D7                    |
+| 6.6 | Kept in `strategy_experiments`, research database only; operator CLI (D7)                                                                    | COMPLETE | `6163d32` | `apps/api/src/counterfactual/store.ts` reads `candles` and writes one `strategy_experiments` document; `packages/db/src/strategy-experiments-repository.ts` keeps it insert-once, untimed (strict 4/4). `apps/api/src/counterfactual/store.integration.test.ts` (strict): no trading repository named, trading collections unchanged, kept run equals the pure one, dry run keeps nothing; two mutants killed. `apps/api/scripts/counterfactual.mts` writes only to the research or a scratch database. Finding F2 in the design §5                                             |
+| 6.7 | Fix F2: a strategy that declares no indicators runs on its own — the Indicator Engine publishes for every series a strategy is registered on | COMPLETE | `c657874` | `IndicatorEngine.track` in `packages/engines/src/indicators/indicator-engine.ts` and `provisionSeries` in `packages/engines/src/indicators/register-spec.ts`, used by `apps/api/src/engines/runtime.ts` and `apps/api/src/golden/pipeline.ts`: a series a strategy is registered on publishes on every closed bar. `packages/engines/src/indicators/indicator-engine.test.ts` and `apps/api/src/replay/run.test.ts` (ORB alone decides); three mutants killed; golden record and replay fingerprint unchanged. `docs/architecture/CURRENT_STATE.md` §5.9                        |
+| 6.8 | Acceptance: the real year twice — identical fingerprints, and the question answered                                                          | COMPLETE | `954ace2` | The stored NIFTY and BANKNIFTY year (36,926 bars, 247 sessions) evaluated twice from `neelkanth_research`, read-only: identical fingerprints; EMA_CROSSOVER, RSI, ORB evaluated on each symbol, five strategies excluded with reasons; 129 matrix rows, `n` on every one, answering per pattern how each strategy entered, signalled, held or stood aside and what it earned. Kept twice on a scratch copy under the research fingerprint. Strict `pnpm test:integration` at `954ace2`: 1,261 tests, 0 skipped. Record in `docs/design/PHASE_6_COUNTERFACTUAL_EVALUATION.md` §7 |
 
-**Nothing of this phase exists on any branch.** Unlike Phases 4 and 5 it is
-built here, on Phase 4's replay and Phase 5's sweep. Only `EMA_CROSSOVER`,
-`RSI` and `ORB` can be replayed today; the five index-option strategies are
-excluded with their reasons, never silently.
+**Phase sign-off:** `pnpm test:integration` on `954ace2` — strict, against
+real MongoDB and Redis — 1,261 tests, 0 skipped; and the stored NIFTY and BANKNIFTY year
+evaluated twice from `neelkanth_research` with identical fingerprints, every
+strategy evaluated or excluded with its reason, then kept on a scratch copy
+(design §7). Built here, on Phase 4's replay and Phase 5's sweep; 6.7 fixed
+F2, a trading-core defect the phase found, on the operator's decision.
 
 ### Done when
 
@@ -759,10 +761,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 5 are complete. The immediate priority is **Phase 6 —
-Counterfactual strategy evaluation**.
+Phases 0 to 6 are complete. The immediate priority is **Phase 7 —
+Statistical validation**.
 
-Do not begin Phase 7 until Phase 6's acceptance criteria pass. Do not begin
+Do not begin Phase 8 until Phase 7's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 
