@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | COMPLETE    |
-| 6     | Counterfactual strategy evaluation | COMPLETE    |
-| 7     | Statistical validation             | COMPLETE    |
-| 8     | Daily research                     | IN PROGRESS |
-| 9     | Periodic research                  | READY       |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | COMPLETE |
+| 7     | Statistical validation             | COMPLETE |
+| 8     | Daily research                     | COMPLETE |
+| 9     | Periodic research                  | READY    |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -580,7 +580,7 @@ applied and shown; and a second test of a hypothesis is refused.
 
 ## 13. Phase 8 — Daily research
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -600,18 +600,22 @@ Structured around the decisions in
 [PHASE_8_DAILY_RESEARCH.md](design/PHASE_8_DAILY_RESEARCH.md), which is the
 detailed design for this phase and keeps each task's dependencies.
 
-| ID  | Task                                                                                                           | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --- | -------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 8.1 | The day's run: K sessions ending at D, reporting D alone; independent of later bars and of the batch (D1)      | COMPLETE | `b28f941` | `apps/api/src/research/day.ts`: `runDay` over the K = 5 sessions ending at D, reporting D alone; `evaluateMarket` split out of `apps/api/src/counterfactual/run.ts`. `apps/api/src/research/day.test.ts`: independent of bars after D and of where the loaded range begins, dependent on the declared lookback; three mutants killed. Design D1                                                                                                                                                                     |
-| 8.2 | Trade evidence: entry to exit, excursions, what preceded the entry (D2)                                        | COMPLETE | `823826d` | `apps/api/src/research/evidence.ts`: `tradeEvidence` — entry Signal and bar, exit, outcome and costs, held bars, maximum favourable and adverse excursion, regime and patterns preceding the entry; `excursionOf`. `apps/api/src/research/evidence.test.ts`: on a real day and on a constructed one with occurrences on every boundary; three mutants killed. Design D2                                                                                                                                             |
-| 8.3 | Observations: day features, patterns compared across strategies, each strategy's day (D3)                      | COMPLETE | `a96de7d` | `apps/api/src/research/observations.ts`: `dayFeatures`, `patternObservations` (each occurrence put to every strategy, linked to Trade evidence), `strategyObservations` (every registered strategy, proposals, approvals, blocks by check, Trades). `apps/api/src/research/observations.test.ts`, 7 tests; two mutants killed. Design D3                                                                                                                                                                            |
-| 8.4 | Chart specifications for the day and each Trade; volume overlays only on real volume (D4)                      | COMPLETE | `c761c83` | `apps/api/src/research/charts.ts`: `dayChart` and `tradeChart` — specifications, never images; strategy indicators as overlays; volume-derived overlays only on REAL volume, omissions annotated; every marker inside its span. `apps/api/src/research/charts.test.ts`, 6 tests; three mutants killed. Design D4                                                                                                                                                                                                    |
-| 8.5 | The report: inputs fingerprinted, versioned, kept in `research_reports`; staleness (D5)                        | COMPLETE | `2e6c01e` | `apps/api/src/research/report.ts`: `buildDailyReports` (every section, inputs fingerprinted, content fingerprint), `isStale` (exactly the reports whose bars changed); `apps/api/src/research/report.test.ts`, two mutants killed. `packages/db/src/research-reports-repository.ts`: `research_reports`, one per (period, date, symbol, version), insert-once, revisions beside originals, `latestReading` for revisions (`packages/db/src/research-reports-repository.integration.test.ts`, strict 4/4). Design D5 |
-| 8.6 | Every completed, unreported day, automatically and idempotently; CLI (D6)                                      | COMPLETE | `f9703ee` | `apps/api/src/research/store.ts`: `runDailyResearch` — every completed, unreported day; stale reports recomputed as new versions on request; idempotent. `apps/api/src/research/store.integration.test.ts` (strict 6/6): ten days once, nothing added on re-run, today left until its close, one revised bar recomputing exactly the five reports that read it as v2; two mutants killed. `apps/api/scripts/daily-research.mts` for a scheduler, research or scratch database only. Design D6                       |
-| 8.7 | Acceptance: the real year reported; a re-run adds nothing; a revised bar is caught and recomputed as version 2 | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ID  | Task                                                                                                           | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --- | -------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8.1 | The day's run: K sessions ending at D, reporting D alone; independent of later bars and of the batch (D1)      | COMPLETE | `b28f941` | `apps/api/src/research/day.ts`: `runDay` over the K = 5 sessions ending at D, reporting D alone; `evaluateMarket` split out of `apps/api/src/counterfactual/run.ts`. `apps/api/src/research/day.test.ts`: independent of bars after D and of where the loaded range begins, dependent on the declared lookback; three mutants killed. Design D1                                                                                                                                                                                                         |
+| 8.2 | Trade evidence: entry to exit, excursions, what preceded the entry (D2)                                        | COMPLETE | `823826d` | `apps/api/src/research/evidence.ts`: `tradeEvidence` — entry Signal and bar, exit, outcome and costs, held bars, maximum favourable and adverse excursion, regime and patterns preceding the entry; `excursionOf`. `apps/api/src/research/evidence.test.ts`: on a real day and on a constructed one with occurrences on every boundary; three mutants killed. Design D2                                                                                                                                                                                 |
+| 8.3 | Observations: day features, patterns compared across strategies, each strategy's day (D3)                      | COMPLETE | `a96de7d` | `apps/api/src/research/observations.ts`: `dayFeatures`, `patternObservations` (each occurrence put to every strategy, linked to Trade evidence), `strategyObservations` (every registered strategy, proposals, approvals, blocks by check, Trades). `apps/api/src/research/observations.test.ts`, 7 tests; two mutants killed. Design D3                                                                                                                                                                                                                |
+| 8.4 | Chart specifications for the day and each Trade; volume overlays only on real volume (D4)                      | COMPLETE | `c761c83` | `apps/api/src/research/charts.ts`: `dayChart` and `tradeChart` — specifications, never images; strategy indicators as overlays; volume-derived overlays only on REAL volume, omissions annotated; every marker inside its span. `apps/api/src/research/charts.test.ts`, 6 tests; three mutants killed. Design D4                                                                                                                                                                                                                                        |
+| 8.5 | The report: inputs fingerprinted, versioned, kept in `research_reports`; staleness (D5)                        | COMPLETE | `2e6c01e` | `apps/api/src/research/report.ts`: `buildDailyReports` (every section, inputs fingerprinted, content fingerprint), `isStale` (exactly the reports whose bars changed); `apps/api/src/research/report.test.ts`, two mutants killed. `packages/db/src/research-reports-repository.ts`: `research_reports`, one per (period, date, symbol, version), insert-once, revisions beside originals, `latestReading` for revisions (`packages/db/src/research-reports-repository.integration.test.ts`, strict 4/4). Design D5                                     |
+| 8.6 | Every completed, unreported day, automatically and idempotently; CLI (D6)                                      | COMPLETE | `f9703ee` | `apps/api/src/research/store.ts`: `runDailyResearch` — every completed, unreported day; stale reports recomputed as new versions on request; idempotent. `apps/api/src/research/store.integration.test.ts` (strict 6/6): ten days once, nothing added on re-run, today left until its close, one revised bar recomputing exactly the five reports that read it as v2; two mutants killed. `apps/api/scripts/daily-research.mts` for a scheduler, research or scratch database only. Design D6                                                           |
+| 8.7 | Acceptance: the real year reported; a re-run adds nothing; a revised bar is caught and recomputed as version 2 | COMPLETE | `11f9b1a` | The stored year researched through `apps/api/scripts/daily-research.mts` on a scratch copy: 494 reports (247 days × 2 instruments) in 57 s; a second run adding nothing; one revised NIFTY bar recomputing exactly the ten reports that read it — its day and the next four sessions, both instruments — as version 2 beside version 1; a stored report reproduced from `neelkanth_research` alone with the same fingerprint. Strict `pnpm test:integration` at `11f9b1a`: 1,345 tests, 0 skipped. Record in `docs/design/PHASE_8_DAILY_RESEARCH.md` §6 |
 
-**Nothing of this phase exists on any branch.** It is built on Phase 6's
-counterfactual run, one trading day at a time.
+**Phase sign-off:** `pnpm test:integration` on `11f9b1a` — strict, against
+real MongoDB and Redis — 1,345 tests, 0 skipped; and the stored year researched through the
+CLI on a scratch copy: 494 reports, a second run adding nothing, one revised
+bar recomputing exactly the ten reports that read it as version 2, and a
+stored report reproduced from the research database alone (design §6). Built
+here, on Phase 6's counterfactual run, one trading day at a time.
 
 ### Done when
 
@@ -818,10 +822,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 7 are complete. The immediate priority is **Phase 8 — Daily
-research**.
+Phases 0 to 8 are complete. The immediate priority is **Phase 9 — Weekly /
+monthly / quarterly research**.
 
-Do not begin Phase 9 until Phase 8's acceptance criteria pass. Do not begin
+Do not begin Phase 10 until Phase 9's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 

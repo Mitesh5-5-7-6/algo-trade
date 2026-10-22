@@ -142,6 +142,53 @@ versions beside the old.
 
 ---
 
+## 6. Acceptance (task 8.7)
+
+The real year's NIFTY and BANKNIFTY bars (36,926), copied to a scratch
+database — the research database stays read-only — and researched through
+`scripts/daily-research.mts` at `11f9b1a`, K = 5, every strategy at its
+defaults, ₹10,00,000 and the default limits:
+
+| Run                                                                                    |                           Reported | Recomputed | Current | Took |
+| -------------------------------------------------------------------------------------- | ---------------------------------: | ---------: | ------: | ---: |
+| 1 — the year                                                                           | **494** (247 days × 2 instruments) |          0 |       0 | 57 s |
+| 2 — again                                                                              |                                  0 |          0 |     494 | 18 s |
+| — one NIFTY bar revised: 2026-03-02 10:55 IST, close × 1.0001, ingestion version 999 — |                                    |            |         |      |
+| 3 — with `--recompute-stale`                                                           |                                  0 |     **10** |     484 | 20 s |
+| 4 — again                                                                              |                                  0 |          0 |     494 |    — |
+
+- **Exactly the reports that read the bar:** 2026-03-02, 03-04, 03-05, 03-06
+  and 03-09 — the revised day and the four sessions after it, Holi
+  (03-03) having none — for _both_ instruments, because every report reads
+  the whole market. Each as version 2, version 1 kept beside it.
+- **In the 494:** 1,940 Trade evidence items, 4,362 pattern observations
+  each compared across the three evaluated strategies, 2,434 chart
+  specifications; VWAP omitted, and said to be, on all 494 day charts — the
+  index year's volume is `SUSPECT`.
+- **Reproducible from its day alone:** the stored 2026-06-15 BANKNIFTY
+  report, regenerated from `neelkanth_research` over a different loaded
+  range (2026-05-01 .. 06-30), has the same fingerprint (`5a93e5f5a868…`).
+- `pnpm test:integration`, strict: 1,345 tests, 0 skipped.
+
+One report, as research reads it — NIFTY50, 2026-03-02 (v2): opened 2.1%
+below the prior close, closed +0.77% in a `BULLISH` regime; EMA_CROSSOVER
+one Trade (+140), RSI two (−958), ORB two (−1,940); the first ORB_BREAKOUT
+of the day ENTERED by ORB and FLAT for the other two; ORB's Trade, entered
+on that breakout in a then-`BEARISH` regime, held 24 bars, at best +2.3
+and at worst −189.6 per unit, closed for a loss.
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                                                   | Owner             |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| L1  | Nothing schedules it: the CLI is ready for a scheduler, and no R&D service exists yet to host one (ADR §18 keeps it out of the trading runtime).                        | R&D runtime       |
+| L2  | A report reads the whole market, so a revision on one instrument recomputes every instrument's reports for those sessions — correct, and wide.                          | by design         |
+| L3  | Five sessions of warm-up converge the default indicators but not slower ones; the dataset's first days have fewer sessions, and say so in `sessions`.                   | by design         |
+| L4  | Charts are specifications only; no renderer exists.                                                                                                                     | dashboard         |
+| L5  | VWAP and the two volume detectors say nothing on the index year (`SUSPECT` volume).                                                                                     | data (Phase 1 Q4) |
+| L6  | Index P&L in points on a synthetic instrument; three of eight strategies evaluable.                                                                                     | carried           |
+| L7  | The scratch MongoDB cluster intermittently resets connections (`ECONNRESET`), failing an integration run that passes on rerun — infrastructure, seen in Phases 6 and 8. | infrastructure    |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §13
