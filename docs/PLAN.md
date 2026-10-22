@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | COMPLETE    |
-| 6     | Counterfactual strategy evaluation | IN PROGRESS |
-| 7     | Statistical validation             | READY       |
-| 8     | Daily research                     | READY       |
-| 9     | Periodic research                  | READY       |
-| 10    | Research knowledge base            | READY       |
-| 11    | AI research agent                  | READY       |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | READY    |
+| 7     | Statistical validation             | READY    |
+| 8     | Daily research                     | READY    |
+| 9     | Periodic research                  | READY    |
+| 10    | Research knowledge base            | READY    |
+| 11    | AI research agent                  | READY    |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -479,7 +479,7 @@ version is pinned to what it detects.
 
 ## 11. Phase 6 — Counterfactual strategy evaluation
 
-**STATUS: IN PROGRESS**
+**STATUS: READY**
 
 ### Goal
 
