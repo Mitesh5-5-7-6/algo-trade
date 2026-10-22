@@ -18,7 +18,8 @@ import { EXIT_MODEL_VERSION, SIZING_MODEL_VERSION } from "@neelkanth/engines";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import {
   DEFAULT_SLIPPAGE,
-  runReplay,
+  runReplayWithTrail,
+  type ReplayTrail,
   type GoldenRecord,
 } from "../golden/pipeline.js";
 import { sessionsFromCandles, type MarketHours } from "./sessions.js";
@@ -81,6 +82,12 @@ export interface ReplayRun {
   record: GoldenRecord;
   /** sha256 of the canonical manifest and record. */
   fingerprint: string;
+  /**
+   * The complete Signals, risk decisions and Trades (Phase 6 D3). Outside the
+   * fingerprint, and not kept in `replay_runs`: it is what the record
+   * summarises, handed to research to join on.
+   */
+  trail: ReplayTrail;
 }
 
 /** An NSE index — tradable only as a synthetic instrument here (Q1). */
@@ -108,7 +115,7 @@ export async function runHistoricalReplay(
   const slippage = request.slippage ?? DEFAULT_SLIPPAGE;
   const charges = request.charges ?? DEFAULT_CHARGES;
 
-  const record = await runReplay({
+  const { record, trail } = await runReplayWithTrail({
     interval,
     // Unused for a candle source — no tick reaches the aggregator — but the
     // Market Data Engine needs one to be built.
@@ -177,7 +184,12 @@ export async function runHistoricalReplay(
     limits: request.limits,
   };
 
-  return { manifest, record, fingerprint: fingerprintOf(manifest, record) };
+  return {
+    manifest,
+    record,
+    fingerprint: fingerprintOf(manifest, record),
+    trail,
+  };
 }
 
 /** sha256 over the canonical serialisation — key order cannot move it. */

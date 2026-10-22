@@ -5,6 +5,7 @@ import {
   type Order,
   type Position,
   type RiskLimits,
+  type RiskLog,
   type SessionContext,
   type Signal,
   type StrategyConfig,
@@ -249,9 +250,32 @@ const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 /** The harness's slippage when a run names none: 5 bps, adverse. */
 export const DEFAULT_SLIPPAGE: SlippageModel = { kind: "percent", pct: 0.0005 };
 
+/**
+ * What a run decided, in full (Phase 6 D3): the complete Signals, the risk
+ * decision on each, and the complete Trades. The record summarises; research
+ * joins on these — a Trade's entry bar, a Signal's time.
+ *
+ * Deliberately NOT part of the record, so a Phase 4 fingerprint means what it
+ * meant when it was taken.
+ */
+export interface ReplayTrail {
+  signals: Signal[];
+  riskLogs: RiskLog[];
+  trades: Trade[];
+}
+
 /** Run one replay (Phase 4). */
 export async function runReplay(input: ReplayInput): Promise<GoldenRecord> {
-  return new ReplayPipeline(input).run();
+  return (await runReplayWithTrail(input)).record;
+}
+
+/** Run one replay and keep its trail (Phase 6). */
+export async function runReplayWithTrail(
+  input: ReplayInput,
+): Promise<{ record: GoldenRecord; trail: ReplayTrail }> {
+  const pipeline = new ReplayPipeline(input);
+  const record = await pipeline.run();
+  return { record, trail: pipeline.trail() };
 }
 
 /** The golden fixture: one tick-fed session. */
@@ -301,6 +325,8 @@ class ReplayPipeline {
 
   private readonly signals: SignalRow[] = [];
   private readonly riskDecisions: RiskDecisionRow[] = [];
+  private readonly trailSignals: Signal[] = [];
+  private readonly trailRiskLogs: RiskLog[] = [];
   private readonly sessionEvents: string[] = [];
 
   private idSeq = 0;
@@ -501,6 +527,7 @@ class ReplayPipeline {
       readGlobalLimits: () => Promise.resolve(this.fixture.limits),
       readStrategyOverride: () => Promise.resolve(null),
       persistRiskLog: (log) => {
+        this.trailRiskLogs.push(log);
         this.riskDecisions.push({
           signalId: log.signalId,
           decision: log.decision,
@@ -595,6 +622,15 @@ class ReplayPipeline {
       nextSignalId: () => this.nextId("sig"),
       onError,
     });
+  }
+
+  /** The complete decisions behind the record — call after `run`. */
+  trail(): ReplayTrail {
+    return {
+      signals: [...this.trailSignals],
+      riskLogs: [...this.trailRiskLogs],
+      trades: [...this.tradesById.values()],
+    };
   }
 
   async run(): Promise<GoldenRecord> {
@@ -801,6 +837,7 @@ class ReplayPipeline {
   }
 
   private recordSignal(signal: Signal): void {
+    this.trailSignals.push(signal);
     this.signals.push({
       signalId: signal.signalId,
       strategyId: signal.strategyId,
