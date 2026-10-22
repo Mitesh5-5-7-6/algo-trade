@@ -231,6 +231,14 @@ Found while repairing §5.1, and deliberately **not** fixed with it.
 - **Deliberately partial, and this is the interesting part:** anything DERIVABLE from the candle window is recomputed, not stored. ORB already reads its opening range out of the window rather than accumulating it, precisely so a process starting at 11:20 is not left holding null all day. Only what cannot be derived is persisted — whether today's entry was taken, and the previous bar's indicator values mid-cross.
 - **Status:** `EXISTS`. 7 tests in [strategy-state.test.ts](../../packages/engines/src/strategy/strategy-state.test.ts), covering the restart, both refusals, and the no-op write.
 
+### 5.9 A strategy with no indicators never ran on its own — FIXED in Phase 6
+
+- **Original evidence:** the Indicator Engine returned before publishing `INDICATORS_UPDATED` for a series with no indicator registered, and the Strategy Runner decides only on that event. `ORB` at its defaults declares no indicators.
+- **Consequence:** ORB was consulted only when another strategy happened to register an indicator on the same symbol. Alone, it emitted nothing — not even a HOLD — while `ORB_BREAKOUT` occurred 58 times in a real NIFTY month. The golden fixture runs only EMA and RSI, so nothing caught it; Phase 6's counterfactual did (design finding F2).
+- **Fix:** `IndicatorEngine.track` and a shared [`provisionSeries`](../../packages/engines/src/indicators/register-spec.ts), which the runtime and the replay both call: a series a strategy is registered on publishes on every closed bar, empty when it needs no indicator. An untracked series still publishes nothing.
+- **Changes live behaviour:** ORB alone on a symbol now trades where it sat silent. Chosen by the operator over leaving it (Phase 6, task 6.7).
+- **Status:** `EXISTS`. Tests in [indicator-engine.test.ts](../../packages/engines/src/indicators/indicator-engine.test.ts) and [run.test.ts](../../apps/api/src/replay/run.test.ts) (ORB alone decides every bar); three mutants killed.
+
 ---
 
 ## 6. Missing R&D subsystems

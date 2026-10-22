@@ -32,7 +32,7 @@ import {
   OrderManager,
   PnlEngine,
   PositionEngine,
-  registerIndicatorSpec,
+  provisionSeries,
   RiskEngine,
   SessionManager,
   StrategyRunner,
@@ -611,9 +611,7 @@ class ReplayPipeline {
       registry: createStrategyRegistry(),
       ports: strategyPorts,
       provisionIndicators: (symbol, interval, specs) => {
-        for (const spec of specs) {
-          registerIndicatorSpec(this.indicatorEngine, symbol, interval, spec);
-        }
+        provisionSeries(this.indicatorEngine, symbol, interval, specs);
         return this.indicatorEngine.warmUp(symbol, interval);
       },
       handoff: async (signal) => {

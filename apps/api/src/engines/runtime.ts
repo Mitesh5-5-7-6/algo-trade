@@ -47,7 +47,7 @@ import {
   OrderManager,
   PnlEngine,
   PositionEngine,
-  registerIndicatorSpec,
+  provisionSeries,
   RiskEngine,
   SessionManager,
   StrategyRunner,
@@ -669,9 +669,7 @@ export async function startEngineRuntime(deps: {
     registry: createStrategyRegistry(),
     ports: strategyPorts,
     provisionIndicators: async (symbol, interval, specs) => {
-      for (const spec of specs) {
-        registerIndicatorSpec(indicatorEngine, symbol, interval, spec);
-      }
+      provisionSeries(indicatorEngine, symbol, interval, specs);
       await indicatorEngine.warmUp(symbol, interval);
     },
     handoff,

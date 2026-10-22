@@ -234,3 +234,23 @@ describe("one strategy per run (§4.6, D4)", () => {
     expect(ids).toEqual(new Set(["str_ema"]));
   });
 });
+
+/**
+ * Phase 6 F2, end to end: a strategy that declares no indicators is consulted
+ * on every bar when it runs alone. Before the fix ORB at its defaults emitted
+ * nothing at all — not even a HOLD.
+ */
+describe("a strategy with no indicators runs on its own (F2)", () => {
+  it("ORB alone decides on every bar of the session", async () => {
+    const strategy = {
+      ...emaStrategy(),
+      strategyId: "str_orb",
+      type: "ORB",
+      params: {},
+    };
+    const run = await runHistoricalReplay(await request({ strategy }));
+    const reasons = new Set(run.trail.signals.map((s) => s.reason));
+    expect(run.trail.signals.length).toBeGreaterThan(0);
+    expect(reasons.has("building opening range")).toBe(true);
+  });
+});
