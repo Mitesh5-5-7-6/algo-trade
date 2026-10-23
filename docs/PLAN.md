@@ -721,16 +721,37 @@ source re-indexes exactly the documents built from it.
 
 Build an AI that can reason over structured research evidence.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_11_AI_RESEARCH_AGENT.md](design/PHASE_11_AI_RESEARCH_AGENT.md), which is
+the detailed design for this phase and keeps each task's dependencies.
+
+| ID   | Task                                                                                                                                    | STATUS | Commit | Evidence |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 11.1 | The tool surface: six read-only tools, strict schemas, bound to `asOf`, capped results with provenance; nothing else reachable (D1, D2) | READY  | —      | —        |
+| 11.2 | The answer contract and its checker: claims citing calls, numbers traceable to results, the rendered context (D3, D4)                   | READY  | —      | —        |
+| 11.3 | The loop: the model interface, the scripted fake, the Anthropic implementation, bounds, refusals, corrections (D6)                      | READY  | —      | —        |
+| 11.4 | Keeping every answer: `agent_answers`, never edited (D7)                                                                                | READY  | —      | —        |
+| 11.5 | The CLI, its own env file, and the secret guard (D5)                                                                                    | READY  | —      | —        |
+| 11.6 | Acceptance: real questions on the real year, every answer checked, asOf honoured, missing evidence said, a request to trade refused     | READY  | —      | —        |
+
 ### Initial tools
 
 `findPatterns()`, `strategyMatrix()`, `similarSessions()`, `tradeHistory()`,
-`newsContext()`, `runBacktest()`, `runWalkForward()`.
+`experimentHistory()` and research search — the read models Phase 10 built.
+**`newsContext()`, `runBacktest()` and `runWalkForward()` are deferred** by
+the operator's decision at opening (design Q2): the news track and Phase 13
+have not built what they would read. The agent is told they do not exist.
+
+**The model is Claude Opus 5.5** by the operator's decision at opening (design
+Q1); research text is sent to Anthropic's API, nothing else is.
 
 ### The agent can
 
 Investigate questions, summarize evidence, compare strategies, find recurring
-patterns, identify anomalies, propose hypotheses, request backtests and explain
-research findings.
+patterns, identify anomalies, propose hypotheses and explain research findings.
+Requesting backtests waits for Phase 13.
 
 ### The agent cannot
 
@@ -739,6 +760,15 @@ systems, or promote itself to Live.
 
 Every answer must include sample size, date range, strategy version, data
 version and cost assumptions.
+
+### Done when
+
+An operator can ask a research question as of a date and get an answer built
+only from the read models, every claim citing the tool calls behind it and
+carrying their sample size, date range, strategy and data versions and cost
+assumptions; an answer whose numbers are not in the evidence is returned
+UNSUPPORTED; the agent has no path to an order, a limit or a secret; and every
+answer is kept and can be audited without the model.
 
 ---
 
