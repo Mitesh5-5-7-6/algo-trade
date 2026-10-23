@@ -9,7 +9,7 @@ import {
   probeMongo,
   type MongoProbe,
 } from "../test-support/infra.js";
-import { seedResearch } from "../knowledge/test-support.js";
+import { seedResearch } from "../test-support/research.js";
 import { runResearch } from "./loop.js";
 import { ScriptedModel } from "./model.js";
 import { auditAnswer, keepSession } from "./store.js";

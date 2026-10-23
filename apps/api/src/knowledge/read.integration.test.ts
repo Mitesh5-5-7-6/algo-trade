@@ -12,7 +12,7 @@ import {
   strategyMatrix,
   tradeHistory,
 } from "./read.js";
-import { seedResearch } from "./test-support.js";
+import { seedResearch } from "../test-support/research.js";
 
 /** Task 10.6 (design D6): the read models over a real research database. */
 const MONGO_URI =

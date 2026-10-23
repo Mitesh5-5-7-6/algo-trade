@@ -5,7 +5,7 @@ import {
   probeMongo,
   type MongoProbe,
 } from "../test-support/infra.js";
-import { seedResearch, SYM } from "../knowledge/test-support.js";
+import { seedResearch, SYM } from "../test-support/research.js";
 import { ToolContext, toolNamed, type ToolOutcome } from "./tools.js";
 
 /** Task 11.1 (design D1, D2): every tool, against a real research database. */

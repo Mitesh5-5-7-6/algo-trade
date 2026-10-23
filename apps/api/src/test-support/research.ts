@@ -1,13 +1,13 @@
 import type { Db } from "mongodb";
 import { ensureIndexes, StrategyExperimentsRepository } from "@neelkanth/db";
-import { seedCandles } from "../test-support/candles.js";
+import { seedCandles } from "./candles.js";
 import { goldenBudget, historicalBars } from "../replay/test-support.js";
 import { DEFAULT_REGIME_MODEL } from "../counterfactual/regime.js";
 import { runDailyResearch } from "../research/store.js";
 import type { HypothesisTest } from "../validation/gate.js";
 import { hypothesisFingerprint } from "../validation/hypothesis.js";
 import { hypothesis } from "../validation/test-support.js";
-import { indexResearch } from "./indexer.js";
+import { indexResearch } from "../knowledge/indexer.js";
 
 export const SYM = "NSE:TESTCO-EQ";
 export const INDEX = "NSE:TESTINDEX-INDEX";
