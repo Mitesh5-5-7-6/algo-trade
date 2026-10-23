@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | COMPLETE |
-| 7     | Statistical validation             | COMPLETE |
-| 8     | Daily research                     | COMPLETE |
-| 9     | Periodic research                  | COMPLETE |
-| 10    | Research knowledge base            | COMPLETE |
-| 11    | AI research agent                  | READY    |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | COMPLETE    |
+| 7     | Statistical validation             | COMPLETE    |
+| 8     | Daily research                     | COMPLETE    |
+| 9     | Periodic research                  | COMPLETE    |
+| 10    | Research knowledge base            | COMPLETE    |
+| 11    | AI research agent                  | IN PROGRESS |
+| 12    | Automated strategy hypotheses      | READY       |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -715,7 +715,7 @@ source re-indexes exactly the documents built from it.
 
 ## 16. Phase 11 — AI research agent
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 ### Goal
 
@@ -727,14 +727,14 @@ Structured around the decisions in
 [PHASE_11_AI_RESEARCH_AGENT.md](design/PHASE_11_AI_RESEARCH_AGENT.md), which is
 the detailed design for this phase and keeps each task's dependencies.
 
-| ID   | Task                                                                                                                                    | STATUS | Commit | Evidence |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 11.1 | The tool surface: six read-only tools, strict schemas, bound to `asOf`, capped results with provenance; nothing else reachable (D1, D2) | READY  | —      | —        |
-| 11.2 | The answer contract and its checker: claims citing calls, numbers traceable to results, the rendered context (D3, D4)                   | READY  | —      | —        |
-| 11.3 | The loop: the model interface, the scripted fake, the Anthropic implementation, bounds, refusals, corrections (D6)                      | READY  | —      | —        |
-| 11.4 | Keeping every answer: `agent_answers`, never edited (D7)                                                                                | READY  | —      | —        |
-| 11.5 | The CLI, its own env file, and the secret guard (D5)                                                                                    | READY  | —      | —        |
-| 11.6 | Acceptance: real questions on the real year, every answer checked, asOf honoured, missing evidence said, a request to trade refused     | READY  | —      | —        |
+| ID   | Task                                                                                                                                    | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11.1 | The tool surface: six read-only tools, strict schemas, bound to `asOf`, capped results with provenance; nothing else reachable (D1, D2) | COMPLETE | `0fc7fb8` | `apps/api/src/agent/tools.ts`: `AGENT_TOOLS` — six strict, read-only tools over the read models, bound to the session's asOf (clamped, never chosen by the model), capped at 50 rows with provenance; an import allowlist test. `apps/api/src/agent/tools.test.ts` (10/10), `tools.integration.test.ts` (strict 3/3); 6 mutants killed. Design D1, D2 |
+| 11.2 | The answer contract and its checker: claims citing calls, numbers traceable to results, the rendered context (D3, D4)                   | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                     |
+| 11.3 | The loop: the model interface, the scripted fake, the Anthropic implementation, bounds, refusals, corrections (D6)                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                     |
+| 11.4 | Keeping every answer: `agent_answers`, never edited (D7)                                                                                | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                     |
+| 11.5 | The CLI, its own env file, and the secret guard (D5)                                                                                    | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                     |
+| 11.6 | Acceptance: real questions on the real year, every answer checked, asOf honoured, missing evidence said, a request to trade refused     | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                     |
 
 ### Initial tools
 
