@@ -51,6 +51,7 @@ function context(opts: BarOpts): MarketContext {
   const candle: Candle = {
     symbol: SYM,
     interval,
+    source: "LIVE_TICK",
     open: opts.close,
     high: opts.high ?? opts.close,
     low: opts.low ?? opts.close,
@@ -141,6 +142,9 @@ describe("EMA Crossover (plan/16 §2)", () => {
     expect(verdicts[1]?.side).toBe("SELL");
     expect(verdicts[1]?.qtyProposal).toBe(10);
     expect(verdicts[1]?.reason).toContain("exit long");
+    // An explicit exit (Phase 3 D1): the trade records STRATEGY_EXIT, and the
+    // runner closes the whole position instead of netting an opposite side.
+    expect(verdicts[1]?.exit).toBe(true);
   });
 
   it("does not whipsaw: no signal when fast stays above slow (trap)", () => {
@@ -187,6 +191,7 @@ describe("RSI mean reversion (plan/16 §3)", () => {
     ]);
     expect(verdicts[1]?.side).toBe("SELL");
     expect(verdicts[1]?.reason).toContain("exit long");
+    expect(verdicts[1]?.exit).toBe(true); // Phase 3 D1
   });
 });
 

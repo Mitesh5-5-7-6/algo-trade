@@ -1,29 +1,66 @@
 import type {
   CandleInterval,
+  ExitRules,
   DerivativeTarget,
   MarketContext,
   Signal,
   StrategyConfig,
   StrategyVerdict,
 } from "@neelkanth/core";
+import {
+  marketContextOf,
+  provenanceOf,
+  strategyVersionOf,
+} from "@neelkanth/core";
 import { indicatorKey } from "@neelkanth/indicators";
-import type { RunnableStrategy, StrategyRegistry } from "@neelkanth/strategies";
+import type {
+  RunnableStrategy,
+  SignalResolution,
+  StrategyRegistry,
+} from "@neelkanth/strategies";
 import type { EventPayload } from "@neelkanth/contracts";
 import { buildContext } from "./context-builder.js";
 import type {
   IndicatorProvisioner,
   RiskHandoff,
+  StoredStrategyState,
   StrategyPorts,
 } from "./ports.js";
+
+/**
+ * A forwarded signal awaiting its verdict.
+ *
+ * The side is carried here rather than looked up later, because none of the
+ * events that decide a signal's fate carry it back: `RISK_BLOCKED` names the
+ * check that failed, `ORDER_FILLED` names the order. The strategy needs to
+ * know WHICH of its proposals this was.
+ */
+interface PendingSignal {
+  readonly instanceKey: string;
+  readonly side: "BUY" | "SELL";
+}
 
 /** A live per-(strategy, symbol) instance; state is private to the strategy. */
 interface Instance {
   readonly strategyId: string;
+  /** Captured at enable time, so a mid-session config edit cannot rewrite it. */
+  readonly strategyVersion?: string;
+  /** When to get out (Phase 3). Replaced when an edit re-provisions. */
+  readonly exitRules?: ExitRules;
   readonly symbol: string;
   readonly interval: CandleInterval;
   readonly strategy: RunnableStrategy;
+  readonly type: string;
   errored: boolean;
   errorCount: number;
+  /**
+   * The snapshot as last written, so an unchanged state costs no write.
+   *
+   * Compared as a string rather than by identity: the strategy mutates its
+   * state in place, so the object is always the same object and always looks
+   * changed.
+   */
+  lastPersisted: string | null;
 }
 
 export interface StrategyRunnerDeps {
@@ -41,6 +78,10 @@ export interface StrategyRunnerDeps {
   candleWindow?: number;
   /** Auto-disable after this many consecutive analyze() throws (plan/15 §7). */
   maxErrors?: number;
+  /** Cap on signals awaiting a verdict, so a lost event cannot grow forever. */
+  maxPendingSignals?: number;
+  /** Clock for state timestamps; injected so a replay is reproducible. */
+  now?: () => number;
   /** Required error sink — no silent failures (plan/02 §10). */
   onError: (error: unknown, context: Record<string, unknown>) => void;
 }
@@ -59,6 +100,8 @@ export class StrategyRunner {
   private readonly minConfidence: number;
   private readonly candleWindow: number;
   private readonly maxErrors: number;
+  private readonly maxPendingSignals: number;
+  private readonly now: () => number;
   /** `${strategyId}|${symbol}` → instance. */
   private readonly instances = new Map<string, Instance>();
   /** Latest closed candle per `${symbol}|${interval}` (matched by ts). */
@@ -66,12 +109,24 @@ export class StrategyRunner {
     string,
     EventPayload<"CANDLE_CLOSED">
   >();
+  /**
+   * signalId → the instance that emitted it, for signals awaiting a verdict.
+   *
+   * The fill is attributed in two hops: ORDER_PLACED links order to signal,
+   * and the fill is looked up through it. ORDER_FILLED now names its signal
+   * too (§2.5), but it is optional there, and fills published before it
+   * existed lack it. Both maps are erased the moment a signal resolves.
+   */
+  private readonly pendingSignals = new Map<string, PendingSignal>();
+  private readonly orderToSignal = new Map<string, string>();
 
   constructor(deps: StrategyRunnerDeps) {
     this.deps = deps;
     this.minConfidence = deps.minConfidence ?? 0;
     this.candleWindow = deps.candleWindow ?? 50;
     this.maxErrors = deps.maxErrors ?? 5;
+    this.maxPendingSignals = deps.maxPendingSignals ?? 500;
+    this.now = deps.now ?? (() => Date.now());
   }
 
   private static seriesKey(symbol: string, interval: CandleInterval): string {
@@ -93,14 +148,24 @@ export class StrategyRunner {
         config.params,
         symbol,
       );
-      this.instances.set(`${config.strategyId}|${symbol}`, {
+      const instance: Instance = {
         strategyId: config.strategyId,
+        // Declared, or derived from the rule that decides — never absent
+        // (§2.8, PLAN rule 9). Captured here, at enable time.
+        strategyVersion: strategyVersionOf(config),
+        ...(config.exitRules === undefined
+          ? {}
+          : { exitRules: config.exitRules }),
         symbol,
         interval: strategy.interval,
         strategy,
+        type: config.type,
         errored: false,
         errorCount: 0,
-      });
+        lastPersisted: null,
+      };
+      this.instances.set(`${config.strategyId}|${symbol}`, instance);
+      await this.hydrateState(instance);
       await this.deps.provisionIndicators(
         symbol,
         strategy.interval,
@@ -127,10 +192,130 @@ export class StrategyRunner {
     return out;
   }
 
+  /**
+   * This strategy's exit rules, or null when it has none or is not running.
+   *
+   * Synchronous, because the Exit Engine asks on every closed bar for every
+   * open position — a read per decision would put the database on the path
+   * of a judgement made from a candle.
+   */
+  exitRulesFor(strategyId: string): ExitRules | null {
+    for (const instance of this.instances.values()) {
+      if (instance.strategyId === strategyId) return instance.exitRules ?? null;
+    }
+    return null;
+  }
+
   /** Disable a strategy: drop all its per-symbol instances. */
   disable(strategyId: string): void {
     for (const key of [...this.instances.keys()]) {
       if (key.startsWith(`${strategyId}|`)) this.instances.delete(key);
+    }
+    // Forget anything it had in flight. The orders themselves are unaffected —
+    // this only stops a later fill being routed to an instance that is gone.
+    for (const [signalId, pending] of this.pendingSignals) {
+      if (pending.instanceKey.startsWith(`${strategyId}|`)) {
+        this.pendingSignals.delete(signalId);
+      }
+    }
+  }
+
+  /**
+   * Restore a freshly created instance's state from storage (§0.5.6).
+   *
+   * Refuses more than it accepts, and says which. A snapshot is an opaque blob
+   * whose meaning lives entirely in the code that wrote it, so reading one
+   * back into a different strategy — or into a later build whose fields mean
+   * something else — produces a running strategy with plausible state and no
+   * error anywhere. Every refusal here leaves the instance cold, which is
+   * exactly the behaviour that existed before any of this.
+   */
+  private async hydrateState(instance: Instance): Promise<void> {
+    const ports = this.deps.ports;
+    if (ports.loadStrategyState === undefined) return;
+    const version = instance.strategy.stateVersion;
+    if (version === null) return; // this strategy does not persist state
+
+    try {
+      const stored = await ports.loadStrategyState(
+        instance.strategyId,
+        instance.symbol,
+      );
+      if (stored === null) return;
+      if (stored.type !== instance.type) {
+        this.deps.onError(
+          new Error("stored state belongs to another strategy"),
+          {
+            where: "hydrateState",
+            strategyId: instance.strategyId,
+            symbol: instance.symbol,
+            stored: stored.type,
+            expected: instance.type,
+          },
+        );
+        return;
+      }
+      if (stored.stateVersion !== version) {
+        // Not an error — a deploy changed the shape, and refusing the old
+        // snapshot is the correct response rather than a fault to fix.
+        this.deps.onError(new Error("stored state is a different version"), {
+          where: "hydrateState",
+          strategyId: instance.strategyId,
+          symbol: instance.symbol,
+          stored: stored.stateVersion,
+          expected: version,
+          note: "starting cold, which is what happened before state was persisted",
+        });
+        return;
+      }
+      if (!instance.strategy.restore(stored.snapshot)) return;
+      instance.lastPersisted = JSON.stringify(stored.snapshot);
+    } catch (error) {
+      // A snapshot that will not parse must not stop the strategy running.
+      this.deps.onError(error, {
+        where: "hydrateState",
+        strategyId: instance.strategyId,
+        symbol: instance.symbol,
+      });
+    }
+  }
+
+  /**
+   * Write this instance's state, if it changed (§0.5.6).
+   *
+   * Called after every decision and after every resolution, because both move
+   * it — a latch is set by one and confirmed by the other. Never rejects: the
+   * in-memory state is already correct, and a storage hiccup must not stop the
+   * machine trading.
+   */
+  private async persistState(instance: Instance): Promise<void> {
+    const ports = this.deps.ports;
+    if (ports.saveStrategyState === undefined) return;
+    const version = instance.strategy.stateVersion;
+    if (version === null) return;
+
+    try {
+      const snapshot = instance.strategy.snapshot();
+      if (snapshot === null) return;
+      const serialized = JSON.stringify(snapshot);
+      if (serialized === instance.lastPersisted) return;
+
+      const record: StoredStrategyState = {
+        strategyId: instance.strategyId,
+        symbol: instance.symbol,
+        type: instance.type,
+        stateVersion: version,
+        snapshot,
+        updatedAt: this.now(),
+      };
+      await ports.saveStrategyState(record);
+      instance.lastPersisted = serialized;
+    } catch (error) {
+      this.deps.onError(error, {
+        where: "persistState",
+        strategyId: instance.strategyId,
+        symbol: instance.symbol,
+      });
     }
   }
 
@@ -206,6 +391,9 @@ export class StrategyRunner {
         });
 
         await this.runOne(instance, context, candle.ts);
+        // The bar moved this instance's state, whatever it decided — a HOLD
+        // still advances an opening range and the previous bar's EMAs.
+        await this.persistState(instance);
       }
     } catch (error) {
       this.deps.onError(error, { where: "onIndicatorsUpdated" });
@@ -273,12 +461,148 @@ export class StrategyRunner {
     );
 
     // HOLD documents that the strategy looked and chose inaction (plan/15 §4);
-    // it never proceeds to risk. Below-threshold signals are recorded but not
-    // forwarded (plan/15 §6).
-    if (verdict.side === "HOLD") return;
-    if (verdict.confidence < this.minConfidence) return;
+    // it never proceeds to risk. A HOLD proposes nothing, so there is no latch
+    // to release. Judged on the SIGNAL's side: an exit verdict's side is
+    // derived from the position (D1), and one with nothing to close is a HOLD.
+    if (signal.side === "HOLD") return;
 
+    // Below-threshold signals are recorded but not forwarded (plan/15 §6). The
+    // strategy still has to hear about it: it marked an entry as proposed, and
+    // a proposal nobody will ever act on must not sit there spending the day.
+    if (verdict.confidence < this.minConfidence) {
+      this.resolve(instance, {
+        signalId: signal.signalId,
+        side: signal.side,
+        status: "REJECTED",
+        reason: "below the confidence threshold",
+      });
+      return;
+    }
+
+    this.remember(signal.signalId, instance, signal.side);
     await this.deps.handoff(signal); // synchronous risk→order (plan/14 §2)
+  }
+
+  /**
+   * Tell a strategy what became of a signal it emitted (§0.5.5).
+   *
+   * Never throws into the caller: these arrive on the order path, and a
+   * strategy misbehaving in its callback must not disturb order handling.
+   */
+  private resolve(instance: Instance, resolution: SignalResolution): void {
+    this.pendingSignals.delete(resolution.signalId);
+    try {
+      instance.strategy.onSignalOutcome(resolution);
+      // A resolution moves the latch, and the latch is the part of the state
+      // that most needs to survive: a restart that forgets an entry was
+      // confirmed would take it again.
+      void this.persistState(instance);
+    } catch (error) {
+      this.deps.onError(error, {
+        where: "onSignalOutcome",
+        strategyId: instance.strategyId,
+        symbol: instance.symbol,
+        signalId: resolution.signalId,
+      });
+    }
+  }
+
+  /** Track a forwarded signal until something decides its fate. */
+  private remember(
+    signalId: string,
+    instance: Instance,
+    side: "BUY" | "SELL",
+  ): void {
+    if (this.pendingSignals.size >= this.maxPendingSignals) {
+      // Something upstream has stopped resolving. Drop the oldest and say so,
+      // rather than growing a map for the life of the process.
+      const oldest = this.pendingSignals.keys().next();
+      if (!oldest.done) {
+        this.pendingSignals.delete(oldest.value);
+        this.deps.onError(new Error("pending signal evicted unresolved"), {
+          where: "remember",
+          signalId: oldest.value,
+        });
+      }
+    }
+    this.pendingSignals.set(signalId, {
+      instanceKey: `${instance.strategyId}|${instance.symbol}`,
+      side,
+    });
+  }
+
+  private pendingFor(
+    signalId: string,
+  ): { instance: Instance; pending: PendingSignal } | null {
+    const pending = this.pendingSignals.get(signalId);
+    if (pending === undefined) return null;
+    const instance = this.instances.get(pending.instanceKey);
+    return instance === undefined ? null : { instance, pending };
+  }
+
+  /**
+   * A signal the Risk Engine refused (§0.5.5).
+   *
+   * This is the case the whole mechanism exists for. Before it, a block at
+   * 09:20 consumed ORB's single daily entry and the strategy stayed silent
+   * until the close — indistinguishable, from the outside, from a day on which
+   * no breakout ever happened.
+   */
+  onRiskBlocked(payload: EventPayload<"RISK_BLOCKED">): void {
+    const found = this.pendingFor(payload.signalId);
+    if (found === null) return;
+    this.resolve(found.instance, {
+      signalId: payload.signalId,
+      side: found.pending.side,
+      status: "REJECTED",
+      reason: `risk blocked: ${payload.failedCheck}`,
+    });
+  }
+
+  /**
+   * An order reached the broker — remember which signal it came from.
+   *
+   * The runner attributes a fill through this link rather than the fill's own
+   * optional `signalId`, which older fills lack — without it a fill could not
+   * always be attributed to the proposal it confirms.
+   */
+  onOrderPlaced(payload: EventPayload<"ORDER_PLACED">): void {
+    if (!this.pendingSignals.has(payload.signalId)) return;
+    this.orderToSignal.set(payload.orderId, payload.signalId);
+  }
+
+  /** The broker refused the order — the proposal is released. */
+  onOrderRejected(payload: EventPayload<"ORDER_REJECTED">): void {
+    this.orderToSignal.delete(payload.orderId);
+    const found = this.pendingFor(payload.signalId);
+    if (found === null) return;
+    this.resolve(found.instance, {
+      signalId: payload.signalId,
+      side: found.pending.side,
+      status: "REJECTED",
+      reason: `broker rejected: ${payload.reason}`,
+    });
+  }
+
+  /**
+   * A confirmed execution — and the only thing that makes an entry real.
+   *
+   * Keyed on the order rather than the position, because the position is a
+   * projection that can merge several fills; the question here is narrower:
+   * did THIS proposal become a trade?
+   */
+  onOrderFilled(payload: EventPayload<"ORDER_FILLED">): void {
+    const signalId = this.orderToSignal.get(payload.orderId);
+    if (signalId === undefined) return;
+    this.orderToSignal.delete(payload.orderId);
+    const found = this.pendingFor(signalId);
+    if (found === null) return;
+    this.resolve(found.instance, {
+      signalId,
+      side: found.pending.side,
+      status: "FILLED",
+      reason: `filled ${String(payload.qty)} @ ${String(payload.filledPrice)}`,
+    });
   }
 
   /**
@@ -342,20 +666,49 @@ export class StrategyRunner {
       (verdict.targetPct === undefined
         ? undefined
         : trade.price * (1 + verdict.targetPct));
+    // An exit closes what is actually held (Phase 3 D1, Q1). Emitting the
+    // opposite side instead — the only mechanism before this — is
+    // indistinguishable from a genuine reversal, which Phase 2 Q1 makes TWO
+    // trades: one closed, and a phantom facing the other way.
+    const held = verdict.exit === true ? context.position : null;
     return {
       signalId: this.deps.nextSignalId(),
       strategyId: instance.strategyId,
+      // Stamped at decision time from the config that was enabled, so a later
+      // edit cannot restate what this signal was made by (Q4).
+      ...(instance.strategyVersion === undefined
+        ? {}
+        : { strategyVersion: instance.strategyVersion }),
       symbol: trade.symbol,
       ...(trade.underlying === undefined
         ? {}
         : { underlyingSymbol: trade.underlying }),
-      side: verdict.side,
+      // Derived, not asked for: a strategy that had to name the closing side
+      // could name the wrong one. With nothing held, an exit has nothing to
+      // close and is recorded as a HOLD — never an entry on whatever side the
+      // verdict happened to name (audit A2).
+      side:
+        held !== null
+          ? held.side === "LONG"
+            ? "SELL"
+            : "BUY"
+          : verdict.exit === true
+            ? "HOLD"
+            : verdict.side,
       confidence: verdict.confidence,
       ...(verdict.qtyProposal === undefined
         ? {}
         : { qtyProposal: verdict.qtyProposal }),
       ...(stopLoss === undefined ? {} : { stopLoss }),
       ...(target === undefined ? {} : { target }),
+      // The WHOLE position, whatever quantity the verdict proposed (Q1).
+      ...(held === null
+        ? {}
+        : {
+            exitReason: "STRATEGY_EXIT" as const,
+            positionId: held.positionId,
+            qtyProposal: held.qty,
+          }),
       reason: verdict.reason,
       contextSnapshot: {
         price: trade.price,
@@ -363,6 +716,14 @@ export class StrategyRunner {
         session: context.session.phase,
         sentiment: context.sentiment,
       },
+      // What the decision stood on, for the Trade it may become (§2.1). The
+      // ANALYSED bar: for a derivative that is the underlying's, the data the
+      // decision rested on, never the traded contract's.
+      dataProvenance: provenanceOf(context.candle),
+      // Copied, never defaulted: a bar silent about its volume yields `{}`,
+      // and absent keeps the candle's own meaning rather than a claim that
+      // nothing here ever made.
+      marketContext: marketContextOf(context.candle),
       ts,
     };
   }

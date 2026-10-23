@@ -7,9 +7,13 @@ import {
   expect,
   it,
 } from "vitest";
+import {
+  closeProbe,
+  probeMongo,
+  type MongoProbe,
+} from "../test-support/infra.js";
 import type { Position, RiskLimits, SessionContext } from "@neelkanth/core";
 import {
-  connectMongo,
   ensureIndexes,
   UsersRepository,
   type MongoConnection,
@@ -87,6 +91,7 @@ function fakeRuntime(): RuntimeControls {
     disableStrategy() {
       /* noop */
     },
+    exitPositionNow: () => Promise.resolve(false),
     applyGlobalSettings() {
       /* noop */
     },
@@ -115,18 +120,36 @@ function silentLogger() {
   });
 }
 
+let probe: MongoProbe | undefined;
 let connection: MongoConnection;
 let app: ApiServer;
 let users: UsersRepository;
 
 beforeAll(async () => {
-  connection = await connectMongo(MONGO_URI, "neelkanth_it_auth");
+  probe = await probeMongo(
+    MONGO_URI,
+    "neelkanth_it_auth",
+    "apps/api/src/auth/auth.test.ts",
+  );
+  if (!probe.reachable) return;
+  connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 });
 
 afterAll(async () => {
-  await connection.close();
+  await closeProbe(probe);
+});
+
+/**
+ * Skip every test in this file when the database is unreachable (§0.4).
+ *
+ * A `beforeEach` rather than a guard inside each test: reachability is only
+ * known after `beforeAll` has run, so `describe.skipIf` — which is evaluated
+ * at collection time — cannot see it.
+ */
+beforeEach((ctx) => {
+  if (probe?.reachable !== true) ctx.skip();
 });
 
 beforeEach(async () => {
@@ -277,7 +300,7 @@ describe("step-up re-auth (plan/21 §5)", () => {
     });
     expect(good.statusCode).toBe(200);
     expect(good.json()).toEqual({ tradingEnabled: true });
-  });
+  }, 30_000);
 
   it("requires step-up to loosen a limit, but not to tighten it", async () => {
     const cookie = sessionCookie(await login());
@@ -327,6 +350,66 @@ describe("step-up re-auth (plan/21 §5)", () => {
         })
       ).statusCode,
     ).toBe(200);
+  });
+
+  /**
+   * Phase 3 D6: holding overnight is a loosening — a position may carry gap
+   * risk — so opting a strategy out of square-off is refused without a
+   * password, by the real verifier. A time exit only adds a way out.
+   */
+  /** Phase 3 D5: a manual exit sends a live market order. */
+  it("requires step-up for a manual emergency exit", async () => {
+    const cookie = sessionCookie(await login());
+    const res = await app.inject({
+      method: "POST",
+      url: "/positions/pos_1/exit",
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json<{ error: { code: string } }>().error.code).toBe(
+      "STEP_UP_REQUIRED",
+    );
+  });
+
+  it("requires step-up to opt a strategy out of square-off", async () => {
+    const cookie = sessionCookie(await login());
+    const strategy = {
+      type: "EMA_CROSSOVER",
+      name: "overnight",
+      params: { fast: 9, slow: 21 },
+      symbols: ["NSE:X-EQ"],
+    };
+
+    const noPw = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      headers: { cookie },
+      payload: { ...strategy, exitRules: { squareOffAtSessionEnd: false } },
+    });
+    expect(noPw.statusCode).toBe(403);
+    expect(noPw.json<{ error: { code: string } }>().error.code).toBe(
+      "STEP_UP_REQUIRED",
+    );
+
+    const withPw = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      headers: { cookie },
+      payload: {
+        ...strategy,
+        exitRules: { squareOffAtSessionEnd: false },
+        stepUpPassword: PASSWORD,
+      },
+    });
+    expect(withPw.statusCode).toBe(201);
+
+    const timeExit = await app.inject({
+      method: "POST",
+      url: "/strategies",
+      headers: { cookie },
+      payload: { ...strategy, exitRules: { maxHoldMinutes: 30 } },
+    });
+    expect(timeExit.statusCode).toBe(201);
   });
 });
 

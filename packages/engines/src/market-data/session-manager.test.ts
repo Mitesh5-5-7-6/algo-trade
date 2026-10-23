@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  istDateKey,
-  NSE_DEFAULT_SESSION,
-  SessionManager,
-  startOfDayIST,
-} from "./session-manager.js";
+import { NSE_DEFAULT_SESSION } from "@neelkanth/core";
+import { SessionManager } from "./session-manager.js";
 
 /** Epoch ms for an IST wall-clock instant (month is 0-based). */
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -81,14 +77,6 @@ describe("SessionManager transitions (plan/17 §6)", () => {
   });
 });
 
-describe("istDateKey", () => {
-  it("returns the IST trading date, not the UTC date", () => {
-    // 2026-01-05 20:00 UTC = 2026-01-06 01:30 IST → next day in IST.
-    expect(istDateKey(Date.UTC(2026, 0, 5, 20, 0))).toBe("2026-01-06");
-    expect(istDateKey(ist(...MON, 9, 20))).toBe("2026-01-05");
-  });
-});
-
 describe("SessionManager.phase (pure query)", () => {
   it("answers without disturbing evaluate()'s edge detection", () => {
     const manager = new SessionManager();
@@ -102,21 +90,38 @@ describe("SessionManager.phase (pure query)", () => {
   });
 });
 
-describe("startOfDayIST", () => {
-  it("returns IST midnight of the instant's trading date, in epoch ms", () => {
-    // Any instant during Monday's IST day maps to Mon 00:00 IST.
-    expect(startOfDayIST(ist(...MON, 9, 20))).toBe(ist(...MON, 0, 0));
-    expect(startOfDayIST(ist(...MON, 23, 59))).toBe(ist(...MON, 0, 0));
-    // 20:00 UTC Mon is already Tuesday 01:30 IST → Tuesday's midnight.
-    expect(startOfDayIST(Date.UTC(2026, 0, 5, 20, 0))).toBe(
-      ist(2026, 0, 6, 0, 0),
-    );
+/**
+ * Task 4.4: a special session is a session.
+ *
+ * NSE trades some weekends — the Union Budget session on Sunday 2026-02-01
+ * is in the Phase 1 dataset as 75 real bars. The calendar learned this in
+ * Phase 1 (`isTradingDayIST`); the session manager still treated every
+ * weekend as closed, so a replay of that day would have fed 75 bars to a
+ * machine that believed the market shut, and decided nothing.
+ */
+describe("SessionManager special sessions (§4.4)", () => {
+  // Sunday 2026-02-01, 10:00 IST.
+  const budgetSunday = Date.UTC(2026, 1, 1, 4, 30);
+
+  it("opens a weekend day declared a special session", () => {
+    const manager = new SessionManager({
+      ...NSE_DEFAULT_SESSION,
+      specialSessions: ["2026-02-01"],
+    });
+    expect(manager.phase(budgetSunday)).toBe("open");
   });
 
-  it("agrees with istDateKey about which day an instant belongs to", () => {
-    const around = Date.UTC(2026, 0, 5, 18, 30); // exactly IST midnight
-    for (const now of [around - 1, around, around + 1]) {
-      expect(istDateKey(startOfDayIST(now))).toBe(istDateKey(now));
-    }
+  it("keeps an undeclared weekend closed", () => {
+    expect(new SessionManager().phase(budgetSunday)).toBe("closed");
+  });
+
+  /** A declared closure outranks a special session (Phase 1's precedence). */
+  it("lets a holiday close even a special session", () => {
+    const manager = new SessionManager({
+      ...NSE_DEFAULT_SESSION,
+      holidays: ["2026-02-01"],
+      specialSessions: ["2026-02-01"],
+    });
+    expect(manager.phase(budgetSunday)).toBe("closed");
   });
 });

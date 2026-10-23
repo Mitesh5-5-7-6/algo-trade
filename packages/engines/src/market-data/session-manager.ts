@@ -1,53 +1,21 @@
-import type { SessionPhase } from "@neelkanth/core";
-
-/** IST is UTC+5:30, no DST — a fixed offset (plan/17 §6, NSE/BSE clock). */
-const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
-
-/** The IST trading date ("YYYY-MM-DD") for an instant — the session label. */
-export function istDateKey(now: number): string {
-  const ist = new Date(now + IST_OFFSET_MS);
-  const month = String(ist.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(ist.getUTCDate()).padStart(2, "0");
-  return `${String(ist.getUTCFullYear())}-${month}-${day}`;
-}
-
-const DAY_MS = 86_400_000;
+import {
+  isTradingDayIST,
+  IST_OFFSET_MS,
+  NSE_DEFAULT_SESSION,
+  istDateKey,
+  parseHHMM,
+  type SessionConfig,
+  type SessionPhase,
+} from "@neelkanth/core";
 
 /**
- * Epoch ms of IST midnight for the instant's trading date — the "today"
- * boundary day-scoped read models filter on (same clock as istDateKey).
+ * The clock and calendar primitives this file used to own — `istDateKey`,
+ * `startOfDayIST`, `tradingDaysBetween`, `SessionConfig`, `NSE_DEFAULT_SESSION`
+ * — now live in `@neelkanth/core`. Historical ingestion has to agree with the
+ * live session about what a trading day is, and it runs in `broker`, which
+ * cannot import this package. Import them from `@neelkanth/core` directly;
+ * they are deliberately not re-exported here, so there is one address for each.
  */
-export function startOfDayIST(now: number): number {
-  return Math.floor((now + IST_OFFSET_MS) / DAY_MS) * DAY_MS - IST_OFFSET_MS;
-}
-
-function parseHHMM(value: string): number {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  if (!match) throw new Error(`invalid HH:MM time: ${value}`);
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  return hours * 60 + minutes;
-}
-
-export interface SessionConfig {
-  /** Pre-open auction start, IST "HH:MM" (NSE default 09:00). */
-  preOpen: string;
-  /** Regular session open, IST "HH:MM" (NSE default 09:15). */
-  open: string;
-  /** Regular session close, IST "HH:MM" (NSE default 15:30). */
-  close: string;
-  /** Exchange holidays as "YYYY-MM-DD" IST dates. */
-  holidays: readonly string[];
-  exchange: string;
-}
-
-export const NSE_DEFAULT_SESSION: SessionConfig = {
-  preOpen: "09:00",
-  open: "09:15",
-  close: "15:30",
-  holidays: [],
-  exchange: "NSE",
-};
 
 export interface SessionEvaluation {
   phase: SessionPhase;
@@ -80,6 +48,7 @@ export class SessionManager {
   private readonly openMin: number;
   private readonly closeMin: number;
   private readonly holidays: ReadonlySet<string>;
+  private readonly specialSessions: ReadonlySet<string>;
   private previous: SessionPhase | null = null;
 
   constructor(config: SessionConfig = NSE_DEFAULT_SESSION) {
@@ -87,6 +56,7 @@ export class SessionManager {
     this.openMin = parseHHMM(config.open);
     this.closeMin = parseHHMM(config.close);
     this.holidays = new Set(config.holidays);
+    this.specialSessions = new Set(config.specialSessions ?? []);
     if (!(this.preOpenMin <= this.openMin && this.openMin < this.closeMin)) {
       throw new Error("session times must satisfy preOpen ≤ open < close");
     }
@@ -102,9 +72,11 @@ export class SessionManager {
   }
 
   private phaseAt(now: number): SessionPhase {
-    const { dateKey, weekday, minuteOfDay } = SessionManager.toIst(now);
-    const isWeekend = weekday === 0 || weekday === 6;
-    if (isWeekend || this.holidays.has(dateKey)) return "closed";
+    const { dateKey, minuteOfDay } = SessionManager.toIst(now);
+    // One rule for whether a day existed, shared with ingestion: a holiday
+    // closes it, a special session opens a weekend, otherwise weekdays trade.
+    if (!isTradingDayIST(dateKey, this.holidays, this.specialSessions))
+      return "closed";
     if (minuteOfDay < this.preOpenMin) return "closed";
     if (minuteOfDay < this.openMin) return "pre-open";
     if (minuteOfDay < this.closeMin) return "open";

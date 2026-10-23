@@ -1,5 +1,10 @@
 import { z } from "zod";
 import {
+  DataProvenanceSchema,
+  EntryMarketContextSchema,
+  ExitReasonSchema,
+} from "./trade.js";
+import {
   ConfidenceSchema,
   EntityIdSchema,
   PriceSchema,
@@ -47,6 +52,19 @@ export const StrategyVerdictSchema = z.object({
    */
   stopLossPct: z.number().gt(0).lt(1).optional(),
   targetPct: z.number().gt(0).optional(),
+  /**
+   * Close the open position, rather than propose a new one (Phase 3 D1).
+   *
+   * A strategy could previously only exit by emitting the OPPOSITE side,
+   * which the position engine netted against. Under Phase 2's Q1 that is
+   * indistinguishable from a genuine reversal — so "I am done" produced one
+   * closed trade AND a phantom position facing the other way.
+   *
+   * With this the runner closes the WHOLE position actually held, stamped
+   * STRATEGY_EXIT, whatever side or quantity the verdict names (Q1). While
+   * flat it is a no-op, recorded as a HOLD — never an entry.
+   */
+  exit: z.boolean().optional(),
   /** Mandatory human-readable justification (plan/15 §2). */
   reason: z.string().min(1),
 });
@@ -59,6 +77,43 @@ export type SignalOutcome = z.infer<typeof SignalOutcomeSchema>;
 export const SignalSchema = z.object({
   signalId: EntityIdSchema,
   strategyId: EntityIdSchema,
+  /**
+   * The strategy's version at the moment of the decision (design §5.4 Q4).
+   *
+   * Optional, and absence means a record written before versions existed —
+   * the same reason `source` was defaulted rather than required. A required
+   * field would throw on the first read of anything already in Mongo.
+   *
+   * Copied forward rather than referenced. Each of Signal, Order and Trade
+   * is written at a different moment by a different component, and a trade
+   * whose version had to be looked up through its order would lose it the
+   * moment orders are pruned.
+   */
+  strategyVersion: z.string().min(1).optional(),
+  /**
+   * Why this signal closes a position, when it does (ADR §9.2, D6).
+   *
+   * Typed rather than parsed back out of `reason`. The Exit Engine
+   * already writes `"exit: stop"` there for humans; deriving the enum from
+   * that string would make a log line load-bearing, and the first person
+   * to reword it would silently change what every completed trade claims
+   * about why it ended.
+   *
+   * Absent on an entry signal, and absent is the honest value: a trade
+   * closed by something that never said why must not be given a reason it
+   * did not have.
+   */
+  exitReason: ExitReasonSchema.optional(),
+  /**
+   * The position this signal closes, when it closes one (Phase 3 D3).
+   *
+   * Set by whoever decided to exit, and carried onto the order so the
+   * durable in-flight check has something to match on. Without it, the
+   * only record that an exit was already sent is an in-memory Set that a
+   * restart erases — and the second exit is a REVERSAL under Phase 2's
+   * model, so it opens a phantom trade rather than merely duplicating.
+   */
+  positionId: EntityIdSchema.optional(),
   symbol: SymbolSchema,
   /**
    * What the strategy ANALYSED, when that differs from what it trades.
@@ -76,6 +131,17 @@ export const SignalSchema = z.object({
   target: PriceSchema.optional(),
   reason: z.string().min(1),
   contextSnapshot: ContextSnapshotSchema,
+  /**
+   * The bar this decision was made on (design §2, drift 1).
+   *
+   * Stamped by the Strategy Runner, the only component holding the bar at
+   * decision time, and copied forward — Order, `ORDER_FILLED`, Trade — the
+   * same road as `strategyVersion`. Optional: every signal already stored
+   * predates it, and an Exit Engine decision is not an entry.
+   */
+  dataProvenance: DataProvenanceSchema.optional(),
+  /** Whether that bar's volume could be trusted (design §2, drift 3). */
+  marketContext: EntryMarketContextSchema.optional(),
   outcome: SignalOutcomeSchema.optional(),
   rejectReason: z.string().optional(),
   ts: TimestampSchema,

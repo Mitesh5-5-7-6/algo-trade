@@ -29,6 +29,26 @@ let bus: EventBus | undefined;
 let redisAvailable = false;
 const busErrors: unknown[] = [];
 
+/**
+ * Wait until `ready()` holds, or give up.
+ *
+ * Replaces a fixed `setTimeout(300)`. Pub/sub delivery took well under 300ms
+ * against a local container, and does not against a hosted instance across a
+ * region — so the sleep was not a wait, it was a bet on latency. Polling is
+ * correct at any latency and returns as soon as the event lands, so the fast
+ * case stays fast.
+ */
+async function until(
+  ready: () => boolean,
+  ms = 15_000,
+  step = 25,
+): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!ready() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, step));
+  }
+}
+
 /** Reject if `promise` doesn't settle within `ms` — ping can hang when down. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -44,15 +64,56 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 beforeAll(async () => {
   const conn = createRedisConnections(REDIS_URL);
   try {
-    await withTimeout(conn.client.ping(), 2_000);
+    // 2 seconds was enough when the only Redis anyone ran this against was a
+    // local container. A hosted instance adds a TLS handshake and real network
+    // latency — Upstash in ap-south-1 does not reliably answer inside two
+    // seconds on a first connect — and the suite then reported "unreachable"
+    // for an instance that a direct PING answers fine.
+    await withTimeout(conn.client.ping(), 15_000);
     redisAvailable = true;
     connections = conn;
-    bus = createEventBus(conn.publisher, conn.subscriber, (error) => {
-      busErrors.push(error);
-    });
-  } catch {
+    // `redisEvents` must name the events that actually travel over Redis.
+    // It is empty by default — and honestly so, because in production one
+    // process holds the whole chain and a round trip to Upstash and back was
+    // ~96% of all Redis commands. But an integration suite that leaves it
+    // empty is not testing Redis at all: `subscribe` returns before issuing
+    // SUBSCRIBE and `publish` dispatches in-process, so the relay test was a
+    // pure in-memory round trip and the malformed-message test published into
+    // a channel nobody was listening on. Naming the event here is what makes
+    // this file exercise the path it claims to.
+    bus = createEventBus(
+      conn.publisher,
+      conn.subscriber,
+      (error) => {
+        busErrors.push(error);
+      },
+      { redisEvents: ["ORDER_FILLED"] },
+    );
+  } catch (error) {
     redisAvailable = false;
     await conn.quit().catch(() => undefined);
+
+    // Previously this skipped in silence, which is the half of the problem
+    // §0.4 exists to fix: a suite that never ran and a suite that passed both
+    // reported `0 failed`.
+    const reason = error instanceof Error ? error.message : String(error);
+    if (process.env["REQUIRE_INTEGRATION"] === "1") {
+      throw new Error(
+        `redis.integration.test.ts: Redis unreachable and ` +
+          `REQUIRE_INTEGRATION=1 — ${reason}`,
+      );
+    }
+    const line = "#".repeat(74);
+    process.stderr.write(
+      `\n${line}\n` +
+        `INTEGRATION SUITE NOT RUN — packages/redis/src/redis.integration.test.ts\n` +
+        `  These tests were NOT EXECUTED. Skipped is not passed.\n` +
+        `  reason : ${reason}\n` +
+        `  target : ${REDIS_URL.replace(/\/\/[^@/]*@/, "//<credentials>@")}\n` +
+        `  fix    : docker compose -f docker-compose.test.yml up -d\n` +
+        `  strict : run \`pnpm test:integration\` to make this a hard failure\n` +
+        `${line}\n\n`,
+    );
   }
 });
 
@@ -107,7 +168,7 @@ describe("event bus (plan/09)", () => {
       "sig_it_1",
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await until(() => received.length >= 1);
     expect(received).toHaveLength(1);
     const event = received[0] as {
       name: string;
@@ -145,7 +206,7 @@ describe("event bus (plan/09)", () => {
       "events:ORDER_FILLED",
       "{not json at all",
     );
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await until(() => busErrors.length > before);
     expect(busErrors.length).toBeGreaterThan(before);
   });
 });

@@ -111,12 +111,30 @@ export class OrderManager {
         orderId: this.nextOrderId(),
         signalId: signal.signalId,
         strategyId: signal.strategyId,
+        ...(signal.strategyVersion === undefined
+          ? {}
+          : { strategyVersion: signal.strategyVersion }),
         symbol: signal.symbol,
         side,
         qty,
         type: "MARKET",
         ...(signal.stopLoss !== undefined ? { stopLoss: signal.stopLoss } : {}),
         ...(signal.target !== undefined ? { takeProfit: signal.target } : {}),
+        // What the entry decision stood on, for the Trade (§2.1).
+        ...(signal.dataProvenance === undefined
+          ? {}
+          : { dataProvenance: signal.dataProvenance }),
+        ...(signal.marketContext === undefined
+          ? {}
+          : { marketContext: signal.marketContext }),
+        // The exit reason travels with the instruction, so the fill can state
+        // it without a join back to the signal (D6).
+        ...(signal.exitReason === undefined
+          ? {}
+          : { exitReason: signal.exitReason }),
+        ...(signal.positionId === undefined
+          ? {}
+          : { positionId: signal.positionId }),
         status: "PLACED",
         mode: this.mode,
         createdAt: this.now(),
@@ -367,12 +385,40 @@ export class OrderManager {
    */
   private static protective(
     order: Order,
-  ): Partial<Pick<Order, "stopLoss" | "takeProfit">> {
+  ): Partial<
+    Pick<
+      Order,
+      | "stopLoss"
+      | "takeProfit"
+      | "exitReason"
+      | "strategyVersion"
+      | "dataProvenance"
+      | "marketContext"
+      | "signalId"
+    >
+  > {
     return {
+      // Every fill names the signal behind its order (§2.5, L4).
+      signalId: order.signalId,
       ...(order.stopLoss === undefined ? {} : { stopLoss: order.stopLoss }),
       ...(order.takeProfit === undefined
         ? {}
         : { takeProfit: order.takeProfit }),
+      // Carried on the same helper as the protective levels because every
+      // ORDER_FILLED publish site already spreads it — three call sites, one
+      // place to keep them from drifting (plan/02 §6).
+      ...(order.exitReason === undefined
+        ? {}
+        : { exitReason: order.exitReason }),
+      ...(order.strategyVersion === undefined
+        ? {}
+        : { strategyVersion: order.strategyVersion }),
+      ...(order.dataProvenance === undefined
+        ? {}
+        : { dataProvenance: order.dataProvenance }),
+      ...(order.marketContext === undefined
+        ? {}
+        : { marketContext: order.marketContext }),
     };
   }
 

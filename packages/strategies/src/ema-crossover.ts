@@ -43,6 +43,11 @@ export interface EmaCrossoverState {
   prevSlow: number | null;
 }
 
+const EmaCrossoverSnapshotSchema = z.object({
+  prevFast: z.number().nullable(),
+  prevSlow: z.number().nullable(),
+});
+
 export const emaCrossover: StrategyDefinition<
   EmaCrossoverParams,
   EmaCrossoverState
@@ -103,6 +108,11 @@ export const emaCrossover: StrategyDefinition<
           confidence: Math.max(confidence, 0.6),
           qtyProposal: context.position.qty,
           reason: `fast EMA ${p.fast} crossed below slow EMA ${p.slow} — exit long`,
+          // An explicit exit (Phase 3 D1): the runner closes the whole
+          // position held and the Trade records STRATEGY_EXIT, rather than an
+          // opposite-side order the position engine nets — which a resized
+          // position would turn into a reversal.
+          exit: true,
         };
       }
       if (p.allowShort && context.position === null) {
@@ -124,5 +134,24 @@ export const emaCrossover: StrategyDefinition<
     }
 
     return hold("no cross");
+  },
+
+  /**
+   * A cross is an EVENT — the relationship between two EMAs inverting — so it
+   * is only visible with the PREVIOUS bar's pair to compare against (§0.5.6).
+   * A restarted process has none, and silently cannot see the cross it was in
+   * the middle of. The indicators themselves are warmed from stored candles at
+   * enable time; this is the half of the comparison that lives in the strategy
+   * rather than in the engine.
+   */
+  stateVersion: "1.0.0",
+  snapshot: (state) => ({
+    prevFast: state.prevFast,
+    prevSlow: state.prevSlow,
+  }),
+  restore: (state, snapshot) => {
+    const parsed = EmaCrossoverSnapshotSchema.parse(snapshot);
+    state.prevFast = parsed.prevFast;
+    state.prevSlow = parsed.prevSlow;
   },
 };

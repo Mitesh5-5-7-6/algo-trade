@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   BrokerConnectionState,
   Candle,
@@ -16,6 +17,7 @@ import {
   createEventBus,
   hotPriceKey,
   hotSessionKey,
+  riskDailyLossKey,
   type EventBus,
   type RedisConnections,
 } from "@neelkanth/redis";
@@ -28,6 +30,8 @@ import {
   SettingsRepository,
   SignalsRepository,
   StrategiesRepository,
+  TradesRepository,
+  StrategyStateRepository,
   type MongoConnection,
 } from "@neelkanth/db";
 import type { Broker } from "@neelkanth/broker";
@@ -37,17 +41,17 @@ import {
   EquityCurveTracker,
   ExitEngine,
   IndicatorEngine,
-  istDateKey,
+  DailyLossLedger,
   MarketBiasEngine,
   MarketDataEngine,
   OrderManager,
   PnlEngine,
   PositionEngine,
-  registerIndicatorSpec,
+  provisionSeries,
   RiskEngine,
   SessionManager,
-  startOfDayIST,
   StrategyRunner,
+  TradeEngine,
   unrealizedPnl,
   type IndicatorPorts,
   type MarketDataPorts,
@@ -57,7 +61,7 @@ import {
   type RiskPorts,
   type StrategyPorts,
 } from "@neelkanth/engines";
-import { optionTypeForSide } from "@neelkanth/core";
+import { istDateKey, optionTypeForSide, startOfDayIST } from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import { loadInstrumentMaster } from "./load-instruments.js";
 import type { LiveMarketState } from "./live-market-state.js";
@@ -78,6 +82,15 @@ const CANDLE_WINDOW = 90;
  * looking live.
  */
 const HOT_KEY_TTL_SECONDS = 300;
+
+/**
+ * How long a day's realized-loss record survives (§0.5.4).
+ *
+ * Two days, not two hours: the counter must outlive an overnight restart and
+ * a weekend is covered by the date in the key. Long enough to be useful, short
+ * enough that the keyspace does not accumulate a row per trading day forever.
+ */
+const DAILY_LOSS_TTL_SECONDS = 2 * 86_400;
 
 /**
  * How long a connected feed may stay silent during market hours before the
@@ -186,7 +199,9 @@ export async function startEngineRuntime(deps: {
   const riskLogs = new RiskLogsRepository(db);
   const pnlSnapshots = new PnlSnapshotsRepository(db);
   const candles = new CandlesRepository(db);
+  const trades = new TradesRepository(db);
   const strategiesRepo = new StrategiesRepository(db);
+  const strategyState = new StrategyStateRepository(db);
   const settingsRepo = new SettingsRepository(db);
   const bus = createEventBus(redis.publisher, redis.subscriber, onError);
   // A local wrapper so ports pass a plain function (not an unbound method).
@@ -295,17 +310,20 @@ export async function startEngineRuntime(deps: {
   const marketDataPorts: MarketDataPorts = {
     writeHotSession: (phase) =>
       writeHot(hotSessionKey(), { phase }).then(() => undefined),
-    saveCandle: async (candle) => {
-      await candles.upsert(candle);
-    },
+    // The repository reports whether the write was applied; a live bar is
+    // refused when a higher-ranked one (a broker backfill of the same minute)
+    // is already stored. That is the precedence rule working as intended, not
+    // an error, and the tick path has nothing to do differently — so the
+    // boolean is deliberately dropped here rather than widening the port.
+    saveCandle: (candle) => candles.upsert(candle).then(() => undefined),
     publish,
   };
+  // No session manager: this runtime is the single session driver (syncSession
+  // below). The engine used to take one and never be asked to use it.
   const marketDataEngine = new MarketDataEngine({
     ports: marketDataPorts,
     normalizer: fyersNormalizer,
     intervals: MARKET_INTERVALS,
-    session: sessionManager,
-    exchange: "NSE",
     onError,
   });
   marketDataEngine.attach(deps.broker);
@@ -374,6 +392,24 @@ export async function startEngineRuntime(deps: {
   const positionEngine = new PositionEngine({
     ports: positionPorts,
     nextPositionId: () => `pos_${crypto.randomUUID()}`,
+    onError,
+  });
+
+  // The outcome projection (ADR §9.2). Runs alongside the Position Engine
+  // on the same fills and keyed the same way: the position says what is
+  // held now, the trade says what one decision earned. Only the second is
+  // something research can label.
+  const tradeEngine = new TradeEngine({
+    ports: {
+      saveTrade: (trade) => trades.save(trade),
+      loadOpenTrades: () => trades.findAllOpen(),
+      findTradeByOrderId: (orderId) => trades.findByOrderId(orderId),
+      // In-memory, and safe because the fill handler awaits the Position
+      // Engine first — see the ORDER_FILLED subscription below.
+      resolvePositionId: (strategyId, symbol) =>
+        positionEngine.getPosition(strategyId, symbol)?.positionId ?? null,
+    },
+    nextTradeId: () => `trd_${randomUUID()}`,
     onError,
   });
 
@@ -458,11 +494,53 @@ export async function startEngineRuntime(deps: {
     onError,
   });
 
+  // --- Daily-loss durability (§0.5.4) ---
+  // Redis rather than Mongo: `risk:dailyLoss:<date>` is the key the namespace
+  // table already reserved for exactly this, it is written a few dozen times a
+  // day rather than per tick, and the figure is worthless the moment its
+  // trading day ends — which is what a TTL expresses and a collection does not.
+  const dailyLoss = new DailyLossLedger({
+    ports: {
+      read: async (dateIST: string) => {
+        const raw = await redis.client.get(riskDailyLossKey(dateIST));
+        if (raw === null) return null;
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+          // A corrupt counter is not a fresh day. Returning null here would
+          // silently restart the day at zero, which is the exact failure this
+          // ledger exists to prevent.
+          throw new Error(
+            `unreadable daily-loss counter for ${dateIST}: ${raw}`,
+          );
+        }
+        return value;
+      },
+      write: async (dateIST: string, realizedPnl: number) => {
+        await redis.client.set(
+          riskDailyLossKey(dateIST),
+          String(realizedPnl),
+          "EX",
+          DAILY_LOSS_TTL_SECONDS,
+        );
+      },
+    },
+    onError,
+  });
+
   // --- Risk Engine ---
   const riskPorts: RiskPorts = {
     readSession: () => Promise.resolve<SessionPhase>(state.session.phase),
+    // Through the ledger, which THROWS when the day's loss is unknown — the
+    // Risk Engine turns that into a fail-closed block (plan/14 §9). Returning
+    // zero instead would be indistinguishable from a genuinely flat day, and
+    // the gate would wave through the trades it exists to stop.
     readDailyRealizedLoss: () =>
-      Promise.resolve(Math.max(0, -positionEngine.realizedPnl())),
+      Promise.resolve(
+        dailyLoss.lossFrom(
+          positionEngine.realizedPnl(),
+          istDateKey(Date.now()),
+        ),
+      ),
     readOpenPositionCount: () =>
       Promise.resolve(positionEngine.getOpenPositions().length),
     readPosition: (strategyId, symbol) =>
@@ -536,6 +614,12 @@ export async function startEngineRuntime(deps: {
     readPosition: (strategyId, symbol) =>
       Promise.resolve(positionEngine.getPosition(strategyId, symbol)),
     readSentiment: () => Promise.resolve(0),
+    // Strategy state across process lifetimes (§0.5.6). Without these a
+    // restart at 11:00 came back not knowing where the morning's opening
+    // range was, and held for a level it could no longer see.
+    loadStrategyState: (strategyId, symbol) =>
+      strategyState.load(strategyId, symbol),
+    saveStrategyState: (state) => strategyState.save(state),
     readOptionChain: async (underlying: string) => {
       const now = Date.now();
       const cached = deps.liveState.optionChains.get(underlying);
@@ -585,9 +669,7 @@ export async function startEngineRuntime(deps: {
     registry: createStrategyRegistry(),
     ports: strategyPorts,
     provisionIndicators: async (symbol, interval, specs) => {
-      for (const spec of specs) {
-        registerIndicatorSpec(indicatorEngine, symbol, interval, spec);
-      }
+      provisionSeries(indicatorEngine, symbol, interval, specs);
       await indicatorEngine.warmUp(symbol, interval);
     },
     handoff,
@@ -602,8 +684,33 @@ export async function startEngineRuntime(deps: {
       readOpenPositions: () => positionEngine.getOpenPositions(),
       readSession: () => Promise.resolve(state.session),
       persistSignal: (signal) => signals.insert(signal),
+      // Durable half of the exit guard (Phase 3 D3). The in-memory Set dies
+      // with the process, and the window it protects — handed off, fill not
+      // back — is exactly the one a restart lands in.
+      hasExitInFlight: (positionId) => orders.hasExitInFlight(positionId),
+      // From the runner rather than the database: asked on every closed bar
+      // for every open position (D2).
+      readExitRules: (strategyId) => runner.exitRulesFor(strategyId),
+      // Both halves of a trail (D4): in memory so the next bar is judged
+      // against it, and durably so a restart does not hand the position back
+      // its entry stop and silently widen the risk.
+      updateStopLoss: async (positionId, stopLoss) => {
+        positionEngine.setStopLoss(positionId, stopLoss);
+        await positions.setStopLoss(positionId, stopLoss);
+      },
     },
-    handoff, // the same risk→order road a strategy signal takes (plan/12 §1)
+    // The same risk→order road a strategy signal takes (plan/12 §1), saying
+    // whether an order came of it (audit A7): a blocked or rejected exit
+    // leaves nothing live, so the engine must try again rather than skip
+    // the position until a restart.
+    handoff: async (signal) => {
+      const decision = await risk.validate(signal);
+      if (decision.decision !== "approved") return { placed: false };
+      const result = await orderManager.place(signal, decision);
+      return {
+        placed: result.status !== "rejected" && result.status !== "halted",
+      };
+    },
     nextSignalId: () => `sig_${crypto.randomUUID()}`,
     onError,
   });
@@ -704,16 +811,85 @@ export async function startEngineRuntime(deps: {
   await bus.subscribe("INDICATORS_UPDATED", (event) =>
     runner.onIndicatorsUpdated(event.payload),
   );
-  await bus.subscribe("ORDER_FILLED", (event) =>
-    positionEngine.onOrderFilled(event.payload),
-  );
-  await bus.subscribe("POSITION_UPDATED", () => pnl.refresh());
+  // Fills are projected one at a time, in the order published (§2.7). The bus
+  // does not await its handlers, so two fills in flight interleaved at every
+  // await below: the Trade Engine was reached in the order the POSITION
+  // WRITES returned, and a round trip whose exit was published while its entry
+  // was still persisting was recorded backwards — a SHORT entered on the SELL.
+  // Chained, each fill finishes before the next starts, so "position before
+  // trade" holds per fill and a slow write can never be overtaken.
+  let fillChain: Promise<void> = Promise.resolve();
+  await bus.subscribe("ORDER_FILLED", (event) => {
+    fillChain = fillChain
+      .then(async () => {
+        // Position first: the system's view of what it holds is the thing
+        // that must never be wrong. It also has to land before the Trade
+        // Engine, which reads the position it just built for `positionId`.
+        await positionEngine.onOrderFilled(event.payload);
+        // Then the outcome record. Its own failures are swallowed into
+        // onError, so a lost trade row cannot take the position down with it.
+        await tradeEngine.onOrderFilled(event.payload);
+        // And the strategy learns its proposal became a trade (§0.5.5).
+        runner.onOrderFilled(event.payload);
+      })
+      // A failure must not stall every fill queued behind it.
+      .catch((error: unknown) => {
+        onError(error, {
+          where: "ORDER_FILLED",
+          orderId: event.payload.orderId,
+        });
+      });
+    return fillChain;
+  });
+  // The rest of the signal-outcome loop. Without these a one-shot strategy
+  // that was blocked or rejected would sit on a spent latch for the session.
+  await bus.subscribe("ORDER_PLACED", (event) => {
+    runner.onOrderPlaced(event.payload);
+  });
+  await bus.subscribe("ORDER_REJECTED", (event) => {
+    runner.onOrderRejected(event.payload);
+  });
+  await bus.subscribe("RISK_BLOCKED", (event) => {
+    runner.onRiskBlocked(event.payload);
+  });
+  await bus.subscribe("POSITION_UPDATED", async () => {
+    await pnl.refresh();
+    // Realized P&L may have moved, so the durable copy of it must follow. The
+    // in-memory counter is already right; this is what makes it survive the
+    // process.
+    await dailyLoss.persist(
+      istDateKey(Date.now()),
+      positionEngine.realizedPnl(),
+    );
+  });
 
   // --- Boot sequence (plan/05 §3, plan/22 §4) ---
   // Hydrate open positions, reconcile stuck orders, then enable strategies
   // (which registers + warms their indicators). The kill flag was honored by
   // the composition root before this point.
   positionEngine.hydrate(await positions.findOpen());
+  // Open trades too, or a restart mid-position opens a SECOND trade on the
+  // next fill and leaves the first open forever — one position recorded as
+  // two trades, neither of them true.
+  await tradeEngine.hydrate();
+  // The day's realized loss, restored BEFORE anything can trade (§0.5.4).
+  // Not in the optional warm-up block below: a boot that cannot read this does
+  // not know whether the daily-loss limit is already breached, and the ledger
+  // deliberately leaves the gate fail-closed rather than letting the afternoon
+  // start from a clean slate.
+  {
+    const today = istDateKey(Date.now());
+    const restored = await dailyLoss.hydrate(today);
+    if (restored === null) {
+      log.info({ date: today }, "daily realized P&L: no record yet for today");
+    } else {
+      positionEngine.seedDailyRealized(restored);
+      log.info(
+        { date: today, realizedPnl: restored },
+        "daily realized P&L restored from the ledger",
+      );
+    }
+  }
   for (const order of await orders.findByStatus(["PLACED", "PENDING"])) {
     await orderManager.reconcile(order);
   }
@@ -839,6 +1015,9 @@ export async function startEngineRuntime(deps: {
       state.limits = limits;
       state.allocatedCapital = allocatedCapital;
     },
+    async exitPositionNow(positionId) {
+      return exitEngine.exitNow(positionId, Date.now());
+    },
     getOpenPositions() {
       return positionEngine.getOpenPositions();
     },
@@ -919,6 +1098,9 @@ export async function startEngineRuntime(deps: {
       if (evaluation.marketOpened) {
         indicatorEngine.onMarketOpen();
         positionEngine.resetDaily();
+        // A new trading day starts at zero, durably — otherwise a restart later
+        // today would restore yesterday's losses under today's date.
+        await dailyLoss.startDay(istDateKey(now));
         await bus.publish("MARKET_OPEN", {
           exchange: "NSE",
           session: istDateKey(now),
@@ -936,6 +1118,13 @@ export async function startEngineRuntime(deps: {
         );
       }
       if (evaluation.marketClosed) {
+        // Close the day's last bar BEFORE anyone hears the market shut. The
+        // aggregator holds each interval's final bucket open until a later tick
+        // pushes it forward — and after the close no such tick arrives. Flushed
+        // here, the bar is persisted while its session is still the current one;
+        // left unflushed, it either died with the process overnight or surfaced
+        // at the next open as a day-old CANDLE_CLOSED fed to live exits.
+        await marketDataEngine.flushOpenBars();
         await bus.publish("MARKET_CLOSE", {
           exchange: "NSE",
           session: istDateKey(now),

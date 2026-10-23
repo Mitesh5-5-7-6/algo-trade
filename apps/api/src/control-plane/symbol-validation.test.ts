@@ -30,6 +30,7 @@ function app(): ApiServer {
     setTradingEnabled: () => undefined,
     enableStrategy: () => Promise.resolve(),
     disableStrategy: () => undefined,
+    exitPositionNow: () => Promise.resolve(false),
     applyGlobalSettings: () => undefined,
     getOpenPositions: (): Position[] => [],
     realizedPnl: () => 0,

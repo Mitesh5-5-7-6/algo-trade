@@ -43,3 +43,19 @@ export function registerIndicatorSpec(
       return;
   }
 }
+
+/**
+ * Provision a series for a strategy: track it, then register each indicator
+ * it needs. The one path the runtime and the replay both take, so a strategy
+ * with no indicators is decided on in both (Phase 6 F2).
+ */
+export function provisionSeries(
+  engine: IndicatorEngine,
+  symbol: string,
+  interval: CandleInterval,
+  specs: readonly IndicatorSpec[],
+): void {
+  engine.track(symbol, interval);
+  for (const spec of specs)
+    registerIndicatorSpec(engine, symbol, interval, spec);
+}

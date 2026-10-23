@@ -101,3 +101,35 @@ describe("channel builders (plan/08 §3, plan/25 §3)", () => {
     );
   });
 });
+
+/**
+ * Task 2.5, limit L4 (design §5.7): a fill names the signal behind it.
+ *
+ * Without it the Trade's `entrySignalId` / `exitSignalId` could never be
+ * populated, and `Signal → Trade` was reachable only through the order — the
+ * join Q4 refuses for `strategyVersion`, because orders can be pruned.
+ */
+describe("ORDER_FILLED names the signal behind it (§2.5)", () => {
+  it("keeps signalId through the wire and back", () => {
+    const wire = JSON.parse(
+      JSON.stringify(
+        buildEvent("ORDER_FILLED", {
+          orderId: "ord_1",
+          signalId: "sig_9",
+          strategyId: "str_1",
+          symbol: "NSE:RELIANCE-EQ",
+          side: "BUY",
+          qty: 10,
+          filledPrice: 3001.2,
+          slippage: 0,
+          charges: 0,
+          filledAt: 1_730_000_000_000,
+          mode: "paper",
+          ts: 1_730_000_000_000,
+        }),
+      ),
+    ) as unknown;
+    const parsed = parseEvent(wire);
+    expect(parsed.payload).toMatchObject({ signalId: "sig_9" });
+  });
+});

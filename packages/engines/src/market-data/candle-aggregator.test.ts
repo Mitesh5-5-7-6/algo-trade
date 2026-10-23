@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Candle, Tick } from "@neelkanth/core";
-import { CandleAggregator, intervalMs } from "./candle-aggregator.js";
+import { intervalMs } from "@neelkanth/core";
+import { CandleAggregator } from "./candle-aggregator.js";
 
 const tick = (ts: number, ltp: number, volume = 1): Tick => ({
   symbol: "NSE:RELIANCE-EQ",
@@ -25,6 +26,10 @@ describe("CandleAggregator (plan/17 §5)", () => {
     expect(closed[0]).toEqual({
       symbol: "NSE:RELIANCE-EQ",
       interval: "1m",
+      // The aggregator's only input is the live tick feed, and it says so on
+      // every bar it emits — a bar must never reach storage without declaring
+      // which producer made it (design D2).
+      source: "LIVE_TICK",
       open: 100,
       high: 110,
       low: 90,

@@ -46,6 +46,7 @@ import { isCrossSite } from "./auth/same-site.js";
 import { corsOptions } from "./cors.js";
 import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
+import { modeDatabaseProblem } from "./environment.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
@@ -85,6 +86,16 @@ export async function bootstrap(
   // --- Infrastructure ---
   log.info("connecting mongo");
   const mongo = await connectMongo(config.MONGO_URI); // pings; throws if down
+  // Before anything is read or written: the mode runs only on its own
+  // database (Phase 14 D2) — a paper process never on research or live data.
+  const wrongDatabase = modeDatabaseProblem(
+    config.BROKER_MODE,
+    mongo.db.databaseName,
+  );
+  if (wrongDatabase !== null) {
+    await mongo.close();
+    throw new Error(`refusing to start: ${wrongDatabase}`);
+  }
   log.info("connecting redis");
   // Connection errors during an outage repeat rapidly while ioredis retries;
   // throttle to one line per source per 30s so a real outage is visible
@@ -164,6 +175,8 @@ export async function bootstrap(
   if (config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
     fyersBroker = new FyersBroker({
       appId: config.FYERS_APP_ID,
+      // Paper reads FYERS market data only: it cannot place an order (D2).
+      orders: config.BROKER_MODE === "live" ? "enabled" : "disabled",
       // FYERS access tokens last about a day, and nothing refreshes them yet
       // (jobs/token-lifecycle is still a stub). So the ordinary morning state
       // is "a token exists and is stale" — and handing a stale one to the SDK
@@ -397,6 +410,14 @@ export async function bootstrap(
     db: mongo.db,
     runtime,
     verifyStepUp: createStepUpVerifier(users),
+    // Null unless a FYERS broker exists AND was configured to fetch history
+    // (design D1). POST /backfill refuses on null rather than running to
+    // completion and reporting that it stored nothing — a paper or scripted
+    // deployment has no history to fetch, and saying so beats an empty
+    // success. The page size is §3.1 Q1 and has no default, so a deployment
+    // that has not set it has no history capability, deliberately.
+    historyProvider:
+      fyersBroker !== null && fyersBroker.supportsHistory ? fyersBroker : null,
   });
 
   // --- Realtime bridge (plan/10): push live state to the dashboard ---

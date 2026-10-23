@@ -1,6 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  closeProbe,
+  probeMongo,
+  type MongoProbe,
+} from "./test-support/infra.js";
 import type {
   Candle,
+  CandleSource,
   Order,
   PnlSnapshot,
   Position,
@@ -11,7 +17,6 @@ import type {
 import {
   CandlesRepository,
   COLLECTIONS,
-  connectMongo,
   ensureIndexes,
   OrdersRepository,
   PnlSnapshotsRepository,
@@ -26,17 +31,35 @@ import {
 const MONGO_URI =
   process.env["MONGO_URI"] ?? "mongodb://localhost:27017/neelkanth_repos_test";
 
+let probe: MongoProbe | undefined;
 let connection: MongoConnection;
 
 beforeAll(async () => {
   // A per-file database so parallel integration test files never share one.
-  connection = await connectMongo(MONGO_URI, "neelkanth_it_repos");
+  probe = await probeMongo(
+    MONGO_URI,
+    "neelkanth_it_repos",
+    "packages/db/src/repositories.integration.test.ts",
+  );
+  if (!probe.reachable) return;
+  connection = probe.connection;
   await connection.db.dropDatabase();
   await ensureIndexes(connection.db);
 });
 
 afterAll(async () => {
-  await connection.close();
+  await closeProbe(probe);
+});
+
+/**
+ * Skip every test in this file when the database is unreachable (§0.4).
+ *
+ * A `beforeEach` rather than a guard inside each test: reachability is only
+ * known after `beforeAll` has run, so `describe.skipIf` — which is evaluated
+ * at collection time — cannot see it.
+ */
+beforeEach((ctx) => {
+  if (probe?.reachable !== true) ctx.skip();
 });
 
 const order = (overrides: Partial<Order> = {}): Order => ({
@@ -73,6 +96,74 @@ describe("OrdersRepository (plan/12 §6)", () => {
     const placed = await repo.findByStatus(["PLACED", "PENDING"]);
     expect(placed.map((o) => o.orderId)).toEqual(["o3"]);
   });
+
+  /**
+   * A live fill is published from the order AS STORED, possibly after a
+   * restart, so the entry decision's bar must survive the round trip through
+   * Mongo — or the Trade loses it on exactly the path a live trade takes
+   * (§2.1, design §2 drifts 1 and 3).
+   */
+  /**
+   * The Exit Engine's durable in-flight check (Phase 3 D3). Live means
+   * PLACED or PENDING: a FILLED exit is represented by the position being
+   * gone, and a REJECTED one left nothing in flight — so it must not block
+   * the retry that A7 depends on.
+   */
+  it("knows when an exit for a position is in flight, and only then", async () => {
+    const repo = new OrdersRepository(connection.db);
+    await repo.insert(
+      order({ orderId: "x_placed", signalId: "s_x1", positionId: "pos_a" }),
+    );
+    await repo.insert(
+      order({
+        orderId: "x_rejected",
+        signalId: "s_x2",
+        positionId: "pos_b",
+        status: "REJECTED",
+      }),
+    );
+    await repo.insert(
+      order({
+        orderId: "x_filled",
+        signalId: "s_x3",
+        positionId: "pos_c",
+        status: "FILLED",
+      }),
+    );
+
+    expect(await repo.hasExitInFlight("pos_a")).toBe(true);
+    expect(await repo.hasExitInFlight("pos_b")).toBe(false);
+    expect(await repo.hasExitInFlight("pos_c")).toBe(false);
+    expect(await repo.hasExitInFlight("pos_none")).toBe(false);
+
+    await repo.update("x_placed", { status: "PENDING" });
+    expect(await repo.hasExitInFlight("pos_a")).toBe(true);
+  });
+
+  it("round-trips the entry decision's bar and volume flags", async () => {
+    const repo = new OrdersRepository(connection.db);
+    const dataProvenance = {
+      symbol: "NSE:X-EQ",
+      interval: "5m" as const,
+      barTs: 900,
+      source: "LIVE_TICK" as const,
+    };
+    await repo.insert(
+      order({
+        orderId: "o_prov",
+        signalId: "s_prov",
+        dataProvenance,
+        marketContext: { volumeAvailable: false, volumeQuality: "UNAVAILABLE" },
+      }),
+    );
+
+    const stored = await repo.findByOrderId("o_prov");
+    expect(stored?.dataProvenance).toEqual(dataProvenance);
+    expect(stored?.marketContext).toEqual({
+      volumeAvailable: false,
+      volumeQuality: "UNAVAILABLE",
+    });
+  });
 });
 
 describe("PositionsRepository (plan/13 §8)", () => {
@@ -103,6 +194,38 @@ describe("PositionsRepository (plan/13 §8)", () => {
     const open = await repo.findOpen();
     expect(open).toHaveLength(1);
     expect(open[0]?.qty).toBe(20);
+  });
+});
+
+describe("PositionsRepository moves a stop (Phase 3 D4)", () => {
+  /**
+   * A trail persists only the stop, as a targeted $set. The Exit Engine knows
+   * the stop and nothing else; writing back a stale copy of the quantity or
+   * realised P&L over the position engine's view would be a far larger bug.
+   */
+  it("changes the stop and nothing else", async () => {
+    const repo = new PositionsRepository(connection.db);
+    const base: Position = {
+      positionId: "pos_trail",
+      symbol: "NSE:X-EQ",
+      strategyId: "str_1",
+      side: "LONG",
+      qty: 10,
+      avgEntryPrice: 100,
+      stopLoss: 95,
+      status: "OPEN",
+      realizedPnl: -5,
+      unrealizedPnl: 0,
+      openedAt: 1,
+      mode: "paper",
+    };
+    await repo.upsert(base);
+    await repo.setStopLoss("pos_trail", 98.5);
+
+    const [stored] = (await repo.findOpen()).filter(
+      (p) => p.positionId === "pos_trail",
+    );
+    expect(stored).toEqual({ ...base, stopLoss: 98.5 });
   });
 });
 
@@ -199,6 +322,7 @@ describe("CandlesRepository (plan/18 §4)", () => {
     const candle = (ts: number, close: number): Candle => ({
       symbol: "NSE:C-EQ",
       interval: "5m",
+      source: "LIVE_TICK",
       open: close,
       high: close,
       low: close,
@@ -211,6 +335,139 @@ describe("CandlesRepository (plan/18 §4)", () => {
     await repo.upsert(candle(2000, 12));
     const recent = await repo.loadRecent("NSE:C-EQ", "5m", 10);
     expect(recent.map((c) => c.close)).toEqual([11, 12]); // oldest→newest
+  });
+});
+
+describe("CandlesRepository provenance precedence (design D3)", () => {
+  const SYM = "NSE:PREC-EQ";
+  const bar = (
+    ts: number,
+    close: number,
+    source: CandleSource = "LIVE_TICK",
+  ): Candle => ({
+    symbol: SYM,
+    interval: "5m",
+    source,
+    open: close,
+    high: close,
+    low: close,
+    close,
+    volume: 100,
+    ts,
+  });
+
+  /**
+   * The invariant: one (symbol, interval, ts) is ONE canonical candle, whatever
+   * produced it. Provenance says where a bar came from; it never creates a
+   * second bar. Without precedence, whether the broker's record or our
+   * tick aggregation survives would depend on which job happened to run last.
+   */
+  it("lets the broker's record overwrite a live-aggregated bar", async () => {
+    const repo = new CandlesRepository(connection.db);
+    expect(await repo.upsert(bar(1000, 10, "LIVE_TICK"))).toBe(true);
+    expect(await repo.upsert(bar(1000, 99, "BROKER_HISTORICAL"))).toBe(true);
+
+    const stored = await repo.findRange(SYM, "5m", 0, 2000);
+    expect(stored).toHaveLength(1); // one bar, not two
+    expect(stored[0]?.close).toBe(99);
+    expect(stored[0]?.source).toBe("BROKER_HISTORICAL");
+  });
+
+  it("refuses to let a live bar demote the broker's record", async () => {
+    const repo = new CandlesRepository(connection.db);
+    expect(await repo.upsert(bar(3000, 99, "BROKER_HISTORICAL"))).toBe(true);
+    expect(await repo.upsert(bar(3000, 10, "LIVE_TICK"))).toBe(false);
+
+    const stored = await repo.findRange(SYM, "5m", 3000, 4000);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.close).toBe(99); // the better record survived
+    expect(stored[0]?.source).toBe("BROKER_HISTORICAL");
+  });
+
+  it("allows an equal-ranked rewrite, so a re-run is a no-op not a refusal", async () => {
+    const repo = new CandlesRepository(connection.db);
+    await repo.upsert(bar(5000, 50, "BROKER_HISTORICAL"));
+    // Re-running a completed backfill must report as applied, not refused.
+    expect(await repo.upsert(bar(5000, 50, "BROKER_HISTORICAL"))).toBe(true);
+    expect(await repo.upsert(bar(5000, 51, "BROKER_HISTORICAL"))).toBe(true);
+    const stored = await repo.findRange(SYM, "5m", 5000, 6000);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.close).toBe(51);
+  });
+
+  /**
+   * Bars written before provenance existed carry no `sourceRank`, and in Mongo
+   * a missing field does not match `$lte`. Treated naively they would fail the
+   * predicate, fall through to an insert, and collide with the unique index.
+   */
+  it("treats a legacy bar with no provenance as LIVE_TICK, not as absent", async () => {
+    const repo = new CandlesRepository(connection.db);
+    await connection.db.collection(COLLECTIONS.candles).insertOne({
+      symbol: SYM,
+      interval: "5m",
+      open: 7,
+      high: 7,
+      low: 7,
+      close: 7,
+      volume: 1,
+      ts: 7000,
+    });
+
+    // Readable, and defaulted rather than throwing.
+    const before = await repo.findRange(SYM, "5m", 7000, 8000);
+    expect(before[0]?.source).toBe("LIVE_TICK");
+
+    // Upgradable in place — one document, not a duplicate-key explosion.
+    expect(await repo.upsert(bar(7000, 77, "BROKER_HISTORICAL"))).toBe(true);
+    const after = await repo.findRange(SYM, "5m", 7000, 8000);
+    expect(after).toHaveLength(1);
+    expect(after[0]?.close).toBe(77);
+  });
+});
+
+describe("CandlesRepository.findRange (design D4)", () => {
+  const SYM = "NSE:RANGE-EQ";
+  const bar = (ts: number): Candle => ({
+    symbol: SYM,
+    interval: "5m",
+    source: "BROKER_HISTORICAL",
+    open: 1,
+    high: 1,
+    low: 1,
+    close: 1,
+    volume: 1,
+    ts,
+  });
+
+  /**
+   * Half-open [from, to) on purpose: consecutive day requests tile exactly,
+   * with no bar counted twice at a boundary and none skipped.
+   */
+  it("includes the lower bound and excludes the upper, oldest first", async () => {
+    const repo = new CandlesRepository(connection.db);
+    for (const ts of [1000, 2000, 3000, 4000]) await repo.upsert(bar(ts));
+
+    const range = await repo.findRange(SYM, "5m", 2000, 4000);
+    expect(range.map((c) => c.ts)).toEqual([2000, 3000]);
+  });
+
+  it("tiles without overlap or gap across adjacent ranges", async () => {
+    const repo = new CandlesRepository(connection.db);
+    for (const ts of [1000, 2000, 3000, 4000]) await repo.upsert(bar(ts));
+
+    const first = await repo.findRange(SYM, "5m", 1000, 3000);
+    const second = await repo.findRange(SYM, "5m", 3000, 5000);
+    expect([...first, ...second].map((c) => c.ts)).toEqual([
+      1000, 2000, 3000, 4000,
+    ]);
+  });
+
+  it("returns nothing for an empty or inverted range", async () => {
+    const repo = new CandlesRepository(connection.db);
+    await repo.upsert(bar(1000));
+    expect(await repo.findRange(SYM, "5m", 9000, 9999)).toEqual([]);
+    expect(await repo.findRange(SYM, "5m", 5000, 5000)).toEqual([]);
+    expect(await repo.findRange(SYM, "5m", 5000, 1000)).toEqual([]);
   });
 });
 

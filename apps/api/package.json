@@ -13,6 +13,7 @@
     "bootstrap:operator": "node --env-file=../../.env dist/bootstrap-operator.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
     "@fastify/cors": "^11.0.0",
     "@neelkanth/broker": "workspace:*",
     "@neelkanth/config": "workspace:*",
@@ -22,6 +23,7 @@
     "@neelkanth/engines": "workspace:*",
     "@neelkanth/indicators": "workspace:*",
     "@neelkanth/logger": "workspace:*",
+    "@neelkanth/patterns": "workspace:*",
     "@neelkanth/redis": "workspace:*",
     "@neelkanth/strategies": "workspace:*",
     "@node-rs/argon2": "^2.0.2",
@@ -29,6 +31,7 @@
     "fastify": "^5.2.1",
     "ioredis": "^5.4.2",
     "mongodb": "^6.12.0",
+    "openai": "^7.43.0",
     "socket.io": "^4.8.1",
     "zod": "^3.24.1"
   },

@@ -9,6 +9,7 @@ function series(closes: readonly number[], volume = 0): Candle[] {
   return closes.map((close, i) => ({
     symbol: SYM,
     interval: "5m" as const,
+    source: "LIVE_TICK" as const,
     open: closes[i - 1] ?? close,
     high: close + 1,
     low: close - 1,
@@ -24,6 +25,7 @@ function dayMove(open: number, close: number): Candle[] {
     {
       symbol: "NSE:X-EQ",
       interval: "5m",
+      source: "LIVE_TICK",
       open,
       high: Math.max(open, close),
       low: Math.min(open, close),
