@@ -385,11 +385,18 @@ describe("the adapter in the loop (11.6, D8)", () => {
     expect(s).toMatchObject({ status: "ANSWERED", verdict: "UNSUPPORTED" });
   });
 
-  it("reaches DeepSeek at its own address, OpenAI at the SDK's", () => {
+  it("reaches DeepSeek and Gemini at their own addresses, OpenAI at the SDK's", () => {
     expect(PROVIDER_BASE_URL).toEqual({
       openai: undefined,
       deepseek: "https://api.deepseek.com",
+      gemini: "https://generativelanguage.googleapis.com/v1beta/openai/",
     });
+    const gemini = OpenAICompatibleModel.for("gemini", "k", "m") as unknown as {
+      client: OpenAI;
+    };
+    expect(gemini.client.baseURL).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/openai/",
+    );
     const deepseek = OpenAICompatibleModel.for(
       "deepseek",
       "k",

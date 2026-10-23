@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import type { ModelRequest, ModelTurn, ResearchModel } from "./model.js";
 
 /** The providers that speak OpenAI's chat-completions format (D8). */
-export type OpenAICompatibleProvider = "openai" | "deepseek";
+export type OpenAICompatibleProvider = "openai" | "deepseek" | "gemini";
 
 /** Where each provider is reached; OpenAI's is the SDK's own default. */
 export const PROVIDER_BASE_URL: Record<
@@ -12,6 +12,8 @@ export const PROVIDER_BASE_URL: Record<
 > = {
   openai: undefined,
   deepseek: "https://api.deepseek.com",
+  // Google's OpenAI-compatible endpoint for the Gemini API.
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai/",
 };
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;

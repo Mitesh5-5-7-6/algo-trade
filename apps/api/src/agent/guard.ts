@@ -27,7 +27,7 @@ export function forbiddenIn(
 }
 
 /** The providers the agent can run on (design Q1 revised, D8). */
-export const PROVIDERS = ["anthropic", "openai", "deepseek"] as const;
+export const PROVIDERS = ["anthropic", "openai", "deepseek", "gemini"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 /** Each provider's key, and whether the operator must name the model. */
@@ -35,6 +35,7 @@ const NEEDS: Record<Provider, { key: string; model: boolean }> = {
   anthropic: { key: "ANTHROPIC_API_KEY", model: false },
   openai: { key: "OPENAI_API_KEY", model: true },
   deepseek: { key: "DEEPSEEK_API_KEY", model: true },
+  gemini: { key: "GEMINI_API_KEY", model: true },
 };
 
 export interface AgentEnvironment {

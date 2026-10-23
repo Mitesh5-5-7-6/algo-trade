@@ -137,10 +137,35 @@ describe("the provider, chosen in the env file (11.6, D8)", () => {
     expect(() =>
       assertAgentEnvironment({
         ...M,
-        AGENT_PROVIDER: "gemini",
+        AGENT_PROVIDER: "mistral",
         ANTHROPIC_API_KEY: "k",
       }),
-    ).toThrow(/AGENT_PROVIDER "gemini" is none of anthropic, openai, deepseek/);
+    ).toThrow(
+      /AGENT_PROVIDER "mistral" is none of anthropic, openai, deepseek, gemini/,
+    );
+  });
+
+  it("Gemini needs its own key and a named model", () => {
+    expect(
+      assertAgentEnvironment({
+        ...M,
+        AGENT_PROVIDER: "gemini",
+        GEMINI_API_KEY: "k",
+        AGENT_MODEL: "g",
+      }),
+    ).toEqual({
+      provider: "gemini",
+      keyVariable: "GEMINI_API_KEY",
+      model: "g",
+    });
+    expect(() =>
+      assertAgentEnvironment({
+        ...M,
+        AGENT_PROVIDER: "gemini",
+        AGENT_MODEL: "g",
+        OPENAI_API_KEY: "k",
+      }),
+    ).toThrow(/GEMINI_API_KEY not set/);
   });
 
   it("refuses a production secret whichever provider is chosen", () => {

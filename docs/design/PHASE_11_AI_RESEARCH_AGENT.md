@@ -60,6 +60,9 @@ agent on **OpenAI or DeepSeek**. Both speak OpenAI's chat-completions format
 (DeepSeek's API is OpenAI-compatible), so one adapter serves both (D8); Claude
 stays supported. The research text then goes to the chosen provider's API.
 The model is named by the operator in the env file, never defaulted by code.
+The operator then chose **Gemini** (`AGENT_PROVIDER=gemini`), through Google's
+OpenAI-compatible endpoint for the Gemini API — the same adapter, a third
+address (D8).
 
 **Q2 — the three tools with nothing behind them are deferred**, by the
 operator. PLAN §16 lists `newsContext()`, `runBacktest()` and
@@ -144,7 +147,8 @@ reported as such, never parsed as an answer.
 `OpenAICompatibleModel` implements `ResearchModel` over OpenAI's chat
 completions, through the official `openai` SDK: `AGENT_PROVIDER=openai`
 uses OpenAI's API, `AGENT_PROVIDER=deepseek` the same client at DeepSeek's
-address. It translates exactly what the loop needs: the tools become
+address, `AGENT_PROVIDER=gemini` at Google's OpenAI-compatible Gemini
+endpoint. It translates exactly what the loop needs: the tools become
 functions (their schemas unchanged); the loop's turns become messages — a tool
 call keeps its id, a result becomes a `tool` message, an error result is
 marked as one; a reply's tool calls become the loop's `tool_use` blocks, their
