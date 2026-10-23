@@ -85,6 +85,12 @@ export const COLLECTIONS = {
    * Untimed, never edited: the same request is the same fingerprint.
    */
   backtests: "backtests",
+  /**
+   * Strategy candidates (ADR §10.1, Phase 13 D1) — RESEARCH database only. A
+   * replayable strategy and a declared grid of parameter variants, from a
+   * registered hypothesis. Declared once, never edited.
+   */
+  strategyCandidates: "strategy_candidates",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -172,6 +178,14 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.researchReports)
       .createIndex({ period: 1, sessions: 1 }),
+
+    // strategy_candidates — by id, and by fingerprint (one declaration once).
+    db
+      .collection(COLLECTIONS.strategyCandidates)
+      .createIndex({ candidateId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.strategyCandidates)
+      .createIndex({ fingerprint: 1 }),
 
     // backtests — by id, and by fingerprint (the same request, the same run).
     db

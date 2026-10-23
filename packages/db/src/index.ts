@@ -20,3 +20,4 @@ export * from "./research-reports-repository.js";
 export * from "./documents-repository.js";
 export * from "./agent-answers-repository.js";
 export * from "./backtests-repository.js";
+export * from "./strategy-candidates-repository.js";
