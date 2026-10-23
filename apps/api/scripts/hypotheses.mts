@@ -214,6 +214,10 @@ try {
     for (const finding of await familyReport(db, family))
       console.log(describeFinding(finding));
   }
+} catch (e) {
+  // A refusal is the answer, in one line — not a stack trace.
+  console.error(`refused: ${e instanceof Error ? e.message : String(e)}`);
+  process.exitCode = 1;
 } finally {
   await client.close();
 }

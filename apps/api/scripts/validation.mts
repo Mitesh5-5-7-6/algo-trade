@@ -204,8 +204,9 @@ try {
     console.log(line("baseline", result.outOfSample.baseline));
     console.log(`choices      ${JSON.stringify(result.choices)}`);
     showVerdict(result);
+    console.log(`\nfingerprint  ${result.fingerprint}`);
     console.log(
-      `\nkept         ${saved ? walkForwardId : dry ? "no (dry run)" : "no"}; ${String(Date.now() - startedAt)} ms`,
+      `kept         ${saved ? walkForwardId : dry ? "no (dry run)" : "no"}; ${String(Date.now() - startedAt)} ms`,
     );
   } else {
     const candidateId = required("candidate");
@@ -221,8 +222,13 @@ try {
       `${candidateId} — ${doc.walkForwardId}, ${String(wf.folds.length)} folds`,
     );
     console.log(line("candidate", wf.outOfSample.normal));
+    console.log(`fingerprint  ${doc.fingerprint}`);
     showVerdict(wf);
   }
+} catch (e) {
+  // A refusal is the answer, in one line — not a stack trace.
+  console.error(`refused: ${e instanceof Error ? e.message : String(e)}`);
+  process.exitCode = 1;
 } finally {
   await client.close();
 }
