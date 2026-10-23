@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
-import { canonicalJson, type CandleInterval } from "@neelkanth/core";
-import { StrategyExperimentsRepository } from "@neelkanth/db";
+import {
+  canonicalJson,
+  istDateKey,
+  type CandleInterval,
+} from "@neelkanth/core";
+import {
+  CandlesRepository,
+  StrategyExperimentsRepository,
+} from "@neelkanth/db";
 import type { AttributionModel } from "../counterfactual/attribution.js";
 import type { RegimeModel } from "../counterfactual/regime.js";
 import type { CounterfactualRun } from "../counterfactual/run.js";
@@ -14,6 +21,45 @@ import {
   nextHypothesisId,
   type Hypothesis,
 } from "./hypothesis.js";
+
+/**
+ * Whether a window has closed in the stored data (Phase 12 D6): every
+ * instrument of the run has a session on or after the window's last day. A
+ * window ending on a non-trading day waits for the next session; an
+ * instrument with no data at all keeps it open. Conservative by design: a
+ * test spent early on missing data could never be taken again.
+ */
+export function windowClosed(
+  toDate: string,
+  lastSessions: Readonly<Record<string, string | null>>,
+): { closed: boolean; behind: string[] } {
+  const behind = Object.entries(lastSessions)
+    .filter(([, last]) => last === null || last < toDate)
+    .map(([symbol, last]) => `${symbol} (last session ${last ?? "none"})`)
+    .sort();
+  return { closed: behind.length === 0, behind };
+}
+
+/** The last stored session of each instrument a hypothesis's run reads. */
+export async function lastSessionsOf(
+  db: Db,
+  h: Hypothesis,
+): Promise<Record<string, string | null>> {
+  const candles = new CandlesRepository(db);
+  const symbols = [
+    ...new Set([...h.run.symbols, ...h.run.indexSymbols]),
+  ].sort();
+  const out: Record<string, string | null> = {};
+  for (const symbol of symbols) {
+    const [last] = await candles.loadRecent(
+      symbol,
+      h.run.interval as CandleInterval,
+      1,
+    );
+    out[symbol] = last === undefined ? null : istDateKey(last.ts);
+  }
+  return out;
+}
 
 /** A test's id: the hypothesis's own — so a second test cannot be inserted. */
 const testIdOf = (hypothesisId: string): string => `${hypothesisId}:test`;
@@ -126,6 +172,13 @@ export async function testRegistered(
       `${hypothesisId} has already been tested; a hypothesis is tested once`,
     );
   const h = HypothesisSchema.parse(doc.manifest);
+  // D6: the one test waits for the evidence — refused, nothing kept, while
+  // the out-of-sample window is still open in the stored data.
+  const open = windowClosed(h.outOfSample.toDate, await lastSessionsOf(db, h));
+  if (!open.closed)
+    throw new Error(
+      `${hypothesisId} cannot be tested yet: its out-of-sample window ends ${h.outOfSample.toDate}, and the data stops before it for ${open.behind.join(", ")} — test it once the window has closed; nothing was kept`,
+    );
   const test = testHypothesis(
     h,
     await runFor(db, h, h.inSample, cache),

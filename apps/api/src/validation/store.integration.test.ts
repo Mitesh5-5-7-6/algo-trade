@@ -177,6 +177,30 @@ describe("the hypothesis registry (7.6)", () => {
     expect(await snapshot()).toEqual(before);
   }, 120_000);
 
+  /** Phase 12 D6: the one test is not spent on a window the data has not reached. */
+  it("refuses to test before the out-of-sample window has closed, keeps nothing, and tests once it has", async () => {
+    await registerHypothesis(
+      connection.db,
+      claim({ outOfSample: { fromDate: "2026-01-07", toDate: "2026-01-09" } }),
+    );
+    await expect(
+      testRegistered(connection.db, "H-0001", 5_000),
+    ).rejects.toThrow(
+      /H-0001 cannot be tested yet: its out-of-sample window ends 2026-01-09, and the data stops before it for NSE:TESTCO-EQ \(last session 2026-01-08\), NSE:TESTINDEX-INDEX \(last session 2026-01-08\) — test it once the window has closed; nothing was kept/,
+    );
+    expect(
+      await connection.db
+        .collection(COLLECTIONS.strategyExperiments)
+        .countDocuments({ kind: "HYPOTHESIS_TEST" }),
+    ).toBe(0);
+    await seedCandles(
+      connection.db,
+      await historicalBars([4], (d) => 1 + d * 0.05),
+    );
+    const t = await testRegistered(connection.db, "H-0001", 6_000);
+    expect(t.outOfSample.dateRange.toDate).toBe("2026-01-09");
+  }, 120_000);
+
   it("reports a family from what the registry holds, untested members included", async () => {
     await registerHypothesis(connection.db, claim());
     await registerHypothesis(
