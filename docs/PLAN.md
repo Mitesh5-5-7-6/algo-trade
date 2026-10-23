@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | COMPLETE |
-| 7     | Statistical validation             | COMPLETE |
-| 8     | Daily research                     | COMPLETE |
-| 9     | Periodic research                  | COMPLETE |
-| 10    | Research knowledge base            | COMPLETE |
-| 11    | AI research agent                  | COMPLETE |
-| 12    | Automated strategy hypotheses      | COMPLETE |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | COMPLETE    |
+| 7     | Statistical validation             | COMPLETE    |
+| 8     | Daily research                     | COMPLETE    |
+| 9     | Periodic research                  | COMPLETE    |
+| 10    | Research knowledge base            | COMPLETE    |
+| 11    | AI research agent                  | COMPLETE    |
+| 12    | Automated strategy hypotheses      | COMPLETE    |
+| 13    | Backtest + walk-forward            | IN PROGRESS |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -832,7 +832,7 @@ creates or changes a strategy.
 
 ## 18. Phase 13 — Backtest + walk-forward
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 Every serious candidate must pass `Historical Backtest → Out-of-Sample →
 Walk-Forward → Cost/Slippage Validation`. No direct promotion from AI suggestion
@@ -844,15 +844,15 @@ Structured around the decisions in
 [PHASE_13_BACKTEST_WALK_FORWARD.md](design/PHASE_13_BACKTEST_WALK_FORWARD.md),
 which is the detailed design for this phase and keeps each task's dependencies.
 
-| ID   | Task                                                                                                                                                     | STATUS | Commit | Evidence |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 13.1 | Backtest metrics: the §8.1 set from a replay's Trades — returns, Sharpe, Sortino, drawdown, profit factor, expectancy, stability, regime dependence (D2) | READY  | —      | —        |
-| 13.2 | Backtests: a candidate's parameters over a window, normal and stressed costs, kept in `backtests` (D2, D3)                                               | READY  | —      | —        |
-| 13.3 | Candidates: declared from a registered hypothesis, a checked grid, never edited (D1)                                                                     | READY  | —      | —        |
-| 13.4 | Walk-forward: monthly folds, choice on training only, the baseline on the same windows, kept (D4, D5)                                                    | READY  | —      | —        |
-| 13.5 | The gate: PASS or FAIL against the standard criteria, each with its value (D6)                                                                           | READY  | —      | —        |
-| 13.6 | The CLI: candidates, backtests, walk-forward and the verdict                                                                                             | READY  | —      | —        |
-| 13.7 | Acceptance: candidates from the registered hypotheses, walked forward over the real year, gated; determinism and no-lookahead shown                      | READY  | —      | —        |
+| ID   | Task                                                                                                                                                     | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                               |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 13.1 | Backtest metrics: the §8.1 set from a replay's Trades — returns, Sharpe, Sortino, drawdown, profit factor, expectancy, stability, regime dependence (D2) | COMPLETE | `c1bd1cb` | `apps/api/src/backtest/metrics.ts`: `backtestMetrics` — returns, costs, expectancy with interval and p, profit factor, Sharpe and Sortino over every session, drawdown, holding time, monthly stability, regime dependence at entry. `apps/api/src/backtest/metrics.test.ts` (5/5, values worked by hand); 7 mutants killed. Design D2 |
+| 13.2 | Backtests: a candidate's parameters over a window, normal and stressed costs, kept in `backtests` (D2, D3)                                               | READY    | —         | —                                                                                                                                                                                                                                                                                                                                      |
+| 13.3 | Candidates: declared from a registered hypothesis, a checked grid, never edited (D1)                                                                     | READY    | —         | —                                                                                                                                                                                                                                                                                                                                      |
+| 13.4 | Walk-forward: monthly folds, choice on training only, the baseline on the same windows, kept (D4, D5)                                                    | READY    | —         | —                                                                                                                                                                                                                                                                                                                                      |
+| 13.5 | The gate: PASS or FAIL against the standard criteria, each with its value (D6)                                                                           | READY    | —         | —                                                                                                                                                                                                                                                                                                                                      |
+| 13.6 | The CLI: candidates, backtests, walk-forward and the verdict                                                                                             | READY    | —         | —                                                                                                                                                                                                                                                                                                                                      |
+| 13.7 | Acceptance: candidates from the registered hypotheses, walked forward over the real year, gated; determinism and no-lookahead shown                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                      |
 
 **The standard gate, and rolling folds of three months' training and one
 month's test** — the operator's decisions at opening (design Q1, Q2). PASS makes
