@@ -34,6 +34,10 @@ const ALLOWED = [
   /^node:crypto$/,
   /^@neelkanth\/core$/, // canonicalJson
   /^@neelkanth\/db$/, // AgentAnswersRepository only — checked below
+  // Definitions a proposal is checked against (Phase 12 D3) — never run here.
+  /^@neelkanth\/patterns$/,
+  /^@neelkanth\/strategies$/,
+  /^\.\.\/counterfactual\/eligibility\.js$/,
 ];
 /** From the database package, only the agent's own collection (D7). */
 const DB_NAMES = new Set([
