@@ -12,7 +12,9 @@ const OK = { ANTHROPIC_API_KEY: "k", MONGO_URI: "mongodb://x" };
 
 describe("the secret guard (11.5, D5)", () => {
   it("lets the agent's own environment through", () => {
-    expect(() => { assertAgentEnvironment({ ...OK, PATH: "/bin" }); }).not.toThrow();
+    expect(() => {
+      assertAgentEnvironment({ ...OK, PATH: "/bin" });
+    }).not.toThrow();
   });
 
   it("refuses every broker and production secret — naming them, never their values", () => {
@@ -71,9 +73,9 @@ describe("the secret guard (11.5, D5)", () => {
         "NEELKANTH_OPERATOR_PASSWORD",
       ].map((k) => [k, "x"]),
     );
-    expect(() =>
-      { assertAgentEnvironment({ ...envLocal, ANTHROPIC_API_KEY: "k" }); },
-    ).toThrow(/refusing to start/);
+    expect(() => {
+      assertAgentEnvironment({ ...envLocal, ANTHROPIC_API_KEY: "k" });
+    }).toThrow(/refusing to start/);
   });
 
   it("an empty variable is not a secret", () => {
@@ -81,12 +83,76 @@ describe("the secret guard (11.5, D5)", () => {
   });
 
   it("refuses to start without a key or a database", () => {
-    expect(() => { assertAgentEnvironment({ MONGO_URI: "m" }); }).toThrow(
-      /ANTHROPIC_API_KEY not set/,
-    );
-    expect(() => { assertAgentEnvironment({}); }).toThrow(
-      /ANTHROPIC_API_KEY and MONGO_URI not set/,
-    );
+    expect(() => {
+      assertAgentEnvironment({ MONGO_URI: "m" });
+    }).toThrow(/ANTHROPIC_API_KEY not set/);
+    expect(() => {
+      assertAgentEnvironment({});
+    }).toThrow(/ANTHROPIC_API_KEY and MONGO_URI not set/);
+  });
+});
+
+describe("the provider, chosen in the env file (11.6, D8)", () => {
+  const M = { MONGO_URI: "m" };
+
+  it("defaults to Anthropic, its model to ours", () => {
+    expect(assertAgentEnvironment({ ...M, ANTHROPIC_API_KEY: "k" })).toEqual({
+      provider: "anthropic",
+      keyVariable: "ANTHROPIC_API_KEY",
+      model: undefined,
+    });
+  });
+
+  it("OpenAI and DeepSeek need their own key and a model the operator names", () => {
+    expect(
+      assertAgentEnvironment({
+        ...M,
+        AGENT_PROVIDER: "deepseek",
+        DEEPSEEK_API_KEY: "k",
+        AGENT_MODEL: "x",
+      }),
+    ).toEqual({
+      provider: "deepseek",
+      keyVariable: "DEEPSEEK_API_KEY",
+      model: "x",
+    });
+    expect(() =>
+      assertAgentEnvironment({
+        ...M,
+        AGENT_PROVIDER: "deepseek",
+        DEEPSEEK_API_KEY: "k",
+      }),
+    ).toThrow(/AGENT_MODEL not set/);
+    expect(() =>
+      assertAgentEnvironment({
+        ...M,
+        AGENT_PROVIDER: "openai",
+        AGENT_MODEL: "x",
+        ANTHROPIC_API_KEY: "k",
+      }),
+    ).toThrow(/OPENAI_API_KEY not set/);
+  });
+
+  it("refuses a provider it does not know", () => {
+    expect(() =>
+      assertAgentEnvironment({
+        ...M,
+        AGENT_PROVIDER: "gemini",
+        ANTHROPIC_API_KEY: "k",
+      }),
+    ).toThrow(/AGENT_PROVIDER "gemini" is none of anthropic, openai, deepseek/);
+  });
+
+  it("refuses a production secret whichever provider is chosen", () => {
+    expect(() =>
+      assertAgentEnvironment({
+        ...M,
+        AGENT_PROVIDER: "openai",
+        OPENAI_API_KEY: "k",
+        AGENT_MODEL: "x",
+        FYERS_ACCESS_TOKEN: "t",
+      }),
+    ).toThrow(/holds FYERS_ACCESS_TOKEN/);
   });
 });
 
@@ -97,7 +163,9 @@ describe("the research database only (11.5, D5)", () => {
       "neelkanth_it_agent",
       "neelkanth_ci_1",
     ])
-      expect(() => { assertResearchDatabase(ok); }).not.toThrow();
+      expect(() => {
+        assertResearchDatabase(ok);
+      }).not.toThrow();
     for (const no of [
       "neelkanth",
       "neelkanth_live",
@@ -105,7 +173,9 @@ describe("the research database only (11.5, D5)", () => {
       "test",
       "neelkanth_research_x",
     ])
-      expect(() => { assertResearchDatabase(no); }).toThrow(/refusing/);
+      expect(() => {
+        assertResearchDatabase(no);
+      }).toThrow(/refusing/);
   });
 });
 

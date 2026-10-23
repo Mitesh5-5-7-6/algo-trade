@@ -26,25 +26,61 @@ export function forbiddenIn(
     .sort();
 }
 
+/** The providers the agent can run on (design Q1 revised, D8). */
+export const PROVIDERS = ["anthropic", "openai", "deepseek"] as const;
+export type Provider = (typeof PROVIDERS)[number];
+
+/** Each provider's key, and whether the operator must name the model. */
+const NEEDS: Record<Provider, { key: string; model: boolean }> = {
+  anthropic: { key: "ANTHROPIC_API_KEY", model: false },
+  openai: { key: "OPENAI_API_KEY", model: true },
+  deepseek: { key: "DEEPSEEK_API_KEY", model: true },
+};
+
+export interface AgentEnvironment {
+  provider: Provider;
+  /** The provider's key variable — its name; the value stays in the env. */
+  keyVariable: string;
+  /** The model the operator named; undefined means the provider's default (Anthropic only). */
+  model: string | undefined;
+}
+
 /**
  * Refuse to run beside a production secret, or without what the agent needs
- * (D5). Throws naming the variables, never their values.
+ * (D5): the provider (`AGENT_PROVIDER`, default anthropic), its key, the model
+ * when the provider has no default of ours (D8), and `MONGO_URI`. Throws
+ * naming the variables, never their values.
  */
 export function assertAgentEnvironment(
   env: Readonly<Record<string, string | undefined>>,
-): void {
+): AgentEnvironment {
   const forbidden = forbiddenIn(env);
   if (forbidden.length > 0)
     throw new Error(
-      `refusing to start: the environment holds ${forbidden.join(", ")} — production secrets the research agent must never receive (ADR §13.3). Run it with its own env file, .env.agent.local, holding only ANTHROPIC_API_KEY and MONGO_URI.`,
+      `refusing to start: the environment holds ${forbidden.join(", ")} — production secrets the research agent must never receive (ADR §13.3). Run it with its own env file, .env.agent.local, holding only the provider's key, the model and MONGO_URI.`,
     );
-  const missing = ["ANTHROPIC_API_KEY", "MONGO_URI"].filter(
-    (k) => env[k] === undefined || env[k] === "",
-  );
+  const named = env["AGENT_PROVIDER"] ?? "";
+  const provider = (named === "" ? "anthropic" : named) as Provider;
+  if (!PROVIDERS.includes(provider))
+    throw new Error(
+      `refusing to start: AGENT_PROVIDER "${named}" is none of ${PROVIDERS.join(", ")}`,
+    );
+  const need = NEEDS[provider];
+  const set = (k: string) => env[k] !== undefined && env[k] !== "";
+  const missing = [
+    need.key,
+    ...(need.model ? ["AGENT_MODEL"] : []),
+    "MONGO_URI",
+  ].filter((k) => !set(k));
   if (missing.length > 0)
     throw new Error(
       `refusing to start: ${missing.join(" and ")} not set — see .env.agent.local.example`,
     );
+  return {
+    provider,
+    keyVariable: need.key,
+    model: set("AGENT_MODEL") ? env["AGENT_MODEL"] : undefined,
+  };
 }
 
 /** Only the research database, or a scratch one (D5). */

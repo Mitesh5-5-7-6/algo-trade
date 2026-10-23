@@ -10,12 +10,13 @@
  *
  * Every command takes [--db=neelkanth_research] [--dns=1.1.1.1].
  *
- * Its own env file — ANTHROPIC_API_KEY and the research MONGO_URI, nothing
- * else (see .env.agent.local.example). It refuses to start beside a broker or
+ * Its own env file — the provider (AGENT_PROVIDER: anthropic, openai or
+ * deepseek), its key, the model, and the research MONGO_URI; nothing else
+ * (see .env.agent.local.example). It refuses to start beside a broker or
  * production secret, so it cannot be run with .env.local (design D5). It
  * reads the research database only, through six read-only tools, and writes
  * one thing: the answer, to agent_answers (unless --no-keep). Research text
- * is sent to Anthropic's API (design Q1).
+ * is sent to the chosen provider's API (design Q1, D8).
  *
  * Runs the BUILT code: `pnpm build` first.
  */
@@ -25,17 +26,18 @@ import {
 } from "../dist/agent/guard.js";
 
 // Before anything else is read or connected (D5).
-assertAgentEnvironment(process.env);
+const agent = assertAgentEnvironment(process.env);
 
 const dns = await import("node:dns");
 const { MongoClient } = await import("mongodb");
 const { istDateKey } = await import("@neelkanth/core");
 const { AgentAnswersRepository } = await import("@neelkanth/db");
 const { runResearch } = await import("../dist/agent/loop.js");
-const { AnthropicResearchModel } = await import("../dist/agent/model.js");
+const { modelFor } = await import("../dist/agent/provider.js");
 const { auditAnswer, keepSession } = await import("../dist/agent/store.js");
 const { ToolContext } = await import("../dist/agent/tools.js");
 const { default: Anthropic } = await import("@anthropic-ai/sdk");
+const { default: OpenAI } = await import("openai");
 
 const [command, ...rest] = process.argv.slice(2);
 const positional = rest.filter((a) => !a.startsWith("--"));
@@ -75,7 +77,7 @@ try {
     const session = await runResearch(
       question,
       new ToolContext(db, asOf),
-      new AnthropicResearchModel(new Anthropic(), undefined, effort),
+      modelFor(agent, process.env, effort),
     );
     console.log(session.rendered);
     console.log("");
@@ -84,7 +86,7 @@ try {
       `session      ${session.status}, ${session.verdict}; ${String(session.turns)} turns, ${String(session.calls.length)} tool calls, ${String(session.corrections)} corrections`,
     );
     console.log(
-      `model        ${session.model}${session.servedBy.some((m) => m !== session.model) ? ` (served by ${session.servedBy.join(", ")})` : ""}, effort ${effort}`,
+      `model        ${session.model}${session.servedBy.some((m) => m !== session.model) ? ` (served by ${session.servedBy.join(", ")})` : ""}, ${agent.provider}${agent.provider === "anthropic" ? `, effort ${effort}` : ""}`,
     );
     console.log(
       `tokens       ${String(session.usage.input)} in, ${String(session.usage.output)} out; ${String(Date.now() - startedAt)} ms`,
@@ -115,12 +117,17 @@ try {
 } catch (e) {
   // An API error — no credit, a bad key, a rate limit — is reported in one
   // line, not as a stack trace, and the command fails.
-  if (!(e instanceof Anthropic.APIError)) throw e;
-  const detail = (e.error as { error?: { message?: string } } | undefined)
-    ?.error?.message;
-  console.error(
-    `Anthropic API ${String(e.status)}: ${detail ?? e.message} (request ${e.requestID ?? "—"})`,
-  );
+  if (e instanceof Anthropic.APIError) {
+    const detail = (e.error as { error?: { message?: string } } | undefined)
+      ?.error?.message;
+    console.error(
+      `Anthropic API ${String(e.status)}: ${detail ?? e.message} (request ${e.requestID ?? "—"})`,
+    );
+  } else if (e instanceof OpenAI.APIError) {
+    console.error(
+      `${agent.provider} API ${String(e.status)}: ${e.message} (request ${e.requestID ?? "—"})`,
+    );
+  } else throw e;
   process.exitCode = 1;
 } finally {
   await client.close();

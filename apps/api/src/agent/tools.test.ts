@@ -27,6 +27,7 @@ const ALLOWED = [
   /^\.\.\/knowledge\/(read|search|similar|document)\.js$/,
   /^\.\.\/research\/(report|observations|evidence)\.js$/, // types only
   /^@anthropic-ai\/sdk$/,
+  /^openai$/, // the OpenAI-compatible adapter (D8)
   /^mongodb$/,
   /^zod\/v4$/,
   /^node:crypto$/,
