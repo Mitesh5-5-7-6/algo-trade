@@ -77,8 +77,9 @@ not exist because there is no path to write it (ADR §5.4). There is no
 ### D2 — Bound to an `asOf`, and bounded in size
 
 Every question is asked **as of** a date (default: today). Every tool call is
-answered as of that date: a model that passes a later `asOf`, or a date range
-reaching past it, is clamped to it and told so in the result (§5.4). Tool
+answered as of that date. No tool takes an `asOf` — the model cannot choose
+one — and a date range reaching past it is clamped to it and the model told so
+in the result (§5.4). Tool
 results are capped — at most 50 rows, the rest counted ("showing 50 of 811")
 — while the provenance keeps the full `n`. A tool error returns to the model
 as an error result, not a crash.
