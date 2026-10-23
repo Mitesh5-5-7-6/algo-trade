@@ -154,6 +154,60 @@ the path creates or changes a strategy.
 
 ---
 
+## 7. Acceptance (task 12.5)
+
+The year researched on a scratch copy as before (494 daily reports, 71
+windows, the year's counterfactual, 4,949 documents); the agent — Gemini,
+`gemini-3.5-flash-lite` — asked to propose **as of 2026-03-27**, so it could
+see the first half of the year and nothing after; the proposals registered and
+tested on the second half, **2026-03-30 .. 2026-09-28**. The registration step
+is the operator's (Q1); for the acceptance it was taken on the scratch copy
+only — nothing was registered in the research database. At `e19b6bf`.
+
+| Hypothesis | Proposed (as of 2026-03-27)                                              | In sample                | Out of sample               | Verdict, Holm within its family                           |
+| ---------- | ------------------------------------------------------------------------ | ------------------------ | --------------------------- | --------------------------------------------------------- |
+| H-0003     | RSI's win rate on RSI_REVERSION is under 20%                             | n = 284, 15.8%           | n = 277, 14.8% (11.6–18.7%) | **SUPPORTED**, p 0.0159, adjusted 0.0319 in a family of 3 |
+| H-0004     | ORB loses money after ORB_BREAKOUT                                       | n = 319, −141.04 a Trade | n = 319, −154.90 a Trade    | **SUPPORTED**, adjusted 4.45e-26                          |
+| H-0005     | EMA_CROSSOVER loses money after ORB_BREAKOUT                             | n = 28                   | n = 27                      | INSUFFICIENT_SAMPLE — not judged (< 30)                   |
+| H-0006     | EMA_CROSSOVER with fast 20, slow 50 (a variant) loses money on EMA_CROSS | n = 12                   | n = 7                       | INSUFFICIENT_SAMPLE — the slower variant barely trades    |
+
+- **The windows held:** each registered in sample from the first researched
+  session to 2026-03-27, out of sample from 2026-03-30; a window starting on
+  2026-03-27 was refused.
+- **The variant was pinned as itself:** `strategyParams` `{ EMA_CROSSOVER:
+{ fast: 20, slow: 50 } }`, its own strategy version (`cfg-189ffb…`), its own
+  in-sample run.
+- **A future window waits:** proposed as of 2026-09-28 and registered with
+  2026-10-01 .. 2026-12-31, H-0007's test was refused — nothing kept — until the
+  data covers it; it stays UNTESTED.
+- **An answer that passed an earlier, weaker check cannot be registered:** the
+  answer whose variants named `fast_ema`/`slow_ema` (F2) no longer audits, and
+  registration refuses it.
+- **Nothing became a strategy:** `strategies` unchanged; only
+  `strategy_experiments` (hypotheses and tests) and `agent_answers` written.
+- `pnpm test:integration`, strict: 1,547 tests across 13 packages, 0 skipped, 0 failed.
+
+**Found by the acceptance, and fixed:**
+
+| #   | Finding                                                                                                                                                                                                       | Fix                                                                                                                                                                              |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | Asked for parameter variants, the model declined: "no records exist for the requested variants" — the absence of a variant's record read as the absence of evidence.                                          | The prompt says a variant rests on the evidence about the strategy as configured, and that testing it is what registration is for (`e9f09ba`).                                   |
+| F2  | Variants named `fast_ema`/`slow_ema` were checked "registrable": a strategy's schema drops keys it does not know and fills defaults, so the default strategy would have been tested under the variant's name. | Every proposed parameter must come out of the strategy's own schema exactly as given (`7ce9a9b`).                                                                                |
+| F3  | A rationale cited 294 Trades for EMA_CROSSOVER on ORB_BREAKOUT; the registered cell counted 28. `strategyMatrix` (Phase 10) counted a Trade once for every occurrence it was held open through.               | The matrix counts the Trades entered on the pattern, each once — as the counterfactual matrix and every hypothesis cell do (`e19b6bf`); on the real year they now agree exactly. |
+
+F3 corrects figures quoted from the matrix in Phase 11 §7, including its F4 —
+see the note there.
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                                                                                         | Owner                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| P1  | A proposal's rationale is checked for presence, not meaning (Phase 11 F4): H-0005's rationale quoted the inflated matrix count; the claim itself was sound and its test used the right one.                   | by design              |
+| P2  | Proposals made as of a past date were tested on stored data the tools could not reach — a pseudo-prospective test. A truly prospective one is a proposal as of today, tested when its window closes (H-0007). | by design              |
+| P3  | New strategy logic — a filter, a rule — cannot be proposed; only cells and parameter variants (Q2).                                                                                                           | Phase 13               |
+| P4  | The research database holds no research yet (Phase 10 K1): nothing can be proposed from it until the research runs there.                                                                                     | operations             |
+| P5  | Free-tier Flash-Lite needed several corrections per proposal session; small samples (H-0005, H-0006) are honestly not judged.                                                                                 | operator, model choice |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §17
