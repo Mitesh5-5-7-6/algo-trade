@@ -167,7 +167,7 @@ describe("provenance on every answer (10.6, D6)", () => {
   it("carries n, the sessions read, asOf, versions and cost models", () => {
     const a = findPatterns(REPORTS, { patterns: ["ORB_BREAKOUT"] });
     expect(a).toMatchObject({
-      readModelVersion: "1",
+      readModelVersion: "2",
       n: 3,
       range: { fromDate: "2026-03-02", toDate: "2026-03-09" },
       asOf: null,
@@ -313,6 +313,33 @@ describe("strategyMatrix (10.6)", () => {
     expect(bullish.rows[0]).toMatchObject({
       strategyType: "ORB",
       occurrences: 3,
+    });
+  });
+
+  /** Phase 12 acceptance F3: a Trade held through five occurrences was counted five times. */
+  it("counts a Trade once, where it was entered — not again for each occurrence it was held through", () => {
+    const held = report(
+      "2026-03-10",
+      [
+        occurrence("ORB_BREAKOUT", 1, {
+          ORB: { relation: "ENTERED", tradeKey: "ORB|X|1" },
+        }),
+        occurrence("ORB_BREAKOUT", 2, {
+          ORB: { relation: "HOLDING", tradeKey: "ORB|X|1" },
+        }),
+        occurrence("ORB_BREAKOUT", 3, {
+          ORB: { relation: "HOLDING", tradeKey: "ORB|X|1" },
+        }),
+      ],
+      [trade("ORB|X|1", "ORB", "LOSS", -40, ["ORB_BREAKOUT"])],
+    );
+    const m = strategyMatrix([held], { patternId: "ORB_BREAKOUT" });
+    expect(m.rows[0]).toMatchObject({
+      strategyType: "ORB",
+      occurrences: 3,
+      relations: { ENTERED: 1, HOLDING: 2 },
+      trades: 1,
+      summary: { losses: 1, net: -40 },
     });
   });
 

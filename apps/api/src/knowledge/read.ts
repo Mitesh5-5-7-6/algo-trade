@@ -13,7 +13,7 @@ import type { HypothesisTest } from "../validation/gate.js";
 import { MAX_RESULTS, searchKnowledge, type KnowledgeHit } from "./search.js";
 
 /** Bumped whenever a read model's meaning changes (Phase 10 D6). */
-export const READ_MODEL_VERSION = "1";
+export const READ_MODEL_VERSION = "2";
 
 /**
  * What every answer carries (Phase 10 D6, spec Phase 11): how many things it
@@ -295,7 +295,12 @@ export interface StrategyMatrixRow {
   /** Occurrences of the pattern on an instrument the strategy ran on. */
   occurrences: number;
   relations: Record<Relation, number>;
-  /** The Trades its occurrences led to, and how they ended. */
+  /**
+   * The Trades it ENTERED on the pattern, and how they ended — each counted
+   * once, as the counterfactual matrix and a hypothesis's cell count them. A
+   * Trade merely held open while the pattern fired is a HOLDING relation, not
+   * a Trade the pattern led to (Phase 12 acceptance F3).
+   */
   trades: number;
   summary: TradeSummary;
 }
@@ -342,7 +347,7 @@ export function strategyMatrix(
         a.occ += 1;
         a.rel[s.relation] += 1;
         const t = s.tradeKey === undefined ? undefined : trades.get(s.tradeKey);
-        if (t !== undefined) a.trades.push(t);
+        if (t !== undefined && s.relation === "ENTERED") a.trades.push(t);
         acc.set(type, a);
       }
     }
