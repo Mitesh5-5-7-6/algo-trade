@@ -18,6 +18,7 @@ coverage/
 .env.*
 !.env.example
 !.env.test.local.example
+!.env.agent.local.example
 
 # logs & OS noise
 logs/
