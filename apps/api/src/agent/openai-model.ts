@@ -48,6 +48,7 @@ const textOf = (blocks: readonly { type: string }[]): string =>
 export function toChatMessages(
   system: string,
   messages: readonly Anthropic.Beta.BetaMessageParam[],
+  extras: ReadonlyMap<string, unknown> = new Map(),
 ): ChatMessage[] {
   const out: ChatMessage[] = [{ role: "system", content: system }];
   for (const m of messages) {
@@ -84,6 +85,9 @@ export function toChatMessages(
         id: b.id,
         type: "function" as const,
         function: { name: b.name, arguments: JSON.stringify(b.input) },
+        // What the provider attached to the call, back exactly as received —
+        // Gemini's thought signature, without which it refuses the turn.
+        ...(extras.has(b.id) ? { extra_content: extras.get(b.id) } : {}),
       }));
     const text = textOf(blocks);
     out.push({
@@ -110,6 +114,22 @@ function parseArguments(raw: string): unknown {
   } catch {
     return { unparseableArguments: raw };
   }
+}
+
+/**
+ * What a provider attached to each tool call beyond OpenAI's fields
+ * (`extra_content` — Gemini's `google.thought_signature`), by call id: opaque,
+ * to be sent back unchanged with that call (D8).
+ */
+export function extrasOf(
+  c: OpenAI.Chat.Completions.ChatCompletion,
+): Map<string, unknown> {
+  const out = new Map<string, unknown>();
+  for (const call of c.choices[0]?.message.tool_calls ?? []) {
+    const extra = (call as { extra_content?: unknown }).extra_content;
+    if (extra !== undefined) out.set(call.id, extra);
+  }
+  return out;
 }
 
 /** A chat completion as a loop turn (D8). */
@@ -149,10 +169,14 @@ export function fromCompletion(
 }
 
 /**
- * OpenAI, or DeepSeek through the same client at its own address (D8). The
- * model is the operator's to name — there is no default.
+ * OpenAI, or DeepSeek or Gemini through the same client at its own address
+ * (D8). The model is the operator's to name — there is no default. One
+ * instance serves one session: it keeps what the provider attached to each
+ * call, to send it back.
  */
 export class OpenAICompatibleModel implements ResearchModel {
+  private readonly extras = new Map<string, unknown>();
+
   constructor(
     private readonly client: OpenAI,
     readonly id: string,
@@ -173,10 +197,11 @@ export class OpenAICompatibleModel implements ResearchModel {
   async turn(request: ModelRequest): Promise<ModelTurn> {
     const completion = await this.client.chat.completions.create({
       model: this.id,
-      messages: toChatMessages(request.system, request.messages),
+      messages: toChatMessages(request.system, request.messages, this.extras),
       tools: toChatTools(request.tools),
       tool_choice: "auto",
     });
+    for (const [id, extra] of extrasOf(completion)) this.extras.set(id, extra);
     return fromCompletion(completion);
   }
 }

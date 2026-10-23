@@ -360,6 +360,56 @@ describe("the adapter in the loop (11.6, D8)", () => {
     expect(second[3]?.tool_call_id).toBe("call_a");
   });
 
+  /** Found on the first Gemini run: a call sent back without its signature is refused (400). */
+  it("sends back what the provider attached to each call, unchanged — Gemini's thought signature", async () => {
+    const signed = completion(
+      {
+        tool_calls: [{ id: "call_s", name: "find_patterns", arguments: "{}" }],
+      },
+      "tool_calls",
+    );
+    const call = signed.choices[0]?.message
+      .tool_calls?.[0] as unknown as Record<string, unknown>;
+    call["extra_content"] = { google: { thought_signature: "sig-abc" } };
+    const answer = JSON.stringify({ summary: "s", claims: [], caveats: [] });
+    const { client, sent } = stubClient([
+      signed,
+      completion(
+        {
+          tool_calls: [
+            { id: "call_t", name: "submit_answer", arguments: answer },
+          ],
+        },
+        "tool_calls",
+      ),
+    ]);
+    await runResearch(
+      "q",
+      new Fixed(),
+      new OpenAICompatibleModel(client, "gemini-x"),
+    );
+    const assistant = (
+      sent[1]?.["messages"] as { role: string; tool_calls?: unknown[] }[]
+    ).find((m) => m.role === "assistant");
+    expect(assistant?.tool_calls).toEqual([
+      {
+        id: "call_s",
+        type: "function",
+        function: { name: "find_patterns", arguments: "{}" },
+        extra_content: { google: { thought_signature: "sig-abc" } },
+      },
+    ]);
+    // A call that came with nothing carries nothing.
+    expect(
+      toChatMessages("S", [
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "x", name: "t", input: {} }],
+        },
+      ])[1],
+    ).not.toHaveProperty("tool_calls.0.extra_content");
+  });
+
   it("a number not in the evidence is UNSUPPORTED whichever provider wrote it", async () => {
     const bad = JSON.stringify({
       summary: "x",
