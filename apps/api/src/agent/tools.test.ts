@@ -29,7 +29,16 @@ const ALLOWED = [
   /^@anthropic-ai\/sdk$/,
   /^mongodb$/,
   /^zod\/v4$/,
+  /^node:crypto$/,
+  /^@neelkanth\/core$/, // canonicalJson
+  /^@neelkanth\/db$/, // AgentAnswersRepository only — checked below
 ];
+/** From the database package, only the agent's own collection (D7). */
+const DB_NAMES = new Set([
+  "AgentAnswersRepository",
+  "AgentAnswerDoc",
+  "type AgentAnswerDoc",
+]);
 
 describe("nothing but the research is reachable (11.1, D1)", () => {
   it("imports only from the allowlist", () => {
@@ -46,6 +55,25 @@ describe("nothing but the research is reachable (11.1, D1)", () => {
       }
     }
     expect(offending).toEqual([]);
+  });
+
+  it("takes nothing from the database package but its own answers' repository", () => {
+    const names: string[] = [];
+    const files = readdirSync(HERE).filter(
+      (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
+    );
+    for (const f of files)
+      for (const m of readFileSync(join(HERE, f), "utf8").matchAll(
+        /import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"@neelkanth\/db"/g,
+      ))
+        names.push(
+          ...(m[1] ?? "")
+            .split(",")
+            .map((n) => n.trim())
+            .filter(Boolean),
+        );
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((n) => !DB_NAMES.has(n))).toEqual([]);
   });
 
   it("exposes exactly the six research tools — no news, backtest or walk-forward (Q2)", () => {

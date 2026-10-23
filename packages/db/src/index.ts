@@ -18,3 +18,4 @@ export * from "./pattern-catalog-repository.js";
 export * from "./strategy-experiments-repository.js";
 export * from "./research-reports-repository.js";
 export * from "./documents-repository.js";
+export * from "./agent-answers-repository.js";

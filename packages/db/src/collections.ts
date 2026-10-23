@@ -72,6 +72,13 @@ export const COLLECTIONS = {
    * evidence itself. Untimed.
    */
   documents: "documents",
+  /**
+   * The research agent's answers (Phase 11 D7) — RESEARCH database only. One
+   * per question asked: the question, its asOf, every tool call and the
+   * answer with its verdict. Untimed, never edited. An analysis, not
+   * evidence: never indexed into `documents` (design Q3).
+   */
+  agentAnswers: "agent_answers",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -159,6 +166,14 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.researchReports)
       .createIndex({ period: 1, sessions: 1 }),
+
+    // agent_answers — one per question; read back by id, by asOf, newest first.
+    db
+      .collection(COLLECTIONS.agentAnswers)
+      .createIndex({ answerId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.agentAnswers)
+      .createIndex({ asOf: -1, createdAt: -1 }),
 
     // documents — one per research item; queried by facet and by text.
     db
