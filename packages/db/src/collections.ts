@@ -79,6 +79,12 @@ export const COLLECTIONS = {
    * evidence: never indexed into `documents` (design Q3).
    */
   agentAnswers: "agent_answers",
+  /**
+   * Backtests (ADR §10.1, Phase 13 D2) — RESEARCH database only. One parameter
+   * set of one strategy over one window, normal or stressed costs, measured.
+   * Untimed, never edited: the same request is the same fingerprint.
+   */
+  backtests: "backtests",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -166,6 +172,12 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.researchReports)
       .createIndex({ period: 1, sessions: 1 }),
+
+    // backtests — by id, and by fingerprint (the same request, the same run).
+    db
+      .collection(COLLECTIONS.backtests)
+      .createIndex({ backtestId: 1 }, { unique: true }),
+    db.collection(COLLECTIONS.backtests).createIndex({ fingerprint: 1 }),
 
     // agent_answers — one per question; read back by id, by asOf, newest first.
     db
