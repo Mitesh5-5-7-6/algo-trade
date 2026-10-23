@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import OpenAIClient from "openai";
 import type OpenAI from "openai";
 import type { Db } from "mongodb";
 import { describe, expect, it } from "vitest";
@@ -10,6 +11,8 @@ import {
   fromCompletion,
   OpenAICompatibleModel,
   PROVIDER_BASE_URL,
+  RATE_LIMIT_RETRIES,
+  retryDelayMs,
   toChatMessages,
   toChatTools,
 } from "./openai-model.js";
@@ -408,6 +411,112 @@ describe("the adapter in the loop (11.6, D8)", () => {
         },
       ])[1],
     ).not.toHaveProperty("tool_calls.0.extra_content");
+  });
+
+  /** Found on the Gemini acceptance: the free tier allows 15 requests a minute. */
+  it("waits out a rate limit for the delay it names, then goes on", async () => {
+    const limited = new OpenAIClient.RateLimitError(
+      429,
+      undefined,
+      "429 You exceeded your current quota. Please retry in 31.9s.",
+      new Headers(),
+    );
+    expect(retryDelayMs(limited)).toBe(32_900);
+    expect(
+      retryDelayMs(
+        new OpenAIClient.RateLimitError(
+          429,
+          undefined,
+          "slow down",
+          new Headers({ "retry-after": "5" }),
+        ),
+      ),
+    ).toBe(5_000);
+    expect(
+      retryDelayMs(
+        new OpenAIClient.RateLimitError(
+          429,
+          undefined,
+          "slow down",
+          new Headers(),
+        ),
+      ),
+    ).toBe(61_000);
+
+    const waits: number[] = [];
+    const replies: unknown[] = [
+      limited,
+      limited,
+      completion({ content: "ok" }, "stop"),
+    ];
+    const client = {
+      chat: {
+        completions: {
+          create: () => {
+            const next = replies.shift();
+            return next instanceof Error
+              ? Promise.reject(next)
+              : Promise.resolve(next);
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const model = new OpenAICompatibleModel(client, "m", (ms) => {
+      waits.push(ms);
+      return Promise.resolve();
+    });
+    const t = await model.turn({
+      system: "S",
+      messages: [{ role: "user", content: "q" }],
+      tools: [],
+    });
+    expect(t.stopReason).toBe("end_turn");
+    expect(waits).toEqual([32_900, 32_900]);
+  });
+
+  it("gives up after RATE_LIMIT_RETRIES, and never retries another error", async () => {
+    const limited = new OpenAIClient.RateLimitError(
+      429,
+      undefined,
+      "retry in 1s",
+      new Headers(),
+    );
+    let calls = 0;
+    const always = {
+      chat: {
+        completions: { create: () => ((calls += 1), Promise.reject(limited)) },
+      },
+    } as unknown as OpenAI;
+    const noWait = () => Promise.resolve();
+    await expect(
+      new OpenAICompatibleModel(always, "m", noWait).turn({
+        system: "S",
+        messages: [],
+        tools: [],
+      }),
+    ).rejects.toBe(limited);
+    expect(calls).toBe(RATE_LIMIT_RETRIES + 1);
+
+    const bad = new OpenAIClient.BadRequestError(
+      400,
+      undefined,
+      "bad",
+      new Headers(),
+    );
+    let tries = 0;
+    const broken = {
+      chat: {
+        completions: { create: () => ((tries += 1), Promise.reject(bad)) },
+      },
+    } as unknown as OpenAI;
+    await expect(
+      new OpenAICompatibleModel(broken, "m", noWait).turn({
+        system: "S",
+        messages: [],
+        tools: [],
+      }),
+    ).rejects.toBe(bad);
+    expect(tries).toBe(1);
   });
 
   it("a number not in the evidence is UNSUPPORTED whichever provider wrote it", async () => {

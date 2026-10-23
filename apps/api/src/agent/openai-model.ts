@@ -116,6 +116,26 @@ function parseArguments(raw: string): unknown {
   }
 }
 
+/** How often a rate-limited turn is retried, and the longest wait honoured. */
+export const RATE_LIMIT_RETRIES = 4;
+const LONGEST_WAIT_MS = 90_000;
+
+/**
+ * How long a rate limit asks to be waited out (D8): the `retry-after` header,
+ * or the delay the message names ("retry in 31.9s", Gemini's free tier), else
+ * a minute.
+ */
+export function retryDelayMs(
+  e: InstanceType<typeof OpenAI.RateLimitError>,
+): number {
+  const header = Number(e.headers.get("retry-after"));
+  if (Number.isFinite(header) && header > 0)
+    return Math.min(header * 1000, LONGEST_WAIT_MS);
+  const said = /retry in ([\d.]+)s/i.exec(e.message);
+  const seconds = said === null ? 60 : Number(said[1]);
+  return Math.min(Math.ceil(seconds * 1000) + 1000, LONGEST_WAIT_MS);
+}
+
 /**
  * What a provider attached to each tool call beyond OpenAI's fields
  * (`extra_content` — Gemini's `google.thought_signature`), by call id: opaque,
@@ -180,6 +200,8 @@ export class OpenAICompatibleModel implements ResearchModel {
   constructor(
     private readonly client: OpenAI,
     readonly id: string,
+    private readonly wait: (ms: number) => Promise<void> = (ms) =>
+      new Promise((resolve) => setTimeout(resolve, ms)),
   ) {}
 
   static for(
@@ -195,12 +217,27 @@ export class OpenAICompatibleModel implements ResearchModel {
   }
 
   async turn(request: ModelRequest): Promise<ModelTurn> {
-    const completion = await this.client.chat.completions.create({
+    const params = {
       model: this.id,
       messages: toChatMessages(request.system, request.messages, this.extras),
       tools: toChatTools(request.tools),
-      tool_choice: "auto",
-    });
+      tool_choice: "auto" as const,
+    };
+    // A rate limit is waited out for the delay it names, RATE_LIMIT_RETRIES
+    // times at most; any other error is the caller's.
+    let completion: OpenAI.Chat.Completions.ChatCompletion | undefined;
+    for (let attempt = 0; completion === undefined; attempt += 1) {
+      try {
+        completion = await this.client.chat.completions.create(params);
+      } catch (e) {
+        if (
+          !(e instanceof OpenAI.RateLimitError) ||
+          attempt >= RATE_LIMIT_RETRIES
+        )
+          throw e;
+        await this.wait(retryDelayMs(e));
+      }
+    }
     for (const [id, extra] of extrasOf(completion)) this.extras.set(id, extra);
     return fromCompletion(completion);
   }
