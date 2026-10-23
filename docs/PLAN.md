@@ -838,6 +838,36 @@ Every serious candidate must pass `Historical Backtest → Out-of-Sample →
 Walk-Forward → Cost/Slippage Validation`. No direct promotion from AI suggestion
 to Live.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_13_BACKTEST_WALK_FORWARD.md](design/PHASE_13_BACKTEST_WALK_FORWARD.md),
+which is the detailed design for this phase and keeps each task's dependencies.
+
+| ID   | Task                                                                                                                                                     | STATUS | Commit | Evidence |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 13.1 | Backtest metrics: the §8.1 set from a replay's Trades — returns, Sharpe, Sortino, drawdown, profit factor, expectancy, stability, regime dependence (D2) | READY  | —      | —        |
+| 13.2 | Backtests: a candidate's parameters over a window, normal and stressed costs, kept in `backtests` (D2, D3)                                               | READY  | —      | —        |
+| 13.3 | Candidates: declared from a registered hypothesis, a checked grid, never edited (D1)                                                                     | READY  | —      | —        |
+| 13.4 | Walk-forward: monthly folds, choice on training only, the baseline on the same windows, kept (D4, D5)                                                    | READY  | —      | —        |
+| 13.5 | The gate: PASS or FAIL against the standard criteria, each with its value (D6)                                                                           | READY  | —      | —        |
+| 13.6 | The CLI: candidates, backtests, walk-forward and the verdict                                                                                             | READY  | —      | —        |
+| 13.7 | Acceptance: candidates from the registered hypotheses, walked forward over the real year, gated; determinism and no-lookahead shown                      | READY  | —      | —        |
+
+**The standard gate, and rolling folds of three months' training and one
+month's test** — the operator's decisions at opening (design Q1, Q2). PASS makes
+a candidate eligible for Phase 14's paper validation; nothing here enables,
+changes or promotes a strategy.
+
+### Done when
+
+A candidate declared from a registered hypothesis is backtested with every §8.1
+metric, walked forward over the stored year — parameters chosen on each training
+window only, tested on the month after, under normal and stressed costs, against
+the current configuration — and gated PASS or FAIL against the declared
+criteria, each with its value; the results are deterministic and kept; and
+nothing changes or promotes a strategy.
+
 ---
 
 ## 19. Phase 14 — Paper validation
