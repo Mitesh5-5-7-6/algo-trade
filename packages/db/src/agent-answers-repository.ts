@@ -33,6 +33,19 @@ export const AgentAnswerDocSchema = z.object({
   answer: z.record(z.string(), z.unknown()).nullable(),
   check: z.record(z.string(), z.unknown()).nullable(),
   rendered: z.string(),
+  /**
+   * What the answer's proposals were checked against (Phase 12 D3) — the
+   * detectors, replayable strategies and instruments; null when proposals
+   * could not be made, absent on answers kept before Phase 12.
+   */
+  catalog: z
+    .object({
+      patterns: z.array(z.string()),
+      strategies: z.array(z.string()),
+      symbols: z.array(z.string()),
+    })
+    .nullable()
+    .optional(),
   /** sha256 of everything above except the id and the creation time. */
   fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
 });

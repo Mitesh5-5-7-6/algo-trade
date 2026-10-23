@@ -8,6 +8,7 @@ import {
   SubmittedAnswerSchema,
   type ToolCall,
 } from "./answer.js";
+import { proposalCatalog } from "./catalog.js";
 import type { ResearchSession } from "./loop.js";
 
 /** A session as kept (D7): everything it did, fingerprinted. */
@@ -35,6 +36,7 @@ export function answerDoc(
     answer: session.answer as Record<string, unknown> | null,
     check: session.check as unknown as Record<string, unknown> | null,
     rendered: session.rendered,
+    catalog: session.catalog,
   };
   const fingerprint = createHash("sha256")
     .update(canonicalJson(body))
@@ -95,7 +97,16 @@ export function auditAnswer(doc: AgentAnswerDoc): Audit {
       verdictHolds: doc.verdict === "UNSUPPORTED",
       renderedHolds: doc.answer === null,
     };
-  const check = checkAnswer(parsed.data, calls, doc.asOf);
+  // Proposals are re-checked against the catalog they were checked against,
+  // each variant through its strategy's own schema as the code holds it now.
+  const catalog =
+    doc.catalog === undefined || doc.catalog === null
+      ? undefined
+      : {
+          ...doc.catalog,
+          checkParams: proposalCatalog(doc.catalog.symbols).checkParams,
+        };
+  const check = checkAnswer(parsed.data, calls, doc.asOf, catalog);
   const supported = doc.status === "ANSWERED" && check.ok;
   return {
     answerId,

@@ -79,7 +79,7 @@ describe("a session that answers (11.3)", () => {
     expect(s.rendered).toContain(
       "[c1 find_patterns; n = 11; sessions 2026-03-02 .. 2026-03-09; as of 2026-03-31",
     );
-    expect(s.versions).toEqual({ tools: "2", answerContract: "1", loop: "1" });
+    expect(s.versions).toEqual({ tools: "2", answerContract: "2", loop: "2" });
 
     // What the model was sent: the asOf in the question, every block of its
     // own turn back unchanged, the result labelled with its call id.
@@ -120,6 +120,105 @@ describe("a session that answers (11.3)", () => {
       verdict: "SUPPORTED",
       turns: 1,
     });
+  });
+});
+
+describe("proposals in a session (12.2, Phase 12 D1, D3)", () => {
+  const CATALOG = {
+    patterns: ["ORB_BREAKOUT"],
+    strategies: ["ORB"],
+    symbols: ["NSE:X-INDEX"],
+    checkParams: () => null,
+  };
+  const proposal = (patternId = "ORB_BREAKOUT") => ({
+    statement: "ORB loses money after ORB_BREAKOUT",
+    cell: { patternId, strategyType: "ORB", symbol: "ALL", regime: "ALL" },
+    metric: "expectancy",
+    direction: "less",
+    threshold: 0,
+    strategyParams: [],
+    rationale: [
+      { statement: "ORB_BREAKOUT fired n = 11 times.", cites: ["c1"] },
+    ],
+  });
+  const proposing = (proposals: unknown[]) => ({
+    name: "submit_answer",
+    input: {
+      summary: "ORB_BREAKOUT fired often.",
+      claims: [
+        { statement: "ORB_BREAKOUT fired n = 11 times.", cites: ["c1"] },
+      ],
+      caveats: [],
+      proposals,
+    },
+  });
+
+  it("checks each proposal, keeps the catalog, and shows them as not registered", async () => {
+    const model = new ScriptedModel([
+      { tools: [FIND] },
+      { tools: [proposing([proposal()])] },
+    ]);
+    const s = await runResearch("Propose.", new Fixed(), model, {
+      catalog: CATALOG,
+    });
+    expect(s).toMatchObject({ status: "ANSWERED", verdict: "SUPPORTED" });
+    expect(s.check?.proposals).toEqual([
+      {
+        index: 0,
+        statement: "ORB loses money after ORB_BREAKOUT",
+        problems: [],
+      },
+    ]);
+    expect(s.catalog).toEqual({
+      patterns: ["ORB_BREAKOUT"],
+      strategies: ["ORB"],
+      symbols: ["NSE:X-INDEX"],
+    });
+    expect(s.rendered).toContain(
+      "Proposed hypotheses (not registered — the operator registers them):",
+    );
+    expect(s.rendered).toContain("P1. ORB loses money after ORB_BREAKOUT");
+    expect(s.rendered).toContain(
+      "ORB on ORB_BREAKOUT, ALL, regime ALL: expectancy < 0",
+    );
+    expect(s.rendered).toContain("checked: registrable");
+  });
+
+  it("sends a bad proposal back with its reasons, and fails the answer if it stays bad", async () => {
+    const bad = proposing([proposal("HEAD_AND_SHOULDERS")]);
+    const model = new ScriptedModel([
+      { tools: [FIND] },
+      { tools: [bad] },
+      { tools: [bad] },
+    ]);
+    const s = await runResearch("Propose.", new Fixed(), model, {
+      catalog: CATALOG,
+      maxCorrections: 1,
+    });
+    const back = (
+      model.requests[2]?.messages.at(-1)?.content as { content: string }[]
+    )[0];
+    expect(back?.content).toContain(
+      '- proposal 1 ("ORB loses money after ORB_BREAKOUT"): pattern HEAD_AND_SHOULDERS is no detector',
+    );
+    expect(s).toMatchObject({ status: "ANSWERED", verdict: "UNSUPPORTED" });
+    expect(s.rendered).toContain(
+      "checked: NOT registrable — pattern HEAD_AND_SHOULDERS is no detector",
+    );
+  });
+
+  it("an answer cannot carry proposals with no catalog to check them", async () => {
+    const model = new ScriptedModel([
+      { tools: [FIND] },
+      { tools: [proposing([proposal()])] },
+    ]);
+    const s = await runResearch("Propose.", new Fixed(), model, {
+      maxCorrections: 0,
+    });
+    expect(s).toMatchObject({ verdict: "UNSUPPORTED", catalog: null });
+    expect(s.check?.problems).toContain(
+      "it carries proposals, which cannot be checked without a catalog",
+    );
   });
 });
 

@@ -1,9 +1,16 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod/v4";
+import {
+  checkProposals,
+  paramsOf,
+  type ProposalCatalog,
+  type ProposalCheck,
+} from "./proposal.js";
+import { ProposalSchema } from "./proposal-schema.js";
 import { inputSchema, type ToolOutcome, type ToolProvenance } from "./tools.js";
 
 /** Bumped whenever what an answer must be, or how it is checked, changes (D3, D4). */
-export const ANSWER_CONTRACT_VERSION = "1";
+export const ANSWER_CONTRACT_VERSION = "2";
 
 /** One tool call of a session, as it ran. */
 export interface ToolCall {
@@ -40,6 +47,12 @@ export const SubmittedAnswerSchema = z.strictObject({
     .describe(
       "what the evidence cannot say — too few Trades, a tool that does not exist, a period not yet researched",
     ),
+  proposals: z
+    .array(ProposalSchema)
+    .describe(
+      "hypotheses worth testing out of sample (Phase 12), at most five — only when asked to propose; each rests on evidence",
+    )
+    .optional(),
 });
 export type SubmittedAnswer = z.infer<typeof SubmittedAnswerSchema>;
 
@@ -63,6 +76,8 @@ export interface AnswerCheck {
   claims: ClaimCheck[];
   /** Problems with the answer as a whole. */
   problems: string[];
+  /** Each proposal's check (Phase 12 D3); absent when there are none. */
+  proposals?: ProposalCheck[];
 }
 
 const DATE = /\b\d{4}-\d{2}-\d{2}\b/g;
@@ -134,6 +149,7 @@ export function checkAnswer(
   answer: SubmittedAnswer,
   calls: readonly ToolCall[],
   asOf: string,
+  catalog?: ProposalCatalog,
 ): AnswerCheck {
   const byId = new Map(calls.map((c) => [c.id, c]));
   const problems: string[] = [];
@@ -196,10 +212,31 @@ export function checkAnswer(
         );
     return { index, statement: claim.statement, problems: out };
   });
+  // An answer's proposals are part of it: one that fails fails the answer.
+  const proposals = answer.proposals ?? [];
+  if (proposals.length === 0)
+    return {
+      ok: problems.length === 0 && claims.every((c) => c.problems.length === 0),
+      claims,
+      problems,
+    };
+  if (catalog === undefined)
+    problems.push(
+      "it carries proposals, which cannot be checked without a catalog",
+    );
+  const checked =
+    catalog === undefined
+      ? { ok: false, problems: [], proposals: [] }
+      : checkProposals(proposals, calls, asOf, catalog);
+  problems.push(...checked.problems);
   return {
-    ok: problems.length === 0 && claims.every((c) => c.problems.length === 0),
+    ok:
+      problems.length === 0 &&
+      claims.every((c) => c.problems.length === 0) &&
+      checked.ok,
     claims,
     problems,
+    proposals: checked.proposals,
   };
 }
 
@@ -242,6 +279,11 @@ export function rejection(check: AnswerCheck): string {
     ...check.claims.flatMap((c) =>
       c.problems.map(
         (p) => `- claim ${String(c.index + 1)} ("${c.statement}"): ${p}`,
+      ),
+    ),
+    ...(check.proposals ?? []).flatMap((c) =>
+      c.problems.map(
+        (p) => `- proposal ${String(c.index + 1)} ("${c.statement}"): ${p}`,
       ),
     ),
   ].join("\n");
@@ -307,6 +349,39 @@ export function renderAnswer(
   });
   if (answer.claims.length === 0)
     lines.push("No finding: the evidence does not answer this.");
+  const proposals = answer.proposals ?? [];
+  if (proposals.length > 0) {
+    lines.push(
+      "",
+      "Proposed hypotheses (not registered — the operator registers them):",
+    );
+    proposals.forEach((p, i) => {
+      const variant = paramsOf(p);
+      lines.push(
+        `P${String(i + 1)}. ${p.statement}`,
+        `    ${p.cell.strategyType} on ${p.cell.patternId}, ${p.cell.symbol}, regime ${p.cell.regime}: ${p.metric} ${p.direction === "less" ? "<" : ">"} ${String(p.threshold)}${
+          p.strategyParams.length === 0
+            ? ""
+            : `; variant ${JSON.stringify(variant)}`
+        }`,
+      );
+      for (const r of p.rationale) {
+        lines.push(`    - ${r.statement}`);
+        for (const id of r.cites) {
+          const c = byId.get(id);
+          lines.push(
+            `      [${c === undefined ? `${id}: no such call` : contextOf(c)}]`,
+          );
+        }
+      }
+      const problems = check.proposals?.[i]?.problems ?? [];
+      lines.push(
+        problems.length === 0
+          ? "    checked: registrable"
+          : `    checked: NOT registrable — ${problems.join("; ")}`,
+      );
+    });
+  }
   if (answer.caveats.length > 0) {
     lines.push("", "Caveats:");
     for (const c of answer.caveats) lines.push(`- ${c}`);

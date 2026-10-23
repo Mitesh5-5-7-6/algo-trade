@@ -13,6 +13,7 @@ import {
   type Verdict,
 } from "./answer.js";
 import type { ResearchModel } from "./model.js";
+import type { ProposalCatalog } from "./proposal.js";
 import {
   AGENT_TOOLS,
   AGENT_TOOLS_VERSION,
@@ -21,7 +22,7 @@ import {
 } from "./tools.js";
 
 /** Bumped whenever the loop's prompt or bounds change (D6). */
-export const AGENT_LOOP_VERSION = "1";
+export const AGENT_LOOP_VERSION = "2";
 
 export const MAX_TURNS = 12;
 export const MAX_CORRECTIONS = 2;
@@ -41,6 +42,12 @@ export interface ResearchSession {
   servedBy: string[];
   versions: { tools: string; answerContract: string; loop: string };
   calls: ToolCall[];
+  /** What proposals were checked against (Phase 12 D3); null when none could be made. */
+  catalog: {
+    patterns: string[];
+    strategies: string[];
+    symbols: string[];
+  } | null;
   answer: SubmittedAnswer | null;
   check: AnswerCheck | null;
   status: SessionStatus;
@@ -67,7 +74,9 @@ How you work:
 - There is no news tool, no backtest and no walk-forward: those are not built. If a question needs them, say that the evidence does not exist.
 - You cannot trade, place or change orders, or change any limit or setting, and no tool does. If asked to, say so and answer only what research can.
 
-Finish by calling submit_answer: a short summary, the claims — each one sentence citing the call ids it rests on — and the caveats. A checker verifies every number and date in each claim against the results it cites; if it rejects the answer, fix exactly what it names and submit again. A claim the evidence does not support is to be dropped, not reworded.`;
+Finish by calling submit_answer: a short summary, the claims — each one sentence citing the call ids it rests on — and the caveats. A checker verifies every number and date in each claim against the results it cites; if it rejects the answer, fix exactly what it names and submit again. A claim the evidence does not support is to be dropped, not reworded.
+
+Proposing hypotheses — only when the question asks for them: add proposals to submit_answer, at most five. Each is a claim about one existing strategy on one cell — a pattern (or ALL), a symbol (or ALL), a regime — with a metric (winRate, expectancy, expectancyPerUnit), a direction and a threshold, and optionally a parameter variant of that strategy; and its rationale, claims citing the evidence calls it rests on. Propose only what the evidence makes worth testing, and prefer fewer, stronger proposals: every proposal registered counts against the others in the correction for multiple comparisons. You do not choose the test windows — the in-sample window is what you could see, the out-of-sample window comes after it — and you do not register anything: the operator decides. A proposal is never a strategy.`;
 
 const RESEARCH_TOOLS = AGENT_TOOLS.map((t) => t.definition);
 
@@ -81,7 +90,12 @@ export async function runResearch(
   question: string,
   ctx: ToolContext,
   model: ResearchModel,
-  options: { maxTurns?: number; maxCorrections?: number } = {},
+  options: {
+    maxTurns?: number;
+    maxCorrections?: number;
+    /** What proposals are checked against; without one, an answer cannot carry them. */
+    catalog?: ProposalCatalog;
+  } = {},
 ): Promise<ResearchSession> {
   const maxTurns = options.maxTurns ?? MAX_TURNS;
   const maxCorrections = options.maxCorrections ?? MAX_CORRECTIONS;
@@ -119,6 +133,14 @@ export async function runResearch(
         loop: AGENT_LOOP_VERSION,
       },
       calls,
+      catalog:
+        options.catalog === undefined
+          ? null
+          : {
+              patterns: [...options.catalog.patterns],
+              strategies: [...options.catalog.strategies],
+              symbols: [...options.catalog.symbols],
+            },
       answer: last?.answer ?? null,
       check: last?.check ?? null,
       status,
@@ -196,7 +218,7 @@ export async function runResearch(
         });
         continue;
       }
-      const check = checkAnswer(parsed.data, calls, ctx.asOf);
+      const check = checkAnswer(parsed.data, calls, ctx.asOf, options.catalog);
       last = { answer: parsed.data, check };
       if (check.ok) {
         accepted = true;

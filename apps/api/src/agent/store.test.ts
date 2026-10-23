@@ -5,6 +5,7 @@ import type { PatternObservation } from "../research/observations.js";
 import type { DailyReport } from "../research/report.js";
 import { runResearch, type ResearchSession } from "./loop.js";
 import { ScriptedModel } from "./model.js";
+import { proposalCatalog } from "./catalog.js";
 import { answerDoc, auditAnswer } from "./store.js";
 import { ToolContext } from "./tools.js";
 
@@ -74,7 +75,7 @@ describe("keeping an answer (11.4, D7)", () => {
       question: "How often did ORB_BREAKOUT fire?",
       asOf: "2026-03-31",
       model: "scripted",
-      versions: { tools: "2", answerContract: "1", loop: "1" },
+      versions: { tools: "2", answerContract: "2", loop: "2" },
       status: "ANSWERED",
       verdict: "SUPPORTED",
     });
@@ -85,6 +86,70 @@ describe("keeping an answer (11.4, D7)", () => {
   it("is the same document for the same session", async () => {
     const s = await session("It fired n = 3 times.");
     expect(answerDoc(s, 5)).toEqual(answerDoc(s, 5));
+  });
+});
+
+describe("a kept answer with proposals (12.2)", () => {
+  it("keeps the catalog it was checked against, and audits its proposals again", async () => {
+    const s = await runResearch(
+      "Propose.",
+      new Fixed(),
+      new ScriptedModel([
+        { tools: [{ name: "find_patterns", input: {} }] },
+        {
+          tools: [
+            {
+              name: "submit_answer",
+              input: {
+                summary: "It fired.",
+                claims: [{ statement: "It fired n = 3 times.", cites: ["c1"] }],
+                caveats: [],
+                proposals: [
+                  {
+                    statement:
+                      "ORB with a 30-minute range loses money after ORB_BREAKOUT",
+                    cell: {
+                      patternId: "ORB_BREAKOUT",
+                      strategyType: "ORB",
+                      symbol: "ALL",
+                      regime: "ALL",
+                    },
+                    metric: "expectancy",
+                    direction: "less",
+                    threshold: 0,
+                    strategyParams: [{ name: "rangeMinutes", value: 30 }],
+                    rationale: [
+                      {
+                        statement: "ORB_BREAKOUT fired n = 3 times.",
+                        cites: ["c1"],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ]),
+      { catalog: proposalCatalog(["NSE:X-INDEX"]) },
+    );
+    expect(s.verdict).toBe("SUPPORTED");
+    const doc = answerDoc(s, 1);
+    expect(doc.catalog?.strategies).toContain("ORB");
+    expect(auditAnswer(doc)).toMatchObject({
+      intact: true,
+      verdictHolds: true,
+      renderedHolds: true,
+    });
+    // A catalog edited after the fact is found.
+    const kept = doc.catalog;
+    if (kept === null || kept === undefined) throw new Error("no catalog kept");
+    expect(
+      auditAnswer({ ...doc, catalog: { ...kept, patterns: [] } }),
+    ).toMatchObject({
+      intact: false,
+      verdictHolds: false,
+    });
   });
 });
 

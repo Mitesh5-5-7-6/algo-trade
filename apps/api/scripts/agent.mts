@@ -5,6 +5,8 @@
  *
  *   ask "<question>" [--as-of=YYYY-MM-DD] [--effort=medium|high|xhigh]
  *                    [--no-keep]      answer a research question as of a date
+ *   propose "<question>" [--as-of=…]  ask for hypotheses worth testing (Phase 12) —
+ *                                     kept with the answer, never registered here
  *   show <answerId>                   a kept answer, and its audit
  *   audit [--limit=20]                audit the most recent kept answers
  *
@@ -36,6 +38,7 @@ const { runResearch } = await import("../dist/agent/loop.js");
 const { modelFor } = await import("../dist/agent/provider.js");
 const { auditAnswer, keepSession } = await import("../dist/agent/store.js");
 const { ToolContext } = await import("../dist/agent/tools.js");
+const { proposalCatalog } = await import("../dist/agent/catalog.js");
 const { default: Anthropic } = await import("@anthropic-ai/sdk");
 const { default: OpenAI } = await import("openai");
 
@@ -51,9 +54,9 @@ const args = new Map(
         : ([a.slice(2, eq), a.slice(eq + 1)] as const);
     }),
 );
-if (!["ask", "show", "audit"].includes(command ?? ""))
+if (!["ask", "propose", "show", "audit"].includes(command ?? ""))
   throw new Error(
-    'usage: agent.mts ask "<question>" | show <answerId> | audit',
+    'usage: agent.mts ask "<question>" | propose "<question>" | show <answerId> | audit',
   );
 
 const resolvers = (args.get("dns") ?? "").split(",").filter(Boolean);
@@ -67,17 +70,29 @@ try {
   const showAudit = (a: ReturnType<typeof auditAnswer>) =>
     `audit        ${a.intact && a.verdictHolds && a.renderedHolds ? "holds" : "FAILS"} (fingerprint ${a.intact ? "ok" : "CHANGED"}, verdict ${a.verdictHolds ? "ok" : "DIFFERS"}, text ${a.renderedHolds ? "ok" : "DIFFERS"})`;
 
-  if (command === "ask") {
-    const question = positional.join(" ").trim();
-    if (question === "") throw new Error('ask needs a question: ask "…"');
+  if (command === "ask" || command === "propose") {
+    const asked = positional.join(" ").trim();
+    if (asked === "")
+      throw new Error(`${command} needs a question: ${command} "…"`);
+    // Proposing is asking, with the request made explicit (Phase 12 D1).
+    const question =
+      command === "propose"
+        ? `Propose up to five hypotheses worth testing out of sample, each resting on the evidence — ${asked}`
+        : asked;
     const asOf = args.get("as-of") ?? istDateKey(Date.now());
     const effort = (args.get("effort") ?? "high") as
       "medium" | "high" | "xhigh";
     const startedAt = Date.now();
+    const tools = new ToolContext(db, asOf);
+    // What a proposal may name: the instruments researched up to asOf (D3).
+    const symbols = [
+      ...new Set((await tools.dailyReports()).map((r) => r.symbol)),
+    ];
     const session = await runResearch(
       question,
-      new ToolContext(db, asOf),
+      tools,
       modelFor(agent, process.env, effort),
+      symbols.length === 0 ? {} : { catalog: proposalCatalog(symbols) },
     );
     console.log(session.rendered);
     console.log("");
