@@ -112,6 +112,16 @@ try {
     }
     console.log(`${String(docs.length)} answer(s) audited`);
   }
+} catch (e) {
+  // An API error — no credit, a bad key, a rate limit — is reported in one
+  // line, not as a stack trace, and the command fails.
+  if (!(e instanceof Anthropic.APIError)) throw e;
+  const detail = (e.error as { error?: { message?: string } } | undefined)
+    ?.error?.message;
+  console.error(
+    `Anthropic API ${String(e.status)}: ${detail ?? e.message} (request ${e.requestID ?? "—"})`,
+  );
+  process.exitCode = 1;
 } finally {
   await client.close();
 }
