@@ -54,6 +54,13 @@ asOf, versions, data version, cost models):
 Research text — reports, Trades, findings — is sent to Anthropic's API to be
 reasoned over; nothing else is. The key lives in an agent-only env file.
 
+**Q1, revised at 11.6 — the provider is chosen, not fixed**, by the operator:
+the Anthropic account had no API credit, and the operator chose to run the
+agent on **OpenAI or DeepSeek**. Both speak OpenAI's chat-completions format
+(DeepSeek's API is OpenAI-compatible), so one adapter serves both (D8); Claude
+stays supported. The research text then goes to the chosen provider's API.
+The model is named by the operator in the env file, never defaulted by code.
+
 **Q2 — the three tools with nothing behind them are deferred**, by the
 operator. PLAN §16 lists `newsContext()`, `runBacktest()` and
 `runWalkForward()` among the initial tools, but the news track (N1–N3) is not
@@ -113,7 +120,8 @@ that are there.
 ### D5 — No secrets, and the research database only
 
 The agent runs from its own env file (`.env.agent.local`, gitignored):
-`ANTHROPIC_API_KEY` and the research `MONGO_URI`, nothing else. It **refuses
+the chosen provider (`AGENT_PROVIDER`), its key and model, and the research
+`MONGO_URI` — nothing else. It **refuses
 to start** when its environment holds a broker or production secret —
 `FYERS_*`, `TOKEN_ENCRYPTION_KEY`, `SESSION_SECRET`, `NEELKANTH_OPERATOR_*`,
 `REDIS_URL` — so it can never be launched with `.env.local` (ADR §13.3, rules
@@ -131,6 +139,21 @@ no key. The loop owns its bounds: at most 12 model turns, then the answer is
 returned as UNSUPPORTED (budget exhausted). A refusal or a truncated turn is
 reported as such, never parsed as an answer.
 
+### D8 — One adapter for OpenAI-compatible providers
+
+`OpenAICompatibleModel` implements `ResearchModel` over OpenAI's chat
+completions, through the official `openai` SDK: `AGENT_PROVIDER=openai`
+uses OpenAI's API, `AGENT_PROVIDER=deepseek` the same client at DeepSeek's
+address. It translates exactly what the loop needs: the tools become
+functions (their schemas unchanged); the loop's turns become messages — a tool
+call keeps its id, a result becomes a `tool` message, an error result is
+marked as one; a reply's tool calls become the loop's `tool_use` blocks, their
+arguments parsed (unparseable arguments reach the loop as input the tool
+rejects, never run); `finish_reason` becomes the loop's stop reason —
+`length` a cut-off turn, `content_filter` a refusal. Reasoning text a model
+returns is not sent back. The checker, the tools, the store and the guard do
+not change: whichever model answers, its numbers must be in the evidence.
+
 ### D7 — Every answer kept
 
 Each session — question, asOf, model and agent versions, every tool call with
@@ -144,7 +167,7 @@ answer can be read back, and audited, without calling the model again.
 
 | #   | Question                                                                 | Decided                                                                                                                         |
 | --- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| Q1  | Which model?                                                             | **Claude Opus 5.5**, by the operator at opening.                                                                                |
+| Q1  | Which model?                                                             | **Claude Opus 5.5**, by the operator at opening; **revised at 11.6**: OpenAI or DeepSeek, chosen in the env file (D8).          |
 | Q2  | `newsContext`, `runBacktest`, `runWalkForward` have nothing behind them. | **Deferred**, by the operator at opening: to the news track and Phase 13.                                                       |
 | Q3  | Index the agent's answers into `documents` for later retrieval?          | **Not yet.** An answer is an analysis, not evidence (§9.2); indexing it would let the agent cite itself. Revisit with Phase 12. |
 
@@ -159,7 +182,8 @@ answer can be read back, and audited, without calling the model again.
 | 11.3 | The loop: the model interface, the scripted fake, the Anthropic implementation, bounds, refusals, corrections (D6)                      | 11.2       |
 | 11.4 | Keeping every answer: `agent_answers`, never edited (D7)                                                                                | 11.3       |
 | 11.5 | The CLI, its own env file, and the secret guard (D5)                                                                                    | 11.4       |
-| 11.6 | Acceptance: real questions on the real year, every answer checked, asOf honoured, missing evidence said, a request to trade refused     | 11.5       |
+| 11.6 | OpenAI-compatible providers: one adapter for OpenAI and DeepSeek, the provider chosen in the env file (Q1 revised, D8)                  | 11.5       |
+| 11.7 | Acceptance: real questions on the real year, every answer checked, asOf honoured, missing evidence said, a request to trade refused     | 11.6       |
 
 ---
 
