@@ -86,8 +86,8 @@ candidate whose edge disappears under plausibly worse costs has no edge.
 ### D4 — Walk-forward: parameters are chosen on the past only
 
 Folds by calendar month: train on three complete months, test on the next
-one, step one month (Q2) — on the stored year, nine test months, January to
-September 2026. In each fold every variant of the grid is backtested on the
+one, step one month (Q2) — on the stored year, eight test months, January to
+August 2026 (September 2026 ends after the data does; D5). In each fold every variant of the grid is backtested on the
 **training** window; the one with the highest training expectancy among
 those with at least 30 Trades is chosen (ties: the grid's first); none
 qualifying, the fold trades nothing and says so. Only the chosen variant is
@@ -156,6 +156,60 @@ declared criteria, each with its value; the results are deterministic and
 kept; and nothing changes or promotes a strategy.
 
 ---
+
+## 7. Acceptance (task 13.7)
+
+The real year's bars copied to a scratch database (the research database stays
+read-only); three hypotheses registered through `hypotheses.mts register` —
+each strategy's baseline, as configured; three candidates declared from them
+through `validation.mts declare`; each walked forward and gated, at `04ddc3a`.
+**Eight folds**: training October–December 2025 → testing January 2026, through
+training May–July → testing August; September 2026 is not complete in the data,
+so it is no fold's (D5).
+
+| Candidate             | Grid                              | Chosen across the 8 folds     | Out of sample (net of costs)               | Stressed | Baseline, same months | Verdict                                        |
+| --------------------- | --------------------------------- | ----------------------------- | ------------------------------------------ | -------- | --------------------- | ---------------------------------------------- |
+| SC-0001 ORB           | {}, range 30, range 45, target ×2 | range 30 ×4, range 45 ×4      | n = 389, −139.10 a Trade, PF 0.31, DD 2.7% | −248.46  | −157.03 (n = 427)     | **FAIL** — expectancy, profit factor, stressed |
+| SC-0002 RSI           | {}, period 21, thresholds 25/75   | {} ×4, period 21 ×3, 25/75 ×1 | n = 303, −154.35, PF 0.19, DD 2.3%         | −263.91  | −156.23 (n = 397)     | **FAIL** — expectancy, profit factor, stressed |
+| SC-0003 EMA_CROSSOVER | {}, 12/26, 20/50                  | 20/50 ×5, {} ×2, 12/26 ×1     | n = 266, −107.27, PF 0.40, DD 1.4%         | −215.35  | −123.30 (n = 479)     | **FAIL** — expectancy, profit factor, stressed |
+
+- **The gate says why, criterion by criterion:** each candidate held on Trades
+  (≥ 30), drawdown (≤ 10% of capital) and against its baseline — and failed on
+  expectancy (negative, p 1.0), profit factor and stressed costs.
+- **What it shows:** a variant chosen on three months' training beat the
+  strategy as configured on the month after, every time — EMA_CROSSOVER most,
+  −107 a Trade against −123, mostly by its slower 20/50 variant — and still lost
+  money after costs, in every test month (no month profitable). Parameter choice
+  is not the missing edge.
+- **Deterministic:** a dry run of SC-0001's walk-forward gave the kept
+  fingerprint exactly (`383dff6c…`).
+- **No lookahead:** a fold's choice depends on its training months alone — a
+  test month's prices changed, its fold chooses exactly as before (unit test
+  `walk-forward.test.ts`); every backtest reads no bar after its window (13.2).
+- **Refused:** a candidate from an unregistered hypothesis, from a hypothesis
+  about another strategy, with a variant its strategy does not take
+  (`range_minutes` — "its parameters include … rangeMinutes …"), and the same
+  candidate twice.
+- **Kept:** three walk-forwards and the 146 backtests behind them, each naming
+  its fold and role; `strategies` untouched — nothing enabled, changed or
+  promoted.
+- `pnpm test:integration`, strict: 1,592 tests across 13 packages, 0 skipped, 0 failed.
+
+**Found by the acceptance, and fixed:**
+
+| #   | Finding                                                                                                                                                     | Fix                                                                                                              |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| F1  | A refusal surfaced as a stack trace whose message was cut off; a walk-forward printed no fingerprint, so a dry run could not be compared with the run kept. | The research CLIs print `refused: <why>` and exit 1; walk-forward and verdict print the fingerprint (`04ddc3a`). |
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                                                                                      | Owner      |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| W1  | **No candidate passes**: the three replayable strategies lose money out of sample under every variant tried, as every phase since 6 has found. Phase 14 has nothing to paper-trade until a candidate does. | research   |
+| W2  | One year of data gives eight test months; regime dependence and stability are read from those alone.                                                                                                       | data       |
+| W3  | Candidates vary parameters only; new logic (a filter, a rule) needs a code change to a strategy, then a candidate of it.                                                                                   | developer  |
+| W4  | The research database holds no research or registry yet (Phase 10 K1): candidates are declared where hypotheses are registered.                                                                            | operations |
+| W5  | Costs are the configured models (5 bps slippage, the illustrative Indian charges), stressed ×2 and ×1.5 — not measured fills.                                                                              | Phase 14   |
 
 ## Related documents
 
