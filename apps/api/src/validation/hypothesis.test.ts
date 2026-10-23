@@ -91,6 +91,12 @@ describe("a hypothesis (7.3, D3)", () => {
       a,
     );
     expect(hypothesisFingerprint(hypothesis({ family: "F-other" }))).toBe(a);
+    // Phase 12 D4: a claim the agent proposed is the same claim typed by hand.
+    expect(
+      hypothesisFingerprint(
+        hypothesis({ proposedBy: { answerId: "ans_1_abc", proposal: 2 } }),
+      ),
+    ).toBe(a);
     expect(hypothesisFingerprint(hypothesis({ statement: "reworded" }))).toBe(
       a,
     );

@@ -89,6 +89,17 @@ export const HypothesisSchema = z
     run: HypothesisRunSchema,
     pins: HypothesisPinsSchema,
     registeredAt: z.number().int().nonnegative(),
+    /**
+     * Where the claim came from when the research agent proposed it (Phase 12
+     * D4): the kept answer and the proposal's number in it. Not part of the
+     * claim — the same claim typed by the operator is the same claim.
+     */
+    proposedBy: z
+      .object({
+        answerId: z.string().min(1),
+        proposal: z.number().int().positive(),
+      })
+      .optional(),
   })
   .superRefine((h, ctx) => {
     if (h.outOfSample.fromDate <= h.inSample.toDate)
@@ -135,6 +146,7 @@ export function hypothesisFingerprint(h: Hypothesis): string {
   delete claim.family;
   delete claim.statement;
   delete claim.registeredAt;
+  delete claim.proposedBy;
   return createHash("sha256").update(canonicalJson(claim)).digest("hex");
 }
 

@@ -11,6 +11,15 @@
  *       --symbols=NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX --index-symbols=... --capital=1000000 \
  *       [--seed=0] [--window=0] [--regime-index=NSE:NIFTY50-INDEX]
  *
+ *   register-proposals — register the research agent's proposals (Phase 12):
+ *     ... scripts/hypotheses.mts register-proposals --answer=ans_… \
+ *       --out-of-sample=2026-03-30:2026-09-28 [--pick=1,3] --capital=1000000 \
+ *       [--index-symbols=NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX] \
+ *       [--seed=0] [--window=0] [--regime-index=NSE:NIFTY50-INDEX]
+ *     The answer must be kept, intact and SUPPORTED; the window must start
+ *     after the answer's asOf. Its proposals become one family, P-<answer>.
+ *     The operator's act — the agent cannot register anything.
+ *
  *   test   — test every untested member of a family, once, out of sample:
  *     ... scripts/hypotheses.mts test --family=F-2026H2
  *
@@ -68,8 +77,12 @@ function window(name: string): { fromDate: string; toDate: string } {
 }
 
 const WRITABLE = /^(neelkanth_research|neelkanth_(it|ci)_.+)$/;
-if (!["register", "test", "report"].includes(command ?? ""))
-  throw new Error("usage: hypotheses.mts register|test|report --family=…");
+if (
+  !["register", "register-proposals", "test", "report"].includes(command ?? "")
+)
+  throw new Error(
+    "usage: hypotheses.mts register|register-proposals|test|report --family=… | --answer=…",
+  );
 
 const resolvers = list("dns");
 if (resolvers.length > 0) dns.setServers(resolvers);
@@ -83,83 +96,124 @@ try {
     throw new Error(
       `refusing to write to "${db.databaseName}": only neelkanth_research or a scratch neelkanth_it_*/neelkanth_ci_* database (D8)`,
     );
-  const family = required("family");
-
-  if (command === "register") {
-    const cell = {
-      patternId: required("pattern"),
-      strategyType: required("strategy"),
-      symbol: args.get("symbol") ?? "ALL",
-      regime: (args.get("regime") ?? "ALL") as "ALL",
-    };
-    const run = {
-      symbols: list("symbols"),
-      indexSymbols: list("index-symbols"),
-      interval: args.get("interval") ?? "5m",
-      hours: DEFAULT_GLOBAL_SETTINGS.marketHours,
-      allocatedCapital: Number(required("capital")),
-      limits: DEFAULT_GLOBAL_SETTINGS.globalRiskLimits,
-      seed: Number(args.get("seed") ?? "0"),
-    };
-    const inSample = window("in-sample");
-    const regime = {
-      ...DEFAULT_REGIME_MODEL,
-      symbol: args.get("regime-index") ?? DEFAULT_REGIME_MODEL.symbol,
-    };
-    const attribution = {
-      ...DEFAULT_ATTRIBUTION_MODEL,
-      windowBars: Number(args.get("window") ?? "0"),
-    };
-    const { run: formedOn } = await counterfactualFromStore(db, {
-      ...run,
-      interval: run.interval as CandleInterval,
-      fromDate: inSample.fromDate,
-      toDate: inSample.toDate,
-      regime,
-      attribution,
-      experimentId: "unkept",
-      createdAt: 0,
-      save: false,
-    });
-    const h = await registerHypothesis(db, {
-      hypothesisId: await nextId(db),
-      family,
-      statement: required("statement"),
-      cell,
-      metric: required("metric") as "expectancy",
-      direction: required("direction") as "less",
-      threshold: Number(required("threshold")),
-      alpha: Number(args.get("alpha") ?? "0.05"),
-      minSample: Number(args.get("min-sample") ?? "30"),
-      inSample,
+  if (command === "register-proposals") {
+    const { registerProposals, familyOf } =
+      await import("../dist/validation/proposals.js");
+    const answerId = required("answer");
+    const picks = list("pick").map(Number);
+    const results = await registerProposals(db, {
+      answerId,
       outOfSample: window("out-of-sample"),
-      run,
-      pins: pinsFor(formedOn.manifest, cell),
+      ...(picks.length === 0 ? {} : { pick: picks }),
+      run: {
+        interval: args.get("interval") ?? "5m",
+        hours: DEFAULT_GLOBAL_SETTINGS.marketHours,
+        allocatedCapital: Number(required("capital")),
+        limits: DEFAULT_GLOBAL_SETTINGS.globalRiskLimits,
+        seed: Number(args.get("seed") ?? "0"),
+      },
+      indexSymbols:
+        list("index-symbols").length > 0
+          ? list("index-symbols")
+          : [args.get("regime-index") ?? DEFAULT_REGIME_MODEL.symbol],
+      regime: {
+        ...DEFAULT_REGIME_MODEL,
+        symbol: args.get("regime-index") ?? DEFAULT_REGIME_MODEL.symbol,
+      },
+      attribution: {
+        ...DEFAULT_ATTRIBUTION_MODEL,
+        windowBars: Number(args.get("window") ?? "0"),
+      },
       registeredAt: Date.now(),
     });
-    console.log(
-      `registered   ${h.hypothesisId} in ${h.family}: ${h.statement}`,
-    );
-  } else if (command === "test") {
-    const cache: RunCache = new Map();
-    const members = (await listHypotheses(db)).filter(
-      (h) => h.family === family,
-    );
-    const tested = new Set(
-      (await familyReport(db, family))
-        .filter((f) => f.verdict !== "UNTESTED")
-        .map((f) => f.hypothesisId),
-    );
-    for (const h of members.filter((m) => !tested.has(m.hypothesisId))) {
-      const t = await testRegistered(db, h.hypothesisId, Date.now(), cache);
+    for (const r of results)
       console.log(
-        `tested       ${h.hypothesisId}: n = ${String(t.outOfSample.n)}, p = ${String(t.outOfSample.pValue)}, ${t.outOfSample.verdict} (before the family correction)`,
+        "registered" in r
+          ? `registered   P${String(r.proposal)} as ${r.registered.hypothesisId}: ${r.registered.statement} (in sample ${r.registered.inSample.fromDate} .. ${r.registered.inSample.toDate}, out of sample ${r.registered.outOfSample.fromDate} .. ${r.registered.outOfSample.toDate})`
+          : `refused      P${String(r.proposal)}: ${r.refused}`,
       );
+    console.log(
+      `family       ${familyOf(answerId)} — test it with: test --family=${familyOf(answerId)}`,
+    );
+  } else {
+    const family = required("family");
+
+    if (command === "register") {
+      const cell = {
+        patternId: required("pattern"),
+        strategyType: required("strategy"),
+        symbol: args.get("symbol") ?? "ALL",
+        regime: (args.get("regime") ?? "ALL") as "ALL",
+      };
+      const run = {
+        symbols: list("symbols"),
+        indexSymbols: list("index-symbols"),
+        interval: args.get("interval") ?? "5m",
+        hours: DEFAULT_GLOBAL_SETTINGS.marketHours,
+        allocatedCapital: Number(required("capital")),
+        limits: DEFAULT_GLOBAL_SETTINGS.globalRiskLimits,
+        seed: Number(args.get("seed") ?? "0"),
+      };
+      const inSample = window("in-sample");
+      const regime = {
+        ...DEFAULT_REGIME_MODEL,
+        symbol: args.get("regime-index") ?? DEFAULT_REGIME_MODEL.symbol,
+      };
+      const attribution = {
+        ...DEFAULT_ATTRIBUTION_MODEL,
+        windowBars: Number(args.get("window") ?? "0"),
+      };
+      const { run: formedOn } = await counterfactualFromStore(db, {
+        ...run,
+        interval: run.interval as CandleInterval,
+        fromDate: inSample.fromDate,
+        toDate: inSample.toDate,
+        regime,
+        attribution,
+        experimentId: "unkept",
+        createdAt: 0,
+        save: false,
+      });
+      const h = await registerHypothesis(db, {
+        hypothesisId: await nextId(db),
+        family,
+        statement: required("statement"),
+        cell,
+        metric: required("metric") as "expectancy",
+        direction: required("direction") as "less",
+        threshold: Number(required("threshold")),
+        alpha: Number(args.get("alpha") ?? "0.05"),
+        minSample: Number(args.get("min-sample") ?? "30"),
+        inSample,
+        outOfSample: window("out-of-sample"),
+        run,
+        pins: pinsFor(formedOn.manifest, cell),
+        registeredAt: Date.now(),
+      });
+      console.log(
+        `registered   ${h.hypothesisId} in ${h.family}: ${h.statement}`,
+      );
+    } else if (command === "test") {
+      const cache: RunCache = new Map();
+      const members = (await listHypotheses(db)).filter(
+        (h) => h.family === family,
+      );
+      const tested = new Set(
+        (await familyReport(db, family))
+          .filter((f) => f.verdict !== "UNTESTED")
+          .map((f) => f.hypothesisId),
+      );
+      for (const h of members.filter((m) => !tested.has(m.hypothesisId))) {
+        const t = await testRegistered(db, h.hypothesisId, Date.now(), cache);
+        console.log(
+          `tested       ${h.hypothesisId}: n = ${String(t.outOfSample.n)}, p = ${String(t.outOfSample.pValue)}, ${t.outOfSample.verdict} (before the family correction)`,
+        );
+      }
     }
+    console.log("");
+    for (const finding of await familyReport(db, family))
+      console.log(describeFinding(finding));
   }
-  console.log("");
-  for (const finding of await familyReport(db, family))
-    console.log(describeFinding(finding));
 } finally {
   await client.close();
 }
