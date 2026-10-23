@@ -43,6 +43,13 @@ export interface FyersBrokerDeps {
    * silently truncates history.
    */
   history?: Omit<FyersHistoryDeps, "appId" | "getToken">;
+  /**
+   * Whether this broker may place orders (Phase 14 D2). `"disabled"` is the
+   * paper deployment's: market data only — `execute` and `cancel` throw and
+   * the order socket is never opened, so Paper ──✗──▶ FYERS order placement
+   * (ADR §13.1) is enforced by this code, not by how it is wired.
+   */
+  orders?: "enabled" | "disabled";
 }
 
 /** Loose shape for FYERS API JSON responses. */
@@ -480,7 +487,16 @@ export class FyersBroker implements Broker, HistoryProvider {
 
   // --- Execution (REST) ---
 
+  /** Throws when this broker was built without order capability (D2). */
+  private refuseOrders(what: string): void {
+    if (this.deps.orders === "disabled")
+      throw new Error(
+        `FyersBroker: ${what} refused — this broker was built for market data only (paper mode, ADR §13.1)`,
+      );
+  }
+
   async execute(order: BrokerOrderRequest): Promise<ExecutionOutcome> {
+    this.refuseOrders(`order ${order.clientOrderId}`);
     if (this.deps.checkRateLimit) await this.deps.checkRateLimit();
     const token = await this.deps.getToken();
     if (!token)
@@ -592,6 +608,7 @@ export class FyersBroker implements Broker, HistoryProvider {
   }
 
   async cancel(clientOrderId: string): Promise<void> {
+    this.refuseOrders(`cancel of ${clientOrderId}`);
     if (this.deps.checkRateLimit) await this.deps.checkRateLimit();
 
     // First, resolve the brokerOrderId if necessary via status(),
@@ -680,6 +697,8 @@ export class FyersBroker implements Broker, HistoryProvider {
    * gives a caller both halves of the broker.
    */
   private connectOrderSocket(accessToken: string): void {
+    // A market-data-only broker has no order updates to listen for (D2).
+    if (this.deps.orders === "disabled") return;
     if (this.orderSocket !== null) return;
 
     let socket: FyersOrderSocketInstance;

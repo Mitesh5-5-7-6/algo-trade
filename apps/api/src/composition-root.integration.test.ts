@@ -249,6 +249,29 @@ describe("bootstrap (plan/05 §3 composition root)", () => {
     BOOT_TIMEOUT_MS,
   );
 
+  /** Phase 14 D2: a mode runs only on its own database — refused before any write. */
+  it(
+    "refuses to start live on a database that is not a live one",
+    async (ctx) => {
+      requireInfra(ctx);
+      const live = loadConfig({
+        MONGO_URI,
+        REDIS_URL,
+        SESSION_SECRET: "s".repeat(40),
+        TOKEN_ENCRYPTION_KEY: "a".repeat(64),
+        LOG_LEVEL: "fatal",
+        BROKER_MODE: "live",
+        FYERS_APP_ID: "TEST-100",
+        FYERS_APP_SECRET: "secret",
+        FYERS_REDIRECT_URL: "http://localhost:4000/auth/fyers/callback",
+      });
+      await expect(bootstrap(live, silentLogger())).rejects.toThrow(
+        /^refusing to start: live mode refuses "neelkanth_it_ctx": it is an integration-test database/,
+      );
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
   it(
     "shuts down cleanly without throwing (plan/22 §4)",
     async (ctx) => {
