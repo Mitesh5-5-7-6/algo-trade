@@ -308,7 +308,11 @@ export interface StrategyMatrixRow {
  */
 export function strategyMatrix(
   reports: readonly DailyReport[],
-  q: ReportScope & { patternId: string },
+  q: ReportScope & {
+    patternId: string;
+    /** Only occurrences in these regimes; every regime when absent. */
+    regimes?: string[];
+  },
 ): Provenance & {
   patternId: string;
   rows: StrategyMatrixRow[];
@@ -327,6 +331,7 @@ export function strategyMatrix(
     const trades = new Map(r.trades.map((t) => [t.key, t]));
     for (const p of r.patterns) {
       if (p.patternId !== q.patternId) continue;
+      if (q.regimes !== undefined && !q.regimes.includes(p.regime)) continue;
       occurrences += 1;
       for (const [type, s] of Object.entries(p.strategies)) {
         const a = acc.get(type) ?? {

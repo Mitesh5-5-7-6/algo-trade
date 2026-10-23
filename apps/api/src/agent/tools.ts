@@ -15,7 +15,7 @@ import { findSimilarSessions } from "../knowledge/similar.js";
 import { KNOWLEDGE_INDEX_VERSION } from "../knowledge/document.js";
 
 /** Bumped whenever a tool's meaning, input or result changes (Phase 11 D1, D2). */
-export const AGENT_TOOLS_VERSION = "1";
+export const AGENT_TOOLS_VERSION = "2";
 
 /** At most this many rows reach the model; the rest are counted (D2). */
 export const MAX_ROWS = 50;
@@ -140,6 +140,23 @@ function bounded(
 }
 
 const capped = <T>(rows: readonly T[]): T[] => rows.slice(0, MAX_ROWS);
+
+/**
+ * A number as the model reads it (Phase 11 acceptance F2): an amount to two
+ * decimals, a fraction to four, an integer as it is — so an answer quotes
+ * -191,953.29, not -191953.28649999998. Rows and extras only: the provenance
+ * stays exact.
+ */
+export function tidy(v: unknown): unknown {
+  if (typeof v === "number")
+    return !Number.isFinite(v) || Number.isInteger(v)
+      ? v
+      : Number(v.toFixed(Math.abs(v) >= 1 ? 2 : 4));
+  if (Array.isArray(v)) return v.map(tidy);
+  if (v !== null && typeof v === "object")
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, tidy(x)]));
+  return v;
+}
 const shownNote = (total: number): string[] =>
   total > MAX_ROWS
     ? [
@@ -176,7 +193,16 @@ function tool<S extends z.ZodType>(
           error: `invalid input for ${name}: ${z.prettifyError(parsed.error)}`,
         };
       try {
-        return await run(parsed.data, ctx);
+        const out = await run(parsed.data, ctx);
+        return out.ok
+          ? {
+              ...out,
+              rows: out.rows.map(tidy),
+              ...(out.extra === undefined
+                ? {}
+                : { extra: tidy(out.extra) as Record<string, unknown> }),
+            }
+          : out;
       } catch (e) {
         return {
           ok: false,
@@ -270,16 +296,19 @@ const tradeHistoryTool = tool(
 
 const strategyMatrixTool = tool(
   "strategy_matrix",
-  "One pattern against every strategy: for each strategy, how often it was on the instrument when the pattern fired, what it did (ENTERED, SIGNALLED, HOLDING, FLAT), and how the Trades it took on the pattern ended. Strategies that could not run are listed with why.",
+  "One pattern against every strategy: for each strategy, how often it was on the instrument when the pattern fired, what it did (ENTERED, SIGNALLED, HOLDING, FLAT), and how the Trades it took on the pattern ended. Strategies that could not run are listed with why. Give regimes to count only the occurrences in those regimes.",
   z.strictObject({
     patternId: z.string().describe("the pattern, e.g. EMA_CROSS"),
+    regimes: list(
+      "only occurrences in these regimes: BULLISH, BEARISH, NEUTRAL",
+    ).optional(),
     symbols: list("instruments").optional(),
     ...RANGE,
   }),
   async (q, ctx) => {
     const notes: string[] = [];
     const a = strategyMatrix(await ctx.dailyReports(), {
-      ...given({ symbols: q.symbols }),
+      ...given({ symbols: q.symbols, regimes: q.regimes }),
       ...bounded(q, ctx.asOf, notes),
       asOf: ctx.asOf,
       patternId: q.patternId,

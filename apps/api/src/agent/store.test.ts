@@ -74,7 +74,7 @@ describe("keeping an answer (11.4, D7)", () => {
       question: "How often did ORB_BREAKOUT fire?",
       asOf: "2026-03-31",
       model: "scripted",
-      versions: { tools: "1", answerContract: "1", loop: "1" },
+      versions: { tools: "2", answerContract: "1", loop: "1" },
       status: "ANSWERED",
       verdict: "SUPPORTED",
     });

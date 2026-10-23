@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkAnswer,
   contextOf,
+  evidenceHints,
   holds,
   numbersIn,
   renderAnswer,
@@ -181,6 +182,28 @@ describe("the checker (11.2, D3)", () => {
         "2026-09-30",
       ).ok,
     ).toBe(true);
+  });
+});
+
+/** Phase 11 acceptance F3: the model had the evidence call, and cited the search instead. */
+describe("pointing a rejected claim at its evidence (F3)", () => {
+  it("names the evidence call that holds each unsupported number", () => {
+    const a = answer([
+      { statement: "ORB lost 457 times, net 94,404.", cites: ["c2"] },
+      { statement: "ORB took n = 638 Trades.", cites: ["c1"] },
+      { statement: "ORB won 190 Trades.", cites: ["c2"] },
+    ]);
+    expect(evidenceHints(a, CALLS)).toEqual([
+      "- claim 1: 457 is in c1 (trade_history) — cite that call",
+      "- claim 1: 94,404 is in c1 (trade_history) — cite that call",
+    ]);
+  });
+
+  it("is never part of what the operator reads", () => {
+    const a = answer([{ statement: "ORB lost 457 times.", cites: ["c2"] }]);
+    expect(
+      renderAnswer(a, CALLS, checkAnswer(a, CALLS, "2026-09-30")),
+    ).not.toContain("cite that call");
   });
 });
 

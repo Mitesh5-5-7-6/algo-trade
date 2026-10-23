@@ -9,6 +9,7 @@ import { z } from "zod/v4";
 import {
   AGENT_TOOLS,
   inputSchema,
+  tidy,
   MAX_ROWS,
   ToolContext,
   toolNamed,
@@ -232,6 +233,61 @@ describe("bound to asOf, capped in size (11.1, D2)", () => {
       ok: false,
       error: "2026-03-09 is after asOf 2026-03-04: nothing is known about it",
     });
+  });
+
+  /** Phase 11 acceptance F2: the model quoted -191953.28649999998. */
+  it("rounds what the model reads — amounts to 2 decimals, fractions to 4 — and leaves provenance exact", async () => {
+    expect(
+      tidy({
+        net: -191953.2865,
+        rate: 0.283741,
+        n: 638,
+        gap: -0.021137,
+        at: "x",
+        none: null,
+      }),
+    ).toEqual({
+      net: -191953.29,
+      rate: 0.2837,
+      n: 638,
+      gap: -0.0211,
+      at: "x",
+      none: null,
+    });
+    const withTrade = {
+      ...report("2026-03-02", 0),
+      trades: [
+        {
+          key: "ORB|X|1",
+          strategyType: "ORB",
+          symbol: "NSE:X-INDEX",
+          side: "LONG",
+          entry: { price: 22576.876543, reason: null },
+          exit: { price: 22500.1, reason: "STOP_LOSS" },
+          outcome: {
+            result: "LOSS",
+            net: -76.776543,
+            gross: -70,
+            charges: 6.5,
+            slippage: 0.276543,
+            netPerUnit: -76.776543,
+          },
+          held: { bars: 3, minutes: 15 },
+          preceding: { regime: "BULLISH", patterns: [] },
+        },
+      ],
+      models: { slippage: { version: "1" }, transactionCost: { version: "1" } },
+    } as unknown as DailyReport;
+    const out = await toolNamed("trade_history")?.run(
+      {},
+      new Fixed("2026-03-31", [withTrade]),
+    );
+    if (out?.ok !== true) throw new Error("expected an answer");
+    const rows = JSON.stringify(out.rows);
+    expect(rows).not.toContain("22576.876543");
+    expect(rows).toContain("22576.88");
+    expect(rows).toContain("-76.78");
+    expect(out.extra).toMatchObject({ summary: { net: -76.78 } });
   });
 
   it("marks research search as memory, the read models as evidence (§9.2)", async () => {

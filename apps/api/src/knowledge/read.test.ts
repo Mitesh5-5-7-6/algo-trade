@@ -297,6 +297,25 @@ describe("strategyMatrix (10.6)", () => {
   });
 
   /** RSI's own Trade on 03-02 followed RSI_REVERSION, not this pattern — it is not counted. */
+  /** Phase 11 acceptance F1: "what did each strategy do in a BEARISH regime" needs the filter. */
+  it("counts only the occurrences in the regimes asked for", () => {
+    expect(
+      strategyMatrix(REPORTS, {
+        patternId: "ORB_BREAKOUT",
+        regimes: ["BEARISH"],
+      }),
+    ).toMatchObject({ n: 0, rows: [] });
+    const bullish = strategyMatrix(REPORTS, {
+      patternId: "ORB_BREAKOUT",
+      regimes: ["BULLISH"],
+    });
+    expect(bullish.n).toBe(3);
+    expect(bullish.rows[0]).toMatchObject({
+      strategyType: "ORB",
+      occurrences: 3,
+    });
+  });
+
   it("counts only the Trades the pattern led to", () => {
     const m = strategyMatrix(REPORTS, { patternId: "RSI_REVERSION" });
     expect(m.rows).toEqual([

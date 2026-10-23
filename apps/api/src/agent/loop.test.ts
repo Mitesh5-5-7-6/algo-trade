@@ -79,7 +79,7 @@ describe("a session that answers (11.3)", () => {
     expect(s.rendered).toContain(
       "[c1 find_patterns; n = 11; sessions 2026-03-02 .. 2026-03-09; as of 2026-03-31",
     );
-    expect(s.versions).toEqual({ tools: "1", answerContract: "1", loop: "1" });
+    expect(s.versions).toEqual({ tools: "2", answerContract: "1", loop: "1" });
 
     // What the model was sent: the asOf in the question, every block of its
     // own turn back unchanged, the result labelled with its call id.
@@ -145,6 +145,23 @@ describe("corrections (11.3, D3)", () => {
     expect(back?.is_error).toBe(true);
     expect(back?.content).toContain(
       "states 999, which is in none of the results it cites",
+    );
+  });
+
+  it("tells the model which of its calls holds a number it cited wrongly (F3)", async () => {
+    const search = { name: "search_research", input: {} };
+    const wrong = submit("ORB_BREAKOUT fired n = 11 times.", ["c2"]);
+    const { model, session } = ask([
+      { tools: [FIND, search] },
+      { tools: [wrong] },
+      { tools: [GOOD] },
+    ]);
+    await session;
+    const back = (
+      model.requests[2]?.messages.at(-1)?.content as { content: string }[]
+    )[0];
+    expect(back?.content).toContain(
+      "- claim 1: 11 is in c1 (find_patterns) — cite that call",
     );
   });
 

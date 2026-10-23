@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import {
   ANSWER_CONTRACT_VERSION,
   checkAnswer,
+  evidenceHints,
   rejection,
   renderAnswer,
   SUBMIT_ANSWER_TOOL,
@@ -207,7 +208,9 @@ export async function runResearch(
         type: "tool_result",
         tool_use_id: use.id,
         is_error: true,
-        content: rejection(check),
+        content: [rejection(check), ...evidenceHints(parsed.data, calls)].join(
+          "\n",
+        ),
       });
     }
     if (accepted) return end("ANSWERED");

@@ -203,6 +203,37 @@ export function checkAnswer(
   };
 }
 
+/**
+ * Where the evidence is (Phase 11 acceptance F3): for each number a rejected
+ * claim states that its citations do not hold, the evidence calls of this
+ * session that do — so the model can cite the call it already made. Sent to
+ * the model with the rejection only; never part of the rendered answer.
+ */
+export function evidenceHints(
+  answer: SubmittedAnswer,
+  calls: readonly ToolCall[],
+): string[] {
+  const evidence = calls.filter(ok).filter((c) => c.outcome.evidence);
+  const hints: string[] = [];
+  answer.claims.forEach((claim, i) => {
+    const cited = new Set(claim.cites);
+    const citedValues = evidence
+      .filter((c) => cited.has(c.id))
+      .flatMap((c) => numbersOf(c.outcome));
+    for (const w of numbersIn(claim.statement)) {
+      if (holds(citedValues, w)) continue;
+      const where = evidence
+        .filter((c) => holds(numbersOf(c.outcome), w))
+        .map((c) => `${c.id} (${c.name})`);
+      if (where.length > 0)
+        hints.push(
+          `- claim ${String(i + 1)}: ${w.text} is in ${where.slice(0, 3).join(", ")} — cite that call`,
+        );
+    }
+  });
+  return hints;
+}
+
 /** The reasons, for the model to correct its answer by. */
 export function rejection(check: AnswerCheck): string {
   return [
