@@ -44,7 +44,7 @@ export const SubmittedAnswerSchema = z.strictObject({
 export type SubmittedAnswer = z.infer<typeof SubmittedAnswerSchema>;
 
 /** The tool the model ends a session with (D3). */
-export const SUBMIT_ANSWER_TOOL: Anthropic.Tool = {
+export const SUBMIT_ANSWER_TOOL: Anthropic.Beta.BetaTool = {
   name: "submit_answer",
   description:
     "Finish: submit the answer as claims, each citing the ids of the tool calls it rests on. A checker verifies every number and date against the cited results; a rejected answer comes back with the reasons.",

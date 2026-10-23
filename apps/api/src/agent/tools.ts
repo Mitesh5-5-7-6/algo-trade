@@ -65,7 +65,7 @@ export class ToolContext {
 }
 
 export interface AgentTool {
-  definition: Anthropic.Tool;
+  definition: Anthropic.Beta.BetaTool;
   run(input: unknown, ctx: ToolContext): Promise<ToolOutcome>;
 }
 
@@ -80,8 +80,10 @@ const RANGE = {
 };
 
 /** The schema the API sees: strict, no `$schema` key (strict tool use). */
-export function inputSchema(schema: z.ZodType): Anthropic.Tool.InputSchema {
-  return strip(z.toJSONSchema(schema)) as Anthropic.Tool.InputSchema;
+export function inputSchema(
+  schema: z.ZodType,
+): Anthropic.Beta.BetaTool.InputSchema {
+  return strip(z.toJSONSchema(schema)) as Anthropic.Beta.BetaTool.InputSchema;
 }
 
 /**
