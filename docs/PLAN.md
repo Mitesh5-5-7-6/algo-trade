@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | COMPLETE |
-| 7     | Statistical validation             | COMPLETE |
-| 8     | Daily research                     | COMPLETE |
-| 9     | Periodic research                  | COMPLETE |
-| 10    | Research knowledge base            | COMPLETE |
-| 11    | AI research agent                  | COMPLETE |
-| 12    | Automated strategy hypotheses      | READY    |
-| 13    | Backtest + walk-forward            | READY    |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | COMPLETE    |
+| 7     | Statistical validation             | COMPLETE    |
+| 8     | Daily research                     | COMPLETE    |
+| 9     | Periodic research                  | COMPLETE    |
+| 10    | Research knowledge base            | COMPLETE    |
+| 11    | AI research agent                  | COMPLETE    |
+| 12    | Automated strategy hypotheses      | IN PROGRESS |
+| 13    | Backtest + walk-forward            | READY       |
+| 14    | Paper validation                   | READY       |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -787,7 +787,7 @@ answer is kept and can be audited without the model.
 
 ## 17. Phase 12 — Automated strategy hypothesis
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 Only after Phase 11. AI may propose `Hypothesis → Registry → Validation`. A
 proposal is not automatically a strategy.
@@ -798,13 +798,13 @@ Structured around the decisions in
 [PHASE_12_AUTOMATED_HYPOTHESIS.md](design/PHASE_12_AUTOMATED_HYPOTHESIS.md),
 which is the detailed design for this phase and keeps each task's dependencies.
 
-| ID   | Task                                                                                                                                                            | STATUS | Commit | Evidence |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 12.1 | The proposal contract: proposals in an answer, checked — cell, metric, variant against the strategy's own schema, rationale through the answer checker (D1, D3) | READY  | —      | —        |
-| 12.2 | Proposal sessions: the agent asked to propose, its proposals kept and rendered with their checks (D1)                                                           | READY  | —      | —        |
-| 12.3 | A test waits for its window to close (D6)                                                                                                                       | READY  | —      | —        |
-| 12.4 | Registration by the operator: in-sample fixed to what the agent saw, out-of-sample after it, one family per answer (D2, D4, D5)                                 | READY  | —      | —        |
-| 12.5 | Acceptance: proposals as of a past date on the real year, registered, tested out of sample, corrected; a future window refused; an invalid variant refused      | READY  | —      | —        |
+| ID   | Task                                                                                                                                                            | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 12.1 | The proposal contract: proposals in an answer, checked — cell, metric, variant against the strategy's own schema, rationale through the answer checker (D1, D3) | COMPLETE | `728c6c7` | `apps/api/src/agent/proposal.ts`: `ProposalSchema` (cell, metric, direction, threshold, variant, rationale — no windows or alpha) and `checkProposal` — known pattern, replayable strategy, researched instrument, the variant through the strategy's own schema, the rationale through the answer checker; `apps/api/src/agent/catalog.ts`. `apps/api/src/agent/proposal.test.ts` (11/11); 8 mutants killed. Design D1, D3 |
+| 12.2 | Proposal sessions: the agent asked to propose, its proposals kept and rendered with their checks (D1)                                                           | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 12.3 | A test waits for its window to close (D6)                                                                                                                       | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 12.4 | Registration by the operator: in-sample fixed to what the agent saw, out-of-sample after it, one family per answer (D2, D4, D5)                                 | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 12.5 | Acceptance: proposals as of a past date on the real year, registered, tested out of sample, corrected; a future window refused; an invalid variant refused      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **The operator approves registration, and proposals are cells or parameter
 variants** — the operator's decisions at opening (design Q1, Q2). New strategy
