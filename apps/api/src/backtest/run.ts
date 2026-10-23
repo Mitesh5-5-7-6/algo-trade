@@ -18,6 +18,7 @@ import { DEFAULT_SLIPPAGE } from "../golden/pipeline.js";
 import {
   regimeAt,
   regimeTimeline,
+  type Regime,
   type RegimeModel,
 } from "../counterfactual/regime.js";
 import { runHistoricalReplay } from "../replay/run.js";
@@ -68,6 +69,12 @@ export interface Backtest {
   metrics: BacktestMetrics;
   /** sha256 of everything above: the same request gives the same backtest. */
   fingerprint: string;
+  /**
+   * The Trades measured, each with the regime at its entry — what a
+   * walk-forward pools across its test windows (D4). Outside the fingerprint
+   * and not kept: it is what the metrics summarise.
+   */
+  trail: { trades: Trade[]; regimeAtEntry: (ts: number) => Regime | null };
 }
 
 /** A cost model made worse by D3's factors. */
@@ -184,11 +191,12 @@ export async function runBacktest(
     ),
   ].sort();
   const capitalBasis = request.allocatedCapital * request.symbols.length;
+  const regimeAtEntry = (ts: number): Regime | null =>
+    ts < (timeline.ts[0] ?? Infinity) ? null : regimeAt(timeline, ts);
   const metrics = backtestMetrics(trades, {
     allocatedCapital: capitalBasis,
     sessions,
-    regimeAt: (ts) =>
-      ts < (timeline.ts[0] ?? Infinity) ? null : regimeAt(timeline, ts),
+    regimeAt: regimeAtEntry,
   });
   const body = {
     backtestVersion: BACKTEST_VERSION,
@@ -205,5 +213,6 @@ export async function runBacktest(
   return {
     ...body,
     fingerprint: createHash("sha256").update(canonicalJson(body)).digest("hex"),
+    trail: { trades, regimeAtEntry },
   };
 }

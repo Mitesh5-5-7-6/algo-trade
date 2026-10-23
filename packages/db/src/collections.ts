@@ -91,6 +91,12 @@ export const COLLECTIONS = {
    * registered hypothesis. Declared once, never edited.
    */
   strategyCandidates: "strategy_candidates",
+  /**
+   * Walk-forward results (ADR §10.1, Phase 13 D4) — RESEARCH database only. A
+   * candidate walked forward: each fold's choice and test, the pooled
+   * out-of-sample record. Untimed, never edited.
+   */
+  walkForwardResults: "walk_forward_results",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -186,6 +192,14 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.strategyCandidates)
       .createIndex({ fingerprint: 1 }),
+
+    // walk_forward_results — by id, and every run of one candidate.
+    db
+      .collection(COLLECTIONS.walkForwardResults)
+      .createIndex({ walkForwardId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.walkForwardResults)
+      .createIndex({ candidateId: 1, createdAt: 1 }),
 
     // backtests — by id, and by fingerprint (the same request, the same run).
     db

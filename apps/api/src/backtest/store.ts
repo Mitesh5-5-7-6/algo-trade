@@ -44,7 +44,10 @@ export async function backtestFromStore(
     stressed: backtest.costs.stressed,
     context: keep.context,
     fingerprint: backtest.fingerprint,
-    backtest: backtest as unknown as Record<string, unknown>,
+    // The trail is what the metrics summarise; it is not kept.
+    backtest: Object.fromEntries(
+      Object.entries(backtest).filter(([k]) => k !== "trail"),
+    ),
   });
   return { backtest, saved };
 }
