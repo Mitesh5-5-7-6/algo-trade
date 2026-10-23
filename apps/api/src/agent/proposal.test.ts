@@ -244,5 +244,20 @@ describe("the real catalog (12.1, D3)", () => {
     expect(
       catalog.checkParams("ORB", { rangeMinutes: "fifteen" }),
     ).not.toBeNull();
+    expect(
+      catalog.checkParams("ORB", { rangeMinutes: 30, quantity: 50 }),
+    ).toBeNull();
+  });
+
+  /** 12.5 acceptance F2: the model proposed fast_ema/slow_ema, which the schema dropped silently. */
+  it("refuses a parameter the strategy does not take — a schema drops it and runs the defaults", () => {
+    expect(
+      catalog.checkParams("EMA_CROSSOVER", { fast_ema: 30, slow_ema: 20 }),
+    ).toMatch(
+      /^EMA_CROSSOVER does not take fast_ema, slow_ema as given — its parameters include .*fast.*slow/,
+    );
+    expect(
+      catalog.checkParams("RSI", { period: 21, oversoldLevel: 25 }),
+    ).toMatch(/RSI does not take oversoldLevel as given/);
   });
 });
