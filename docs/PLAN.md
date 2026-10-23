@@ -792,6 +792,33 @@ answer is kept and can be audited without the model.
 Only after Phase 11. AI may propose `Hypothesis → Registry → Validation`. A
 proposal is not automatically a strategy.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_12_AUTOMATED_HYPOTHESIS.md](design/PHASE_12_AUTOMATED_HYPOTHESIS.md),
+which is the detailed design for this phase and keeps each task's dependencies.
+
+| ID   | Task                                                                                                                                                            | STATUS | Commit | Evidence |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 12.1 | The proposal contract: proposals in an answer, checked — cell, metric, variant against the strategy's own schema, rationale through the answer checker (D1, D3) | READY  | —      | —        |
+| 12.2 | Proposal sessions: the agent asked to propose, its proposals kept and rendered with their checks (D1)                                                           | READY  | —      | —        |
+| 12.3 | A test waits for its window to close (D6)                                                                                                                       | READY  | —      | —        |
+| 12.4 | Registration by the operator: in-sample fixed to what the agent saw, out-of-sample after it, one family per answer (D2, D4, D5)                                 | READY  | —      | —        |
+| 12.5 | Acceptance: proposals as of a past date on the real year, registered, tested out of sample, corrected; a future window refused; an invalid variant refused      | READY  | —      | —        |
+
+**The operator approves registration, and proposals are cells or parameter
+variants** — the operator's decisions at opening (design Q1, Q2). New strategy
+logic is Phase 13's; nothing here creates or changes a strategy.
+
+### Done when
+
+The agent, asked as of a date, proposes hypotheses — cells or parameter
+variants — each resting on checked evidence; the operator registers the ones
+they accept, the in-sample window being exactly what the agent could see and the
+out-of-sample window after it; each is tested once, out of sample, only when its
+window has closed, and corrected within its family; and nothing in the path
+creates or changes a strategy.
+
 ---
 
 ## 18. Phase 13 — Backtest + walk-forward
