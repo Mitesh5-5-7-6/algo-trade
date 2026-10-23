@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS   |
-| ----- | ---------------------------------- | -------- |
-| 0     | Repository + runtime integrity     | COMPLETE |
-| 1     | Historical 5m data                 | COMPLETE |
-| 2     | Trade lifecycle                    | COMPLETE |
-| 3     | Exit lifecycle                     | COMPLETE |
-| 4     | Deterministic replay               | COMPLETE |
-| 5     | Pattern vocabulary                 | COMPLETE |
-| 6     | Counterfactual strategy evaluation | COMPLETE |
-| 7     | Statistical validation             | COMPLETE |
-| 8     | Daily research                     | COMPLETE |
-| 9     | Periodic research                  | COMPLETE |
-| 10    | Research knowledge base            | COMPLETE |
-| 11    | AI research agent                  | COMPLETE |
-| 12    | Automated strategy hypotheses      | COMPLETE |
-| 13    | Backtest + walk-forward            | COMPLETE |
-| 14    | Paper validation                   | READY    |
-| 15    | Promotion                          | READY    |
+| Phase | Deliverable                        | STATUS      |
+| ----- | ---------------------------------- | ----------- |
+| 0     | Repository + runtime integrity     | COMPLETE    |
+| 1     | Historical 5m data                 | COMPLETE    |
+| 2     | Trade lifecycle                    | COMPLETE    |
+| 3     | Exit lifecycle                     | COMPLETE    |
+| 4     | Deterministic replay               | COMPLETE    |
+| 5     | Pattern vocabulary                 | COMPLETE    |
+| 6     | Counterfactual strategy evaluation | COMPLETE    |
+| 7     | Statistical validation             | COMPLETE    |
+| 8     | Daily research                     | COMPLETE    |
+| 9     | Periodic research                  | COMPLETE    |
+| 10    | Research knowledge base            | COMPLETE    |
+| 11    | AI research agent                  | COMPLETE    |
+| 12    | Automated strategy hypotheses      | COMPLETE    |
+| 13    | Backtest + walk-forward            | COMPLETE    |
+| 14    | Paper validation                   | IN PROGRESS |
+| 15    | Promotion                          | READY       |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -880,7 +880,7 @@ nothing changes or promotes a strategy.
 
 ## 19. Phase 14 — Paper validation
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 Candidate runs against real-time market data without real money. Validate
 signals, execution, fills, slippage, risk, positions, exits, P&L, restart
@@ -892,15 +892,15 @@ Structured around the decisions in
 [PHASE_14_PAPER_VALIDATION.md](design/PHASE_14_PAPER_VALIDATION.md), which is
 the detailed design for this phase and keeps each task's dependencies.
 
-| ID   | Task                                                                                                           | STATUS | Commit | Evidence |
-| ---- | -------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 14.1 | The paper environment: mode tied to its database, FYERS without order capability in paper (D2)                 | READY  | —      | —        |
-| 14.2 | The paper broker's book: orders and fills kept, a restart's in-flight orders settled (D3)                      | READY  | —      | —        |
-| 14.3 | Reconciliation against the book at boot and close, entries refused on a mismatch, `BROKER_RECONCILIATION` (D4) | READY  | —      | —        |
-| 14.4 | Watched paper limit orders (D5)                                                                                | READY  | —      | —        |
-| 14.5 | The session report and the parity check against the replay (D6)                                                | READY  | —      | —        |
-| 14.6 | The test subject, provisioned; the paper session runbook and CLI; the restart drill (D1, D7)                   | READY  | —      | —        |
-| 14.7 | Acceptance: five live paper sessions, one with a restart, each reported and parity-checked (D8)                | READY  | —      | —        |
+| ID   | Task                                                                                                           | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 14.1 | The paper environment: mode tied to its database, FYERS without order capability in paper (D2)                 | COMPLETE | `d3f3949` | `apps/api/src/environment.ts`: `modeDatabaseProblem` — paper only on a paper (or test) database, live never on paper, research or test — enforced in `apps/api/src/composition-root.ts` before any write; `packages/broker/src/fyers-broker.ts` `orders: "disabled"` in paper. `apps/api/src/environment.test.ts` (3/3), `packages/broker/src/fyers-broker.test.ts` (23/23), `composition-root.integration.test.ts` (strict 3/3); 4 mutants killed. Design D2 |
+| 14.2 | The paper broker's book: orders and fills kept, a restart's in-flight orders settled (D3)                      | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 14.3 | Reconciliation against the book at boot and close, entries refused on a mismatch, `BROKER_RECONCILIATION` (D4) | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 14.4 | Watched paper limit orders (D5)                                                                                | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 14.5 | The session report and the parity check against the replay (D6)                                                | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 14.6 | The test subject, provisioned; the paper session runbook and CLI; the restart drill (D1, D7)                   | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 14.7 | Acceptance: five live paper sessions, one with a restart, each reported and parity-checked (D8)                | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 **No candidate has passed Phase 13, so Phase 14 validates the paper pipeline
 itself, on a test subject that is never promotable, on real-time market data**
