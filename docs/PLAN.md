@@ -886,6 +886,37 @@ Candidate runs against real-time market data without real money. Validate
 signals, execution, fills, slippage, risk, positions, exits, P&L, restart
 recovery and broker reconciliation.
 
+### Tasks
+
+Structured around the decisions in
+[PHASE_14_PAPER_VALIDATION.md](design/PHASE_14_PAPER_VALIDATION.md), which is
+the detailed design for this phase and keeps each task's dependencies.
+
+| ID   | Task                                                                                                           | STATUS | Commit | Evidence |
+| ---- | -------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 14.1 | The paper environment: mode tied to its database, FYERS without order capability in paper (D2)                 | READY  | —      | —        |
+| 14.2 | The paper broker's book: orders and fills kept, a restart's in-flight orders settled (D3)                      | READY  | —      | —        |
+| 14.3 | Reconciliation against the book at boot and close, entries refused on a mismatch, `BROKER_RECONCILIATION` (D4) | READY  | —      | —        |
+| 14.4 | Watched paper limit orders (D5)                                                                                | READY  | —      | —        |
+| 14.5 | The session report and the parity check against the replay (D6)                                                | READY  | —      | —        |
+| 14.6 | The test subject, provisioned; the paper session runbook and CLI; the restart drill (D1, D7)                   | READY  | —      | —        |
+| 14.7 | Acceptance: five live paper sessions, one with a restart, each reported and parity-checked (D8)                | READY  | —      | —        |
+
+**No candidate has passed Phase 13, so Phase 14 validates the paper pipeline
+itself, on a test subject that is never promotable, on real-time market data**
+— the operator's decisions at opening (design Q1, Q2). The acceptance runs in
+calendar time: the operator keeps the process up through market hours and the
+FYERS market-data token current.
+
+### Done when
+
+The paper runtime runs only on a paper database, cannot place a real order, and
+keeps a broker book that survives a restart; reconciles it at boot and close,
+failing closed on a mismatch; and, over five live sessions of a test subject —
+one restarted mid-session — reports every signal, order, fill, Trade and P&L,
+with the replay of the same bars agreeing decision for decision and every
+difference named.
+
 ---
 
 ## 20. Phase 15 — Promotion
