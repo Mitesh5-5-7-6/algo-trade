@@ -79,7 +79,7 @@ describe("a session that answers (11.3)", () => {
     expect(s.rendered).toContain(
       "[c1 find_patterns; n = 11; sessions 2026-03-02 .. 2026-03-09; as of 2026-03-31",
     );
-    expect(s.versions).toEqual({ tools: "2", answerContract: "2", loop: "2" });
+    expect(s.versions).toEqual({ tools: "2", answerContract: "2", loop: "3" });
 
     // What the model was sent: the asOf in the question, every block of its
     // own turn back unchanged, the result labelled with its call id.

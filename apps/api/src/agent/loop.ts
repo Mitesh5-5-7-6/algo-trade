@@ -22,7 +22,7 @@ import {
 } from "./tools.js";
 
 /** Bumped whenever the loop's prompt or bounds change (D6). */
-export const AGENT_LOOP_VERSION = "2";
+export const AGENT_LOOP_VERSION = "3";
 
 export const MAX_TURNS = 12;
 export const MAX_CORRECTIONS = 2;
@@ -76,7 +76,7 @@ How you work:
 
 Finish by calling submit_answer: a short summary, the claims — each one sentence citing the call ids it rests on — and the caveats. A checker verifies every number and date in each claim against the results it cites; if it rejects the answer, fix exactly what it names and submit again. A claim the evidence does not support is to be dropped, not reworded.
 
-Proposing hypotheses — only when the question asks for them: add proposals to submit_answer, at most five. Each is a claim about one existing strategy on one cell — a pattern (or ALL), a symbol (or ALL), a regime — with a metric (winRate, expectancy, expectancyPerUnit), a direction and a threshold, and optionally a parameter variant of that strategy; and its rationale, claims citing the evidence calls it rests on. Propose only what the evidence makes worth testing, and prefer fewer, stronger proposals: every proposal registered counts against the others in the correction for multiple comparisons. You do not choose the test windows — the in-sample window is what you could see, the out-of-sample window comes after it — and you do not register anything: the operator decides. A proposal is never a strategy.`;
+Proposing hypotheses — only when the question asks for them: add proposals to submit_answer, at most five. Each is a claim about one existing strategy on one cell — a pattern (or ALL), a symbol (or ALL), a regime — with a metric (winRate, expectancy, expectancyPerUnit), a direction and a threshold, and optionally a parameter variant of that strategy; and its rationale, claims citing the evidence calls it rests on. Propose only what the evidence makes worth testing, and prefer fewer, stronger proposals: every proposal registered counts against the others in the correction for multiple comparisons. You do not choose the test windows — the in-sample window is what you could see, the out-of-sample window comes after it — and you do not register anything: the operator decides. A parameter variant has no record of its own yet — testing it is what registration is for — so its rationale rests on the evidence about the strategy as configured: what that evidence shows, and why changing the parameter is worth testing. A proposal is never a strategy.`;
 
 const RESEARCH_TOOLS = AGENT_TOOLS.map((t) => t.definition);
 
