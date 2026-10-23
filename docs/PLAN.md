@@ -115,24 +115,24 @@ CHANGE LIVE LIMITS · APPROVE ITS OWN STRATEGY
 The project is executed strictly in this order. No phase is skipped. A later
 phase may only start when its dependency is complete.
 
-| Phase | Deliverable                        | STATUS      |
-| ----- | ---------------------------------- | ----------- |
-| 0     | Repository + runtime integrity     | COMPLETE    |
-| 1     | Historical 5m data                 | COMPLETE    |
-| 2     | Trade lifecycle                    | COMPLETE    |
-| 3     | Exit lifecycle                     | COMPLETE    |
-| 4     | Deterministic replay               | COMPLETE    |
-| 5     | Pattern vocabulary                 | COMPLETE    |
-| 6     | Counterfactual strategy evaluation | COMPLETE    |
-| 7     | Statistical validation             | COMPLETE    |
-| 8     | Daily research                     | COMPLETE    |
-| 9     | Periodic research                  | COMPLETE    |
-| 10    | Research knowledge base            | COMPLETE    |
-| 11    | AI research agent                  | IN PROGRESS |
-| 12    | Automated strategy hypotheses      | READY       |
-| 13    | Backtest + walk-forward            | READY       |
-| 14    | Paper validation                   | READY       |
-| 15    | Promotion                          | READY       |
+| Phase | Deliverable                        | STATUS   |
+| ----- | ---------------------------------- | -------- |
+| 0     | Repository + runtime integrity     | COMPLETE |
+| 1     | Historical 5m data                 | COMPLETE |
+| 2     | Trade lifecycle                    | COMPLETE |
+| 3     | Exit lifecycle                     | COMPLETE |
+| 4     | Deterministic replay               | COMPLETE |
+| 5     | Pattern vocabulary                 | COMPLETE |
+| 6     | Counterfactual strategy evaluation | COMPLETE |
+| 7     | Statistical validation             | COMPLETE |
+| 8     | Daily research                     | COMPLETE |
+| 9     | Periodic research                  | COMPLETE |
+| 10    | Research knowledge base            | COMPLETE |
+| 11    | AI research agent                  | COMPLETE |
+| 12    | Automated strategy hypotheses      | READY    |
+| 13    | Backtest + walk-forward            | READY    |
+| 14    | Paper validation                   | READY    |
+| 15    | Promotion                          | READY    |
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -715,7 +715,7 @@ source re-indexes exactly the documents built from it.
 
 ## 16. Phase 11 — AI research agent
 
-**STATUS: IN PROGRESS**
+**STATUS: COMPLETE**
 
 ### Goal
 
@@ -727,15 +727,24 @@ Structured around the decisions in
 [PHASE_11_AI_RESEARCH_AGENT.md](design/PHASE_11_AI_RESEARCH_AGENT.md), which is
 the detailed design for this phase and keeps each task's dependencies.
 
-| ID   | Task                                                                                                                                    | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11.1 | The tool surface: six read-only tools, strict schemas, bound to `asOf`, capped results with provenance; nothing else reachable (D1, D2) | COMPLETE | `0fc7fb8` | `apps/api/src/agent/tools.ts`: `AGENT_TOOLS` — six strict, read-only tools over the read models, bound to the session's asOf (clamped, never chosen by the model), capped at 50 rows with provenance; an import allowlist test. `apps/api/src/agent/tools.test.ts` (10/10), `tools.integration.test.ts` (strict 3/3); 6 mutants killed. Design D1, D2                                                                                                       |
-| 11.2 | The answer contract and its checker: claims citing calls, numbers traceable to results, the rendered context (D3, D4)                   | COMPLETE | `ae0e78e` | `apps/api/src/agent/answer.ts`: `SUBMIT_ANSWER_TOOL`, `checkAnswer` — every claim cites calls of the session, every number is in a cited evidence result (not memory), every date covered and not after asOf — and `renderAnswer`, the provenance of each cited call written by code. `apps/api/src/agent/answer.test.ts` (13/13); 10 mutants killed. Design D3, D4                                                                                         |
-| 11.3 | The loop: the model interface, the scripted fake, the Anthropic implementation, bounds, refusals, corrections (D6)                      | COMPLETE | `2f54961` | `apps/api/src/agent/loop.ts`: `runResearch` — tools run and recorded by call id, answers checked and corrected at most twice, refusal / truncation / exhaustion ended explicitly. `apps/api/src/agent/model.ts`: the `ResearchModel` seam, `AnthropicResearchModel` (Claude Opus 5.5, adaptive thinking, fallbacks, strict eager tools) and `ScriptedModel`. `apps/api/src/agent/loop.test.ts` (10/10), `model.test.ts` (4/4); 10 mutants killed. Design D6 |
-| 11.4 | Keeping every answer: `agent_answers`, never edited (D7)                                                                                | COMPLETE | `34dbfa7` | `packages/db/src/agent-answers-repository.ts`: `agent_answers`, insert-only. `apps/api/src/agent/store.ts`: `keepSession` and `auditAnswer` — the verdict re-checked and the text re-rendered from the kept calls, no model. `apps/api/src/agent/store.test.ts` (4/4), `store.integration.test.ts` (strict 1/1); 3 mutants killed. Design D7                                                                                                                |
-| 11.5 | The CLI, its own env file, and the secret guard (D5)                                                                                    | COMPLETE | `0bfd26a` | `apps/api/scripts/agent.mts`: ask, show, audit. `apps/api/src/agent/guard.ts`: refuses to start beside a broker or production secret, naming variables never values, and admits the research or a scratch database only; `.env.agent.local.example`. `apps/api/src/agent/guard.test.ts` (7/7, including the guard running before any connection); 5 mutants killed. Design D5                                                                               |
-| 11.6 | OpenAI-compatible providers: one adapter for OpenAI and DeepSeek, the provider chosen in the env file (Q1 revised, D8)                  | COMPLETE | `b718d13` | `apps/api/src/agent/openai-model.ts`: `OpenAICompatibleModel` — OpenAI, and DeepSeek at its own address, translated both ways; `apps/api/src/agent/provider.ts`, the guard's `AGENT_PROVIDER` / `AGENT_MODEL`. `apps/api/src/agent/openai-model.test.ts` (10/10, a research session end to end), `guard.test.ts` (11/11); 8 mutants killed. Design Q1 revised, D8                                                                                           |
-| 11.7 | Acceptance: real questions on the real year, every answer checked, asOf honoured, missing evidence said, a request to trade refused     | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ID   | Task                                                                                                                                    | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11.1 | The tool surface: six read-only tools, strict schemas, bound to `asOf`, capped results with provenance; nothing else reachable (D1, D2) | COMPLETE | `0fc7fb8` | `apps/api/src/agent/tools.ts`: `AGENT_TOOLS` — six strict, read-only tools over the read models, bound to the session's asOf (clamped, never chosen by the model), capped at 50 rows with provenance; an import allowlist test. `apps/api/src/agent/tools.test.ts` (10/10), `tools.integration.test.ts` (strict 3/3); 6 mutants killed. Design D1, D2                                                                                                                 |
+| 11.2 | The answer contract and its checker: claims citing calls, numbers traceable to results, the rendered context (D3, D4)                   | COMPLETE | `ae0e78e` | `apps/api/src/agent/answer.ts`: `SUBMIT_ANSWER_TOOL`, `checkAnswer` — every claim cites calls of the session, every number is in a cited evidence result (not memory), every date covered and not after asOf — and `renderAnswer`, the provenance of each cited call written by code. `apps/api/src/agent/answer.test.ts` (13/13); 10 mutants killed. Design D3, D4                                                                                                   |
+| 11.3 | The loop: the model interface, the scripted fake, the Anthropic implementation, bounds, refusals, corrections (D6)                      | COMPLETE | `2f54961` | `apps/api/src/agent/loop.ts`: `runResearch` — tools run and recorded by call id, answers checked and corrected at most twice, refusal / truncation / exhaustion ended explicitly. `apps/api/src/agent/model.ts`: the `ResearchModel` seam, `AnthropicResearchModel` (Claude Opus 5.5, adaptive thinking, fallbacks, strict eager tools) and `ScriptedModel`. `apps/api/src/agent/loop.test.ts` (10/10), `model.test.ts` (4/4); 10 mutants killed. Design D6           |
+| 11.4 | Keeping every answer: `agent_answers`, never edited (D7)                                                                                | COMPLETE | `34dbfa7` | `packages/db/src/agent-answers-repository.ts`: `agent_answers`, insert-only. `apps/api/src/agent/store.ts`: `keepSession` and `auditAnswer` — the verdict re-checked and the text re-rendered from the kept calls, no model. `apps/api/src/agent/store.test.ts` (4/4), `store.integration.test.ts` (strict 1/1); 3 mutants killed. Design D7                                                                                                                          |
+| 11.5 | The CLI, its own env file, and the secret guard (D5)                                                                                    | COMPLETE | `0bfd26a` | `apps/api/scripts/agent.mts`: ask, show, audit. `apps/api/src/agent/guard.ts`: refuses to start beside a broker or production secret, naming variables never values, and admits the research or a scratch database only; `.env.agent.local.example`. `apps/api/src/agent/guard.test.ts` (7/7, including the guard running before any connection); 5 mutants killed. Design D5                                                                                         |
+| 11.6 | OpenAI-compatible providers: one adapter for OpenAI and DeepSeek, the provider chosen in the env file (Q1 revised, D8)                  | COMPLETE | `b718d13` | `apps/api/src/agent/openai-model.ts`: `OpenAICompatibleModel` — OpenAI, and DeepSeek at its own address, translated both ways; `apps/api/src/agent/provider.ts`, the guard's `AGENT_PROVIDER` / `AGENT_MODEL`. `apps/api/src/agent/openai-model.test.ts` (10/10, a research session end to end), `guard.test.ts` (11/11); 8 mutants killed. Design Q1 revised, D8                                                                                                     |
+| 11.7 | Acceptance: real questions on the real year, every answer checked, asOf honoured, missing evidence said, a request to trade refused     | COMPLETE | `9f26bc2` | Eight questions asked of the real year (scratch copy) through `apps/api/scripts/agent.mts`, answered by Gemini — every answer checked, 11 kept and audited without the model, asOf honoured, missing news said, a trade request declined; findings F1–F3 fixed (`apps/api/src/agent/tools.ts`, `apps/api/src/knowledge/read.ts`, `apps/api/src/agent/answer.ts`), F4 standing. `docs/design/PHASE_11_AI_RESEARCH_AGENT.md` §7; strict sign-off 1,519 tests, 0 skipped |
+
+**Phase sign-off:** `pnpm test:integration` on `9f26bc2` — strict, against
+real MongoDB and Redis — 1,519 tests across 13 packages, 0 skipped, 0 failed; and eight research questions asked of the
+real year on a scratch copy, answered by Gemini (`gemini-3.5-flash-lite`) — the
+Anthropic account had no API credit — every answer checked, kept and audited
+without the model, the asOf honoured, missing evidence said, a request to trade
+declined (design §7). **The checker proves numbers are in the evidence, not
+that they are attributed correctly** (finding F4): one answer of eleven passed
+with a misattributed count.
 
 ### Initial tools
 
@@ -919,10 +928,10 @@ A phase is complete only when:
 
 ## 27. Current priority
 
-Phases 0 to 10 are complete. The immediate priority is **Phase 11 — AI
-research agent**.
+Phases 0 to 11 are complete. The immediate priority is **Phase 12 — Automated
+strategy hypothesis**.
 
-Do not begin Phase 12 until Phase 11's acceptance criteria pass. Do not begin
+Do not begin Phase 13 until Phase 12's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
 the AI research agent before the research knowledge base exists.
 

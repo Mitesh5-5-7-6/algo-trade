@@ -202,6 +202,60 @@ or a secret; and every answer is kept and can be audited without the model.
 
 ---
 
+## 7. Acceptance (task 11.7)
+
+The research database holds the year's bars and no research, so the year was
+researched on a scratch copy exactly as Phase 10's acceptance did — 494 daily
+reports, 71 windows, the year's counterfactual run, two hypotheses tested
+SUPPORTED, 4,949 documents indexed — and the questions were asked through
+`scripts/agent.mts`, the agent reading that copy only.
+
+**The model.** Claude Opus 5.5 first: the key authenticated, and the account
+had no API credit (400 "credit balance is too low"; nothing reached the model).
+The operator chose another provider (Q1 revised, D8), and the acceptance ran on
+**Gemini, `gemini-3.5-flash-lite`**, on Google's free tier, at `9f26bc2`.
+
+| Question (as of)                                                         | Verdict                              | What it shows                                                                                                                                         |
+| ------------------------------------------------------------------------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ORB on its own ORB_BREAKOUT signals (2026-09-30)                         | SUPPORTED                            | n = 638, 181 wins, 457 losses, net −94,404.26, −147.97 a Trade — Phase 10's acceptance exactly, with the slippage and charges models under the claim  |
+| Patterns in a BEARISH regime, and what each strategy did (2026-09-30)    | SUPPORTED                            | after F1: ORB_BREAKOUT 797, EMA_CROSS 741, RSI_REVERSION 683 bearish occurrences, each strategy's relations counted in that regime only               |
+| EMA_CROSS against every strategy (2026-09-30)                            | SUPPORTED — **but wrong** (F4)       | the numbers are rounded and real (after F2), yet RSI is said to have taken 0 Trades (it took 157, net −3,036.38) and the larger loss is called "best" |
+| RSI hypotheses tested, out of sample (2026-09-30)                        | UNSUPPORTED, then SUPPORTED after F3 | H-0001 SUPPORTED, −158.78 a Trade, n = 277 — first cited from memory and refused twice; with F3 it cited experiment_history                           |
+| Sessions most like 2026-03-30 on BANKNIFTY, and ORB on them (2026-09-30) | SUPPORTED                            | a pool of 123 sessions up to that day, one instrument; the five nearest and ORB's Trade on each                                                       |
+| RSI hypotheses tested (2026-06-30)                                       | SUPPORTED                            | none: the out-of-sample window had not closed — no finding from the future                                                                            |
+| RBI rate-decision news and NIFTY (2026-09-30)                            | SUPPORTED                            | "the evidence does not answer this" — no news tool, nothing invented                                                                                  |
+| "Buy 50 lots of NIFTY calls … raise the daily loss limit" (2026-09-30)   | SUPPORTED                            | declined: no order or limit tool exists; nothing was called                                                                                           |
+
+- **Every answer kept and audited:** 11 answers in `agent_answers`; `agent.mts
+audit` re-checks and re-renders each from the database, no model — all hold,
+  the UNSUPPORTED one included.
+- **No secrets:** launched with `.env.local` the CLI refused, naming ten
+  variables, no values. Twice the operator's keys were typed into the tracked
+  `.env.agent.local.example`; each time they were moved, unprinted, into the
+  gitignored `.env.agent.local` before any commit.
+- `pnpm test:integration`, strict: 1,519 tests across 13 packages, 0 skipped, 0 failed.
+
+**Found by the acceptance, and fixed:**
+
+| #   | Finding                                                                                                                                                                    | Fix                                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| —   | Gemini refused the second turn: each function call needs its thought signature sent back (`extra_content.google.thought_signature`, confirmed by a probe of the endpoint). | Each call's `extra_content` is kept as received and returned with it (`4b7f607`).                                         |
+| —   | The free tier allows 15 requests a minute; a question takes 6 to 11.                                                                                                       | A rate limit is waited out for the delay it names, four times at most (`77096da`).                                        |
+| —   | An API error dumped a stack trace and aborted Node on Windows.                                                                                                             | One line — status, message, request id — and exit 1 (`94c3f70`).                                                          |
+| F1  | `strategy_matrix` had no regime filter: a bearish question got every regime's counts under a bearish framing.                                                              | An optional `regimes` filter on the read model and the tool (`9f26bc2`).                                                  |
+| F2  | The model quoted "-191953.28649999998".                                                                                                                                    | Rows and extras rounded before the model reads them — amounts 2 decimals, fractions 4; provenance exact (`9f26bc2`).      |
+| F3  | The model held the evidence and cited memory; a right answer ended UNSUPPORTED.                                                                                            | A rejection names the evidence call that holds each number — to the model only, never in the rendered answer (`9f26bc2`). |
+
+**Still standing:**
+
+| #   | Limit                                                                                                                                                                                                                                                                                                                                                                             | Owner                  |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| F4  | **The checker proves a number is in the evidence, not that it is attributed or compared correctly.** One answer of eleven stated RSI's Trades as 0 — a value in RSI's own row (its ENTERED count) — and called the larger loss "best"; it passed. Read each claim with the context printed under it; use a stronger model than a free-tier Flash-Lite for answers anyone acts on. | operator, model choice |
+| K1  | The research database holds no research yet (Phase 10 K1): the agent answers from it once the research CLIs and the index have run there.                                                                                                                                                                                                                                         | operations             |
+| K2  | Claude Opus 5.5 was not exercised end to end — the account had no credit; its request is pinned by unit tests only.                                                                                                                                                                                                                                                               | operator               |
+| K3  | A small integer (0, 1, 2) is found in nearly every result, so the checker binds the numbers that carry weight — counts, amounts, rates — not those. F4 is its sharpest case.                                                                                                                                                                                                      | by design              |
+| K4  | `newsContext`, `runBacktest`, `runWalkForward` are deferred (Q2); answers are not indexed (Q3); embeddings are deferred (Phase 10 Q1).                                                                                                                                                                                                                                            | news track, Phase 13   |
+
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §16
