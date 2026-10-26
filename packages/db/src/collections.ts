@@ -16,6 +16,19 @@ export const COLLECTIONS = {
    * in-flight orders can be settled and positions reconciled against it.
    */
   paperBrokerOrders: "paper_broker_orders",
+  /**
+   * Every paper reconciliation run, clean or not (Phase 14 D6) — PAPER
+   * database only. A clean run writes nothing to `risk_events`, so without
+   * this a report could not tell "reconciled clean" from "never reconciled";
+   * and each BOOT run is a process start, which is how a restart is known.
+   */
+  paperReconciliations: "paper_reconciliations",
+  /**
+   * Paper session reports (Phase 14 D6) — PAPER database only. What one
+   * session did, and its parity against the replay of the same bars.
+   * Untimed, never edited: a report taken again is a second report.
+   */
+  paperSessionReports: "paper_session_reports",
   positions: "positions",
   pnlSnapshots: "pnl_snapshots",
   marketTicks: "market_ticks",
@@ -157,6 +170,20 @@ export async function ensureIndexes(db: Db): Promise<void> {
       clientOrderId: 1,
     }),
     db.collection(COLLECTIONS.paperBrokerOrders).createIndex({ recordedAt: 1 }),
+
+    // paper_reconciliations / paper_session_reports — read by session.
+    db
+      .collection(COLLECTIONS.paperReconciliations)
+      .createIndex({ runId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.paperReconciliations)
+      .createIndex({ session: 1, ts: 1 }),
+    db
+      .collection(COLLECTIONS.paperSessionReports)
+      .createIndex({ reportId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.paperSessionReports)
+      .createIndex({ session: 1, generatedAt: 1 }),
 
     // orders — the duplicate-execution backstop (plan/12 §6)
     db

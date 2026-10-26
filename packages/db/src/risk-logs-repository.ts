@@ -19,6 +19,16 @@ export class RiskLogsRepository {
     await this.collection.insertOne({ ...doc });
   }
 
+  /** Every decision in `[fromTs, toTs)`, oldest first (Phase 14 D6). */
+  async findRange(fromTs: number, toTs: number): Promise<RiskLog[]> {
+    if (toTs <= fromTs) return [];
+    const docs = await this.collection
+      .find({ ts: { $gte: fromTs, $lt: toTs } }, { projection: { _id: 0 } })
+      .sort({ ts: 1 })
+      .toArray();
+    return docs.map((doc) => RiskLogSchema.parse(doc));
+  }
+
   /** Recent decisions (optionally only blocks) for the operator's audit view. */
   async findRecent(limit: number, onlyBlocked = false): Promise<RiskLog[]> {
     const filter = onlyBlocked ? { decision: "blocked" } : {};

@@ -44,6 +44,23 @@ export class SignalsRepository {
     return docs.map((doc) => SignalSchema.parse(doc));
   }
 
+  /**
+   * Every BUY/SELL signal in `[fromTs, toTs)`, oldest first — one session's
+   * decisions (Phase 14 D6). HOLD is left out: it is one row per evaluation,
+   * a pulse rather than a decision.
+   */
+  async findActionableRange(fromTs: number, toTs: number): Promise<Signal[]> {
+    if (toTs <= fromTs) return [];
+    const docs = await this.collection
+      .find(
+        { ts: { $gte: fromTs, $lt: toTs }, side: { $ne: "HOLD" } },
+        { projection: { _id: 0, expireAt: 0 } },
+      )
+      .sort({ ts: 1 })
+      .toArray();
+    return docs.map((doc) => SignalSchema.parse(doc));
+  }
+
   /** Recent signals across all strategies, newest first. */
   async findRecent(limit: number): Promise<Signal[]> {
     const docs = await this.collection

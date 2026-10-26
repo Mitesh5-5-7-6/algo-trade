@@ -25,6 +25,7 @@ import {
   CandlesRepository,
   OrdersRepository,
   PaperBrokerOrdersRepository,
+  PaperReconciliationsRepository,
   PnlSnapshotsRepository,
   PositionsRepository,
   RiskEventsRepository,
@@ -209,6 +210,7 @@ export async function startEngineRuntime(deps: {
   const signals = new SignalsRepository(db);
   const paperBook =
     deps.mode === "paper" ? new PaperBrokerOrdersRepository(db) : null;
+  const paperReconciliations = new PaperReconciliationsRepository(db);
   const riskEvents = new RiskEventsRepository(db);
   const riskLogs = new RiskLogsRepository(db);
   const pnlSnapshots = new PnlSnapshotsRepository(db);
@@ -893,9 +895,12 @@ export async function startEngineRuntime(deps: {
     await drainFills();
   };
 
-  const reconcilePaper = async (now: number): Promise<void> => {
+  const reconcilePaper = async (
+    now: number,
+    at: "BOOT" | "CLOSE",
+  ): Promise<void> => {
     if (paperBook === null) return;
-    await reconcilePaperBook({
+    const event = await reconcilePaperBook({
       findOpenPositions: () => positionEngine.getOpenPositions(),
       findOrders: (from, toExclusive) =>
         orders.findAllByDateRange(from, toExclusive),
@@ -936,6 +941,18 @@ export async function startEngineRuntime(deps: {
       },
       now: () => now,
     });
+    // Recorded clean or not (D6): a clean run leaves nothing in risk_events,
+    // and the session report must still be able to say it ran — and each
+    // BOOT run is how a mid-session restart is known.
+    await paperReconciliations.insert({
+      runId: `recon_${randomUUID()}`,
+      session: istDateKey(now),
+      at,
+      ts: now,
+      clean: event === null,
+      mismatches: event?.mismatches.length ?? 0,
+      ...(event === null ? {} : { riskEventId: event.riskEventId }),
+    });
   };
 
   // --- Boot sequence (plan/05 §3, plan/22 §4) ---
@@ -969,7 +986,7 @@ export async function startEngineRuntime(deps: {
     await orderManager.reconcile(order);
   }
   await drainFills();
-  await reconcilePaper(Date.now());
+  await reconcilePaper(Date.now(), "BOOT");
   for (const config of await strategiesRepo.findEnabled()) {
     enabledConfigs.set(config.strategyId, {
       symbols: config.symbols,
@@ -1210,7 +1227,7 @@ export async function startEngineRuntime(deps: {
         await drainFills();
         await deps.paperOrderMonitor?.expirePendingOrders();
         await drainBrokerUpdates();
-        await reconcilePaper(now);
+        await reconcilePaper(now, "CLOSE");
         await pnl.snapshot(istDateKey(now)); // EOD equity curve (plan/13 §6)
       }
     },

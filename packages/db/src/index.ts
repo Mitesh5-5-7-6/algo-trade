@@ -24,3 +24,5 @@ export * from "./backtests-repository.js";
 export * from "./strategy-candidates-repository.js";
 export * from "./walk-forward-results-repository.js";
 export * from "./paper-broker-orders-repository.js";
+export * from "./paper-reconciliations-repository.js";
+export * from "./paper-session-reports-repository.js";

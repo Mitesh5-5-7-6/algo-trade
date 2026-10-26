@@ -248,6 +248,7 @@ beforeEach(async (ctx) => {
   await mongo?.db.collection("orders").deleteMany({});
   await mongo?.db.collection("paper_broker_orders").deleteMany({});
   await mongo?.db.collection("risk_events").deleteMany({});
+  await mongo?.db.collection("paper_reconciliations").deleteMany({});
   if (mongo !== undefined) {
     await new SettingsRepository(mongo.db).setTradingEnabled(true);
   }
@@ -535,6 +536,21 @@ describe("paper reconciliation at runtime boot (Phase 14 D4)", () => {
           brokerValue: "0",
         }),
       );
+      // Both boots are on record, clean or not (D6): the report reads these
+      // to say the session was reconciled and that a restart happened.
+      const runs = await db
+        .collection("paper_reconciliations")
+        .find({}, { projection: { _id: 0 } })
+        .sort({ ts: 1 })
+        .toArray();
+      expect(runs).toEqual([
+        expect.objectContaining({ at: "BOOT", clean: true, mismatches: 0 }),
+        expect.objectContaining({
+          at: "BOOT",
+          clean: false,
+          riskEventId: riskEvents[0]?.riskEventId,
+        }),
+      ]);
       expect(
         await db.collection("orders").findOne({
           orderId: { $regex: "^reconciliation:" },
@@ -633,6 +649,11 @@ describe("paper reconciliation at runtime boot (Phase 14 D4)", () => {
         await runtime.syncSession(openTs);
         await runtime.syncSession(closeTs);
 
+        expect(
+          await db
+            .collection("paper_reconciliations")
+            .findOne({ at: "CLOSE" }, { projection: { _id: 0 } }),
+        ).toMatchObject({ clean: false, ts: closeTs });
         expect(runtime.positionEngine.getOpenPositions()).toHaveLength(0);
         expect(
           (await new SettingsRepository(db).getGlobal()).tradingEnabled,
