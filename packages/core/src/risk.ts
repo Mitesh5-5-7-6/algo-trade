@@ -168,3 +168,24 @@ export const RiskLogSchema = z.object({
   ts: TimestampSchema,
 });
 export type RiskLog = z.infer<typeof RiskLogSchema>;
+
+/** A durable safety event that is not attached to an individual signal. */
+export const RiskEventSchema = z.object({
+  riskEventId: EntityIdSchema,
+  type: z.literal("BROKER_RECONCILIATION"),
+  session: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  mismatches: z
+    .array(
+      z.object({
+        kind: z.enum(["POSITION", "ORDER"]),
+        symbol: SymbolSchema.optional(),
+        orderId: EntityIdSchema.optional(),
+        reason: z.string().min(1),
+        tradingValue: z.string(),
+        brokerValue: z.string(),
+      }),
+    )
+    .min(1),
+  ts: TimestampSchema,
+});
+export type RiskEvent = z.infer<typeof RiskEventSchema>;

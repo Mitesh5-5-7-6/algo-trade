@@ -149,6 +149,14 @@ export const BrokerOrderStatusSchema = z.object({
   filledPrice: PriceSchema.optional(),
   filledQty: QuantitySchema.optional(),
   filledAt: TimestampSchema.optional(),
+  /**
+   * The fill's costs, when the broker knows them (Phase 14 D3): a real
+   * broker's status query does not, so reconciliation books them as 0; the
+   * paper broker kept them, so a fill settled after a restart costs what it
+   * cost.
+   */
+  slippage: z.number().nonnegative().optional(),
+  charges: z.number().nonnegative().optional(),
 });
 export type BrokerOrderStatus = z.infer<typeof BrokerOrderStatusSchema>;
 

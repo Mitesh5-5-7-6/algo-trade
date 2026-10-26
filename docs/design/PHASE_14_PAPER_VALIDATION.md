@@ -99,10 +99,24 @@ operator clears it (ADR §5.8); a position the broker shows closed but the
 trading state shows open is closed at the broker's price with exit reason
 `BROKER_RECONCILIATION` (G2).
 
+The mismatch is durable in `risk_events`, surfaced as `SYSTEM_ERROR`, and
+turns off the persisted trading kill flag. After resolving the discrepancy,
+the operator clears the halt through the step-up-protected `/control/resume`.
+When the paper book is flat for a symbol but local positions remain open, the
+Order Manager records a deterministic reconciliation close from the book's
+latest fill and projects it through the normal position and Trade engines; it
+does not submit another broker order. The fill's slippage and charges are
+prorated by quantity across all local positions closed for that symbol.
+
 ### D5 — Limit orders are watched
 
-A paper LIMIT order fills on the first tick that crosses it, and expires at
-the session close (G5).
+A pending paper LIMIT order is evaluated against each normalized live tick for
+its symbol and fills at its limit price on the first tick that satisfies it:
+BUY when the tick is at or below the limit, SELL when at or above. The paper
+broker book is the source of pending orders, so monitoring resumes after a
+restart. Any order still pending at the session-close transition is cancelled
+with reason `session closed`, and the normal broker update path marks the
+trading order cancelled. It is never carried into the next session (G5).
 
 ### D6 — A session report, held against the replay
 

@@ -21,6 +21,7 @@ import type {
 import {
   ensureIndexes,
   PositionsRepository,
+  RiskEventsRepository,
   SignalsRepository,
   StrategiesRepository,
   type MongoConnection,
@@ -151,6 +152,7 @@ afterEach(async () => {
   await app.close();
   await connection.db.collection("strategies").deleteMany({});
   await connection.db.collection("settings").deleteMany({});
+  await connection.db.collection("risk_events").deleteMany({});
   await connection.db.collection("candles").deleteMany({});
   await connection.db.collection("trades").deleteMany({});
 });
@@ -162,6 +164,38 @@ const createBody = {
   symbols: ["NSE:X-EQ"],
   enabled: true,
 };
+
+describe("risk event routes (Phase 14 D4)", () => {
+  it("exposes durable broker reconciliation mismatches to the operator", async () => {
+    makeApp();
+    const events = new RiskEventsRepository(connection.db);
+    await events.insert({
+      riskEventId: "risk_reconcile_1",
+      type: "BROKER_RECONCILIATION",
+      session: "2026-10-24",
+      mismatches: [
+        {
+          kind: "POSITION",
+          symbol: "NSE:X-EQ",
+          reason: "net position quantity differs",
+          tradingValue: "10",
+          brokerValue: "0",
+        },
+      ],
+      ts: 1_800_000_000_000,
+    });
+
+    const response = await app.inject({ method: "GET", url: "/risk-events" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject([
+      {
+        riskEventId: "risk_reconcile_1",
+        type: "BROKER_RECONCILIATION",
+      },
+    ]);
+  });
+});
 
 describe("strategies routes (plan/05 §4.1)", () => {
   it("creates an enabled strategy, enabling it live, and lists it", async () => {

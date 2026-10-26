@@ -219,6 +219,46 @@ describe("OrderManager reconciliation (plan/12 §8)", () => {
     };
     expect((await h.manager.reconcile(stuck)).status).toBe("unknown");
   });
+
+  it("records a broker-confirmed flat position close without submitting a new order", async () => {
+    const h = harness();
+    const reconciliationOrder: Order = {
+      orderId: "reconciliation:pos_1:paper_1",
+      signalId: "reconciliation:pos_1:paper_1",
+      strategyId: "str_1",
+      symbol: "NSE:X-EQ",
+      side: "SELL",
+      qty: 5,
+      type: "MARKET",
+      positionId: "pos_1",
+      exitReason: "BROKER_RECONCILIATION",
+      status: "FILLED",
+      mode: "paper",
+      brokerOrderId: "paper_1",
+      filledPrice: 105,
+      slippage: 0.1,
+      charges: 2,
+      filledAt: 2_000,
+      createdAt: 2_000,
+    };
+
+    await h.manager.recordBrokerReconciliationClose(reconciliationOrder);
+
+    expect(h.orders.get(reconciliationOrder.orderId)).toEqual(
+      reconciliationOrder,
+    );
+    expect(h.events).toHaveLength(1);
+    expect(h.events[0]).toMatchObject({
+      name: "ORDER_FILLED",
+      payload: {
+        orderId: reconciliationOrder.orderId,
+        side: "SELL",
+        filledPrice: 105,
+        exitReason: "BROKER_RECONCILIATION",
+      },
+    });
+    expect((h.broker as ScriptedFakeBroker).submitted).toHaveLength(0);
+  });
 });
 
 describe("reconcile completes the projection chain (crash recovery)", () => {
@@ -279,6 +319,32 @@ describe("reconcile completes the projection chain (crash recovery)", () => {
       filledPrice: 101.5,
       qty: 10,
     });
+  });
+
+  /** Phase 14 D3: the paper book kept the fill's costs; a real broker's status does not. */
+  it("books the fill's slippage and charges when the broker kept them, and 0 when not", async () => {
+    const kept = harness({
+      broker: brokerReporting({
+        status: "FILLED",
+        filledPrice: 101.5,
+        filledQty: 10,
+        filledAt: 1_700_000_000_000,
+        slippage: 0.05,
+        charges: 23.6,
+      }),
+    });
+    await kept.manager.reconcile(stuck);
+    expect(
+      kept.events.find((e) => e.name === "ORDER_FILLED")?.payload,
+    ).toMatchObject({ slippage: 0.05, charges: 23.6 });
+
+    const unknown = harness({
+      broker: brokerReporting({ status: "FILLED", filledPrice: 101.5 }),
+    });
+    await unknown.manager.reconcile(stuck);
+    expect(
+      unknown.events.find((e) => e.name === "ORDER_FILLED")?.payload,
+    ).toMatchObject({ slippage: 0, charges: 0 });
   });
 
   it("refuses to invent a fill price when the broker reports none", async () => {

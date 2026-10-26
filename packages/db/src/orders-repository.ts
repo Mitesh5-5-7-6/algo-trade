@@ -138,4 +138,20 @@ export class OrdersRepository {
       .toArray();
     return docs.map((doc) => OrderSchema.parse(doc));
   }
+
+  /** Every order created or filled in the range, with no dashboard limit. */
+  async findAllByDateRange(
+    fromMs: number,
+    toMsExclusive: number,
+  ): Promise<Order[]> {
+    const range = { $gte: fromMs, $lt: toMsExclusive };
+    const docs = await this.collection
+      .find(
+        { $or: [{ filledAt: range }, { createdAt: range }] },
+        { projection: { _id: 0 } },
+      )
+      .sort({ createdAt: 1, orderId: 1 })
+      .toArray();
+    return docs.map((doc) => OrderSchema.parse(doc));
+  }
 }

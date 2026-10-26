@@ -97,6 +97,40 @@ describe("OrdersRepository (plan/12 §6)", () => {
     expect(placed.map((o) => o.orderId)).toEqual(["o3"]);
   });
 
+  it("returns every order created or filled in the reconciliation window", async () => {
+    const repo = new OrdersRepository(connection.db);
+    await repo.insert(
+      order({
+        orderId: "reconcile_created_today",
+        signalId: "reconcile_signal_today",
+        createdAt: 10_000,
+      }),
+    );
+    await repo.insert(
+      order({
+        orderId: "reconcile_filled_today",
+        signalId: "reconcile_signal_filled",
+        createdAt: 1_000,
+        status: "FILLED",
+        filledPrice: 100,
+        filledAt: 20_000,
+      }),
+    );
+    await repo.insert(
+      order({
+        orderId: "reconcile_outside_window",
+        signalId: "reconcile_signal_outside",
+        createdAt: 1_000,
+      }),
+    );
+
+    expect(
+      (await repo.findAllByDateRange(10_000, 30_000)).map(
+        (stored) => stored.orderId,
+      ),
+    ).toEqual(["reconcile_filled_today", "reconcile_created_today"]);
+  });
+
   /**
    * A live fill is published from the order AS STORED, possibly after a
    * restart, so the entry decision's bar must survive the round trip through

@@ -347,7 +347,8 @@ export class OrderManager {
       await this.ports.updateOrder(order.orderId, patch);
       // Deliberately the same event, with the same shape, as the live path —
       // one fill projection, not two that can drift (plan/02 §6). Slippage and
-      // charges are 0: they are not knowable from a status query, and a
+      // charges are the broker's when it kept them (the paper book, Phase 14
+      // D3), else 0: a real broker's status query does not know them, and a
       // fabricated cost would be a second lie on top of the first.
       await this.ports.publish(
         "ORDER_FILLED",
@@ -358,8 +359,8 @@ export class OrderManager {
           side: order.side,
           qty: filledQty,
           filledPrice: status.filledPrice,
-          slippage: 0,
-          charges: 0,
+          slippage: status.slippage ?? 0,
+          charges: status.charges ?? 0,
           ...OrderManager.protective(order),
           filledAt,
           mode: order.mode,
@@ -376,6 +377,70 @@ export class OrderManager {
         : { status: "halted", reason: "reconciled: cancelled" };
     }
     return { status: "pending", order };
+  }
+
+  /**
+   * Persist and project a broker-confirmed close when reconciliation finds a
+   * local position the paper broker no longer holds. This records no new
+   * broker execution; the supplied fill is the broker book's existing close.
+   */
+  async recordBrokerReconciliationClose(order: Order): Promise<Order> {
+    if (
+      order.mode !== "paper" ||
+      order.exitReason !== "BROKER_RECONCILIATION" ||
+      order.status !== "FILLED" ||
+      order.filledPrice === undefined ||
+      order.filledAt === undefined
+    ) {
+      throw new Error("invalid broker reconciliation close");
+    }
+
+    let recorded = await this.ports.readOrder(order.orderId);
+    if (recorded === null) {
+      const inserted = await this.ports.persistOrder(order);
+      recorded = inserted ? order : await this.ports.readOrder(order.orderId);
+    }
+    if (
+      recorded === null ||
+      recorded.status !== "FILLED" ||
+      recorded.mode !== "paper" ||
+      recorded.exitReason !== "BROKER_RECONCILIATION" ||
+      recorded.signalId !== order.signalId ||
+      recorded.strategyId !== order.strategyId ||
+      recorded.positionId !== order.positionId ||
+      recorded.symbol !== order.symbol ||
+      recorded.side !== order.side ||
+      recorded.qty !== order.qty ||
+      recorded.brokerOrderId !== order.brokerOrderId ||
+      recorded.filledPrice !== order.filledPrice ||
+      recorded.slippage !== order.slippage ||
+      recorded.charges !== order.charges ||
+      recorded.filledAt !== order.filledAt
+    ) {
+      throw new Error(
+        `could not persist broker reconciliation close ${order.orderId}`,
+      );
+    }
+
+    await this.ports.publish(
+      "ORDER_FILLED",
+      {
+        orderId: recorded.orderId,
+        strategyId: recorded.strategyId,
+        symbol: recorded.symbol,
+        side: recorded.side,
+        qty: recorded.qty,
+        filledPrice: recorded.filledPrice,
+        slippage: recorded.slippage ?? 0,
+        charges: recorded.charges ?? 0,
+        exitReason: "BROKER_RECONCILIATION",
+        filledAt: recorded.filledAt,
+        mode: "paper",
+        ts: recorded.filledAt,
+      },
+      recorded.signalId,
+    );
+    return recorded;
   }
 
   /**

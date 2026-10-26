@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Config } from "@neelkanth/config";
 import { componentLogger, type Logger } from "@neelkanth/logger";
 import {
@@ -15,6 +16,7 @@ import {
   SettingsRepository,
   UsersRepository,
   BrokerTokensRepository,
+  PaperBrokerOrdersRepository,
   type MongoConnection,
 } from "@neelkanth/db";
 import cors from "@fastify/cors";
@@ -171,6 +173,8 @@ export async function bootstrap(
   // Shared by the Paper Broker (reader) and the engine runtime (writer).
   const liveState = createLiveMarketState();
   let broker: Broker;
+  let paperOrderMonitor:
+    Pick<PaperBroker, "onMarketTick" | "expirePendingOrders"> | undefined;
   let fyersBroker: FyersBroker | null = null;
   if (config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
     fyersBroker = new FyersBroker({
@@ -223,7 +227,13 @@ export async function bootstrap(
       readPrice: (symbol) =>
         Promise.resolve(liveState.prices.get(symbol) ?? null),
       readSessionOpen: () => Promise.resolve(liveState.sessionOpen),
+      // The broker's own book, in the paper database: a restart's in-flight
+      // orders are settled from it, and positions reconciled against it (D3).
+      book: new PaperBrokerOrdersRepository(mongo.db),
+      // Unique across restarts — a counter would hand out paper-1 again.
+      nextBrokerOrderId: () => `paper-${randomUUID()}`,
     });
+    paperOrderMonitor = paper;
 
     if (fyersBroker) {
       const liveFyersBroker = fyersBroker;
@@ -257,6 +267,7 @@ export async function bootstrap(
     mongo,
     logger,
     broker,
+    ...(paperOrderMonitor === undefined ? {} : { paperOrderMonitor }),
     mode: config.BROKER_MODE,
     liveState,
   });

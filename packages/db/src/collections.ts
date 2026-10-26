@@ -10,6 +10,12 @@ export const COLLECTIONS = {
   strategies: "strategies",
   signals: "signals",
   orders: "orders",
+  /**
+   * The paper broker's own book (Phase 14 D3) — PAPER database only. Every paper
+   * order and its fill, written before the fill is reported, so a restart's
+   * in-flight orders can be settled and positions reconciled against it.
+   */
+  paperBrokerOrders: "paper_broker_orders",
   positions: "positions",
   pnlSnapshots: "pnl_snapshots",
   marketTicks: "market_ticks",
@@ -25,6 +31,8 @@ export const COLLECTIONS = {
   trades: "trades",
   tradeLogs: "trade_logs",
   riskLogs: "risk_logs",
+  /** Non-signal safety events, including paper broker reconciliation mismatches. */
+  riskEvents: "risk_events",
   notifications: "notifications",
   news: "news",
   brokerTokens: "broker_tokens",
@@ -134,6 +142,22 @@ export async function ensureIndexes(db: Db): Promise<void> {
       { expireAfterSeconds: 0 }, // only HOLD docs carry expireAt (plan/07 §4)
     ),
 
+    // paper_broker_orders — one per paper order; by time for reconciliation.
+    db
+      .collection(COLLECTIONS.paperBrokerOrders)
+      .createIndex({ clientOrderId: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.paperBrokerOrders)
+      .createIndex({ symbol: 1, filledAt: 1 }),
+    db.collection(COLLECTIONS.paperBrokerOrders).createIndex({
+      status: 1,
+      type: 1,
+      symbol: 1,
+      recordedAt: 1,
+      clientOrderId: 1,
+    }),
+    db.collection(COLLECTIONS.paperBrokerOrders).createIndex({ recordedAt: 1 }),
+
     // orders — the duplicate-execution backstop (plan/12 §6)
     db
       .collection(COLLECTIONS.orders)
@@ -142,6 +166,12 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.orders)
       .createIndex({ strategyId: 1, createdAt: -1 }),
+
+    // risk_events — durable system-level safety events.
+    db
+      .collection(COLLECTIONS.riskEvents)
+      .createIndex({ riskEventId: 1 }, { unique: true }),
+    db.collection(COLLECTIONS.riskEvents).createIndex({ session: -1, ts: -1 }),
 
     // pattern_observations — detections. No TTL: research evidence.
     //

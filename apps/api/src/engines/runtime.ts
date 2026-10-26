@@ -24,8 +24,10 @@ import {
 import {
   CandlesRepository,
   OrdersRepository,
+  PaperBrokerOrdersRepository,
   PnlSnapshotsRepository,
   PositionsRepository,
+  RiskEventsRepository,
   RiskLogsRepository,
   SettingsRepository,
   SignalsRepository,
@@ -65,6 +67,7 @@ import { istDateKey, optionTypeForSide, startOfDayIST } from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import { loadInstrumentMaster } from "./load-instruments.js";
 import type { LiveMarketState } from "./live-market-state.js";
+import { reconcilePaperBook } from "./paper-reconciliation.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -177,6 +180,14 @@ export async function startEngineRuntime(deps: {
   mongo: MongoConnection;
   logger: Logger;
   broker: Broker;
+  paperOrderMonitor?: {
+    onMarketTick(tick: {
+      symbol: string;
+      ltp: number;
+      ts: number;
+    }): Promise<void>;
+    expirePendingOrders(): Promise<void>;
+  };
   /** Stamped on every order and fill event — the audit trail (plan/12 §4). */
   mode: TradeMode;
   /**
@@ -196,6 +207,9 @@ export async function startEngineRuntime(deps: {
   const orders = new OrdersRepository(db);
   const positions = new PositionsRepository(db);
   const signals = new SignalsRepository(db);
+  const paperBook =
+    deps.mode === "paper" ? new PaperBrokerOrdersRepository(db) : null;
+  const riskEvents = new RiskEventsRepository(db);
   const riskLogs = new RiskLogsRepository(db);
   const pnlSnapshots = new PnlSnapshotsRepository(db);
   const candles = new CandlesRepository(db);
@@ -468,8 +482,13 @@ export async function startEngineRuntime(deps: {
   // PENDING and the fill arrives here, later, on the broker's order stream.
   // Nothing consumed that stream before, so a live order never left PENDING:
   // no ORDER_FILLED, no position, no PnL, against money that had moved.
+  let brokerUpdateChain: Promise<void> = Promise.resolve();
   deps.broker.onOrderUpdate((update) => {
-    void orderManager.onBrokerUpdate(update);
+    brokerUpdateChain = brokerUpdateChain
+      .then(() => orderManager.onBrokerUpdate(update))
+      .catch((error: unknown) => {
+        onError(error, { where: "broker order update", update });
+      });
   });
 
   // --- Symbol master: lot sizes for position sizing (plan/17 §7) ---
@@ -775,9 +794,10 @@ export async function startEngineRuntime(deps: {
     if (window.length > CANDLE_WINDOW) window.shift();
     candleWindows.set(key, window);
   };
-  await bus.subscribe("MARKET_TICK", (event) => {
+  await bus.subscribe("MARKET_TICK", async (event) => {
     lastPrices.set(event.payload.symbol, event.payload.ltp);
     lastTickAt = Date.now();
+    await deps.paperOrderMonitor?.onMarketTick(event.payload);
   });
   await bus.subscribe("CANDLE_CLOSED", async (event) => {
     const candle = event.payload;
@@ -863,6 +883,61 @@ export async function startEngineRuntime(deps: {
     );
   });
 
+  const drainFills = async (): Promise<void> => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await fillChain;
+  };
+  const drainBrokerUpdates = async (): Promise<void> => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await brokerUpdateChain;
+    await drainFills();
+  };
+
+  const reconcilePaper = async (now: number): Promise<void> => {
+    if (paperBook === null) return;
+    await reconcilePaperBook({
+      findOpenPositions: () => positionEngine.getOpenPositions(),
+      findOrders: (from, toExclusive) =>
+        orders.findAllByDateRange(from, toExclusive),
+      findInFlightOrders: () => orders.findByStatus(["PLACED", "PENDING"]),
+      findOrder: (orderId) => orders.findByOrderId(orderId),
+      findBookOrders: (from) => paperBook.recordedSince(from),
+      findBookOrder: (orderId) => paperBook.find(orderId),
+      findAllFills: () => paperBook.allFills(),
+      disableTrading: async () => {
+        state.tradingEnabled = false;
+        await settingsRepo.setTradingEnabled(false);
+      },
+      persistRiskEvent: (event) => riskEvents.insert(event),
+      publishMismatch: (event) =>
+        publish("SYSTEM_ERROR", {
+          source: "broker.reconciliation",
+          level: "error",
+          message:
+            "Paper broker reconciliation mismatch; trading remains disabled " +
+            "until the operator resolves the mismatch and resumes trading",
+          context: {
+            riskEventId: event.riskEventId,
+            mismatches: event.mismatches,
+          },
+          ts: event.ts,
+        }),
+      reconcileClose: async (order, brokerFill) => {
+        if (
+          order.filledPrice !== brokerFill.filledPrice ||
+          order.filledAt !== brokerFill.filledAt
+        ) {
+          throw new Error(
+            `broker reconciliation close ${order.orderId} has inconsistent broker details`,
+          );
+        }
+        await orderManager.recordBrokerReconciliationClose(order);
+        await drainFills();
+      },
+      now: () => now,
+    });
+  };
+
   // --- Boot sequence (plan/05 §3, plan/22 §4) ---
   // Hydrate open positions, reconcile stuck orders, then enable strategies
   // (which registers + warms their indicators). The kill flag was honored by
@@ -893,6 +968,8 @@ export async function startEngineRuntime(deps: {
   for (const order of await orders.findByStatus(["PLACED", "PENDING"])) {
     await orderManager.reconcile(order);
   }
+  await drainFills();
+  await reconcilePaper(Date.now());
   for (const config of await strategiesRepo.findEnabled()) {
     enabledConfigs.set(config.strategyId, {
       symbols: config.symbols,
@@ -1130,6 +1207,10 @@ export async function startEngineRuntime(deps: {
           session: istDateKey(now),
           ts: now,
         });
+        await drainFills();
+        await deps.paperOrderMonitor?.expirePendingOrders();
+        await drainBrokerUpdates();
+        await reconcilePaper(now);
         await pnl.snapshot(istDateKey(now)); // EOD equity curve (plan/13 §6)
       }
     },

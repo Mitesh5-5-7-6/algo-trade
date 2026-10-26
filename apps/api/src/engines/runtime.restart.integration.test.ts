@@ -8,10 +8,13 @@ import {
   vi,
 } from "vitest";
 import { createLogger } from "@neelkanth/logger";
-import { ScriptedFakeBroker } from "@neelkanth/broker";
+import { PaperBroker, ScriptedFakeBroker } from "@neelkanth/broker";
 import {
   connectMongo,
   ensureIndexes,
+  PaperBrokerOrdersRepository,
+  RiskEventsRepository,
+  SettingsRepository,
   type MongoConnection,
 } from "@neelkanth/db";
 import {
@@ -95,7 +98,9 @@ function silentLogger() {
 }
 
 /** A runtime wired to the same real Redis and Mongo every time. */
-async function boot(): Promise<EngineRuntime> {
+async function boot(
+  broker: ScriptedFakeBroker | PaperBroker = new ScriptedFakeBroker(),
+): Promise<EngineRuntime> {
   if (mongo === undefined || redis === undefined) {
     throw new Error("infrastructure not probed");
   }
@@ -103,7 +108,8 @@ async function boot(): Promise<EngineRuntime> {
     redis,
     mongo,
     logger: silentLogger(),
-    broker: new ScriptedFakeBroker(),
+    broker,
+    ...(broker instanceof PaperBroker ? { paperOrderMonitor: broker } : {}),
     mode: "paper",
     liveState: createLiveMarketState(),
   });
@@ -239,6 +245,12 @@ beforeEach(async (ctx) => {
   await redis?.client.del(riskDailyLossKey(istDateKey(Date.now())));
   await mongo?.db.collection("positions").deleteMany({});
   await mongo?.db.collection("trades").deleteMany({});
+  await mongo?.db.collection("orders").deleteMany({});
+  await mongo?.db.collection("paper_broker_orders").deleteMany({});
+  await mongo?.db.collection("risk_events").deleteMany({});
+  if (mongo !== undefined) {
+    await new SettingsRepository(mongo.db).setTradingEnabled(true);
+  }
 });
 
 describe("the day's risk state survives a restart (§0.8)", () => {
@@ -374,6 +386,7 @@ describe("the runtime records exactly one trade per round trip (§2.7)", () => {
         orderIds: ["ord_restart_in", "ord_restart_out"],
         grossPnl: 100,
       });
+
       // Resolved from the Position Engine the runtime awaits first.
       const position = await mongo?.db
         .collection("positions")
@@ -426,6 +439,296 @@ describe("the runtime records exactly one trade per round trip (§2.7)", () => {
       const trades = await mongo?.db.collection("trades").find({}).toArray();
       expect(trades).toHaveLength(1);
       expect(trades?.[0]?.["status"]).toBe("CLOSED");
+    },
+    RESTART_TIMEOUT_MS,
+  );
+});
+
+describe("paper reconciliation at runtime boot (Phase 14 D4)", () => {
+  it(
+    "durably halts, records the mismatch, and closes a broker-flat position",
+    async () => {
+      const db = mongo?.db;
+      if (db === undefined) throw new Error("MongoDB is unavailable");
+
+      const first = await boot();
+      const openedAt = Date.now();
+      try {
+        await first.bus.publish("ORDER_FILLED", {
+          orderId: "reconcile_runtime_entry",
+          strategyId: STRATEGY,
+          symbol: SYMBOL,
+          side: "BUY",
+          qty: 10,
+          filledPrice: 100,
+          slippage: 0,
+          charges: 0,
+          filledAt: openedAt,
+          mode: "paper",
+          ts: openedAt,
+        });
+        await vi.waitFor(
+          async () => {
+            expect(
+              await db.collection("positions").countDocuments({
+                strategyId: STRATEGY,
+                symbol: SYMBOL,
+                status: "OPEN",
+              }),
+            ).toBe(1);
+          },
+          { timeout: 20_000, interval: 50 },
+        );
+      } finally {
+        await first.shutdown();
+      }
+
+      const paperBook = new PaperBrokerOrdersRepository(db);
+      await paperBook.record({
+        clientOrderId: "reconcile_runtime_entry",
+        brokerOrderId: "paper_entry",
+        symbol: SYMBOL,
+        side: "BUY",
+        qty: 10,
+        type: "MARKET",
+        status: "FILLED",
+        filledPrice: 100,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: openedAt,
+        recordedAt: Date.now(),
+      });
+      await paperBook.record({
+        clientOrderId: "reconcile_runtime_exit",
+        brokerOrderId: "paper_exit",
+        symbol: SYMBOL,
+        side: "SELL",
+        qty: 10,
+        type: "MARKET",
+        status: "FILLED",
+        filledPrice: 105,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: openedAt + 1,
+        recordedAt: Date.now(),
+      });
+
+      const second = await boot();
+      try {
+        expect(second.positionEngine.getOpenPositions()).toHaveLength(0);
+        expect(
+          (await new SettingsRepository(db).getGlobal()).tradingEnabled,
+        ).toBe(false);
+      } finally {
+        await second.shutdown();
+      }
+
+      const riskEvents = await new RiskEventsRepository(db).findRecent(10);
+      expect(riskEvents).toHaveLength(1);
+      expect(riskEvents[0]?.mismatches).toContainEqual(
+        expect.objectContaining({
+          kind: "POSITION",
+          symbol: SYMBOL,
+          tradingValue: "10",
+          brokerValue: "0",
+        }),
+      );
+      expect(
+        await db.collection("orders").findOne({
+          orderId: { $regex: "^reconciliation:" },
+          exitReason: "BROKER_RECONCILIATION",
+          status: "FILLED",
+        }),
+      ).not.toBeNull();
+      expect(
+        await db.collection("positions").findOne({
+          strategyId: STRATEGY,
+          symbol: SYMBOL,
+          status: "OPEN",
+        }),
+      ).toBeNull();
+      expect(
+        await db.collection("trades").findOne({
+          strategyId: STRATEGY,
+          symbol: SYMBOL,
+          status: "CLOSED",
+          exitReason: "BROKER_RECONCILIATION",
+        }),
+      ).not.toBeNull();
+    },
+    RESTART_TIMEOUT_MS,
+  );
+
+  it(
+    "reconciles a mismatch on the market-close transition",
+    async () => {
+      const db = mongo?.db;
+      if (db === undefined) throw new Error("MongoDB is unavailable");
+
+      const openTs = Date.UTC(2024, 0, 3, 3, 45);
+      const filledAt = openTs + 60_000;
+      const closeTs = Date.UTC(2024, 0, 3, 10, 0);
+      const runtime = await boot();
+      try {
+        await runtime.bus.publish("ORDER_FILLED", {
+          orderId: "reconcile_close_entry",
+          strategyId: STRATEGY,
+          symbol: SYMBOL,
+          side: "BUY",
+          qty: 10,
+          filledPrice: 100,
+          slippage: 0,
+          charges: 0,
+          filledAt,
+          mode: "paper",
+          ts: filledAt,
+        });
+        await vi.waitFor(
+          async () => {
+            expect(
+              await db.collection("positions").countDocuments({
+                strategyId: STRATEGY,
+                symbol: SYMBOL,
+                status: "OPEN",
+              }),
+            ).toBe(1);
+          },
+          { timeout: 20_000, interval: 50 },
+        );
+
+        const paperBook = new PaperBrokerOrdersRepository(db);
+        await paperBook.record({
+          clientOrderId: "reconcile_close_entry",
+          brokerOrderId: "paper_close_entry",
+          symbol: SYMBOL,
+          side: "BUY",
+          qty: 10,
+          type: "MARKET",
+          status: "FILLED",
+          filledPrice: 100,
+          filledQty: 10,
+          slippage: 0,
+          charges: 0,
+          filledAt,
+          recordedAt: filledAt,
+        });
+        await paperBook.record({
+          clientOrderId: "reconcile_close_exit",
+          brokerOrderId: "paper_close_exit",
+          symbol: SYMBOL,
+          side: "SELL",
+          qty: 10,
+          type: "MARKET",
+          status: "FILLED",
+          filledPrice: 105,
+          filledQty: 10,
+          slippage: 0,
+          charges: 0,
+          filledAt: filledAt + 1,
+          recordedAt: filledAt + 1,
+        });
+
+        await runtime.syncSession(openTs);
+        await runtime.syncSession(closeTs);
+
+        expect(runtime.positionEngine.getOpenPositions()).toHaveLength(0);
+        expect(
+          (await new SettingsRepository(db).getGlobal()).tradingEnabled,
+        ).toBe(false);
+        expect(
+          await db.collection("risk_events").countDocuments({
+            type: "BROKER_RECONCILIATION",
+          }),
+        ).toBe(1);
+        expect(
+          await db.collection("trades").findOne({
+            strategyId: STRATEGY,
+            symbol: SYMBOL,
+            status: "CLOSED",
+            exitReason: "BROKER_RECONCILIATION",
+          }),
+        ).not.toBeNull();
+      } finally {
+        await runtime.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
+});
+
+describe("watched paper LIMIT orders (Phase 14 D5)", () => {
+  it(
+    "fills from runtime market ticks and expires pending orders at session close",
+    async () => {
+      const db = mongo?.db;
+      if (db === undefined) throw new Error("MongoDB is unavailable");
+      const openTs = Date.UTC(2024, 0, 3, 3, 45);
+      const tickTs = openTs + 60_000;
+      const closeTs = Date.UTC(2024, 0, 3, 10, 0);
+      const book = new PaperBrokerOrdersRepository(db);
+      const paper = new PaperBroker({
+        readPrice: () => Promise.resolve(100),
+        readSessionOpen: () => Promise.resolve(true),
+        book,
+        now: () => closeTs,
+        nextBrokerOrderId: () => "paper_limit_order",
+      });
+      const runtime = await boot(paper);
+      try {
+        await runtime.syncSession(openTs);
+        const fillOutcome = await paper.execute({
+          clientOrderId: "runtime_limit_fill",
+          symbol: SYMBOL,
+          side: "BUY",
+          qty: 1,
+          type: "LIMIT",
+          price: 99,
+        });
+        expect(fillOutcome.status).toBe("PENDING");
+
+        await runtime.bus.publish("MARKET_TICK", {
+          symbol: SYMBOL,
+          ltp: 98,
+          volume: 1,
+          ts: tickTs,
+        });
+        await vi.waitFor(
+          async () => {
+            expect((await paper.status("runtime_limit_fill")).status).toBe(
+              "FILLED",
+            );
+          },
+          { timeout: 10_000, interval: 50 },
+        );
+        expect(await book.find("runtime_limit_fill")).toMatchObject({
+          status: "FILLED",
+          filledPrice: 99,
+          filledAt: tickTs,
+        });
+
+        const expireOutcome = await paper.execute({
+          clientOrderId: "runtime_limit_expire",
+          symbol: SYMBOL,
+          side: "BUY",
+          qty: 1,
+          type: "LIMIT",
+          price: 90,
+        });
+        expect(expireOutcome.status).toBe("PENDING");
+        await runtime.syncSession(closeTs);
+
+        expect(await paper.status("runtime_limit_expire")).toMatchObject({
+          status: "CANCELLED",
+        });
+        expect(await book.find("runtime_limit_expire")).toMatchObject({
+          status: "CANCELLED",
+          reason: "session closed",
+        });
+      } finally {
+        await runtime.shutdown();
+      }
     },
     RESTART_TIMEOUT_MS,
   );
