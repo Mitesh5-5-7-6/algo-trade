@@ -236,6 +236,27 @@ describe("strategy config shapes", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("marks a paper subject, and a candidate only by its id (Phase 14 D1)", () => {
+    const config = {
+      strategyId: "subject_orb",
+      ownerId: "operator",
+      type: "ORB",
+      name: "subject",
+      params: {},
+      symbols: ["NSE:NIFTY50-INDEX"],
+      enabled: true,
+      status: "active",
+      createdAt: ts,
+      updatedAt: ts,
+    };
+    const parses = (validation: unknown) =>
+      StrategyConfigSchema.safeParse({ ...config, validation }).success;
+    expect(parses({ role: "subject" })).toBe(true);
+    expect(parses({ role: "candidate", candidateId: "SC-0001" })).toBe(true);
+    expect(parses({ role: "candidate" })).toBe(false);
+    expect(parses({ role: "promoted" })).toBe(false);
+  });
 });
 
 describe("broker contract shapes (plan/19 §2)", () => {

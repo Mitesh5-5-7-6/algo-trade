@@ -26,6 +26,10 @@ import { replayExclusion } from "../replay/run.js";
 import { sessionsFromCandles } from "../replay/sessions.js";
 import { loadCandles } from "../replay/store.js";
 import { warmupFrom } from "../backtest/run.js";
+import {
+  isIndexSymbol,
+  syntheticIndexInstrument,
+} from "../engines/synthetic-index.js";
 import { buildSessionRecord, type SessionRecord } from "./session-report.js";
 import { compareWithReplay, type ParityResult } from "./parity.js";
 
@@ -186,7 +190,6 @@ export async function reportSessionFromStore(
       sorted,
       settings.marketHours,
     );
-    const isIndex = (symbol: string) => symbol.endsWith("-INDEX");
     const { trail } = await runReplayWithTrail({
       interval,
       intervals: [interval],
@@ -199,13 +202,8 @@ export async function reportSessionFromStore(
       allocatedCapital: settings.capitalAllocation,
       limits: settings.globalRiskLimits,
       instruments: [...new Set(runnable.flatMap((c) => c.symbols))]
-        .filter(isIndex)
-        .map((symbol) => ({
-          symbol,
-          kind: "EQUITY" as const,
-          lotSize: 1,
-          tickSize: 0.05,
-        })),
+        .filter(isIndexSymbol)
+        .map(syntheticIndexInstrument),
     });
     replayTrail = {
       signals: trail.signals.filter((s) => inSession(s.ts)),

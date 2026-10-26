@@ -23,6 +23,10 @@ import {
   type GoldenRecord,
 } from "../golden/pipeline.js";
 import { sessionsFromCandles, type MarketHours } from "./sessions.js";
+import {
+  isIndexSymbol,
+  syntheticIndexInstrument,
+} from "../engines/synthetic-index.js";
 
 /** Bumped when what a run records, or how it is fingerprinted, changes. */
 export const REPLAY_VERSION = "1";
@@ -91,7 +95,7 @@ export interface ReplayRun {
 }
 
 /** An NSE index — tradable only as a synthetic instrument here (Q1). */
-const isIndex = (symbol: string): boolean => symbol.endsWith("-INDEX");
+const isIndex = isIndexSymbol;
 
 /**
  * Replay one strategy over stored bars, and say exactly what was measured.
@@ -135,12 +139,9 @@ export async function runHistoricalReplay(
     // Q1: a traded index is an equity-style instrument of lot 1, so risk sizes
     // it on the equity path, in index points. Without it, risk refuses the
     // symbol outright — "lot size unknown" — and the run can never fill.
-    instruments: request.strategy.symbols.filter(isIndex).map((symbol) => ({
-      symbol,
-      kind: "EQUITY" as const,
-      lotSize: 1,
-      tickSize: 0.05,
-    })),
+    instruments: request.strategy.symbols
+      .filter(isIndex)
+      .map(syntheticIndexInstrument),
   });
 
   const sources: Record<string, number> = {};

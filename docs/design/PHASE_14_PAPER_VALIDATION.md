@@ -71,6 +71,17 @@ candidate id. A paper run of a subject can make nothing eligible for
 promotion (ADR §12). When a candidate passes Phase 13, its paper run is the
 same procedure with the candidate's id.
 
+The mark is the strategy config's `validation` — `{ role: "subject" }`, or
+`{ role: "candidate", candidateId }` — outside the strategy version.
+
+An index is not in the live symbol master: FYERS lists NIFTY 50 and NIFTY
+BANK with a lot size of 0, the master drops such rows, and risk refused every
+entry on the subject as "lot size unknown". So in paper — never in live,
+where no index contract exists — a traded index is the replay's synthetic
+instrument (Phase 4 Q1): lot 1, in index points. One definition serves the
+replay and the paper runtime, so a session and the replay it is held against
+size the same Trade the same way (operator's decision, 14.6).
+
 ### D2 — Paper is its own environment, and says so
 
 A paper process **refuses to start** unless its database is a paper one
@@ -160,12 +171,12 @@ run in calendar time, reported session by session.
 
 ## 4. Open decisions
 
-| #   | Question                                | Decided                                                                                                       |
-| --- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Q1  | What Phase 14 validates first           | **The paper pipeline itself**, on a test subject, by the operator at opening.                                 |
-| Q2  | What the acceptance runs on             | **Real-time market data**, paper trading, by the operator at opening.                                         |
-| Q3  | The subject, and the number of sessions | Proposed: ORB and EMA_CROSSOVER on NIFTY 50 and NIFTY BANK; five sessions, one with a restart drill (D1, D8). |
-| Q4  | The paper Redis instance                | The operator's to supply at 14.1 (D2).                                                                        |
+| #   | Question                                | Decided                                                                                                                                                                                  |
+| --- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1  | What Phase 14 validates first           | **The paper pipeline itself**, on a test subject, by the operator at opening.                                                                                                            |
+| Q2  | What the acceptance runs on             | **Real-time market data**, paper trading, by the operator at opening.                                                                                                                    |
+| Q3  | The subject, and the number of sessions | **ORB and EMA_CROSSOVER on NIFTY 50 and NIFTY BANK, indices traded as lot-1 synthetic instruments in paper**, by the operator at 14.6; five sessions, one with a restart drill (D1, D8). |
+| Q4  | The paper Redis instance                | The operator's to supply at 14.1 (D2).                                                                                                                                                   |
 
 ---
 
@@ -197,5 +208,6 @@ decision and every difference named.
 ## Related documents
 
 - [../PLAN.md](../PLAN.md) §19
+- [PHASE_14_PAPER_RUNBOOK.md](PHASE_14_PAPER_RUNBOOK.md) — running a session, the restart drill, reading the report
 - [PHASE_4_DETERMINISTIC_REPLAY.md](PHASE_4_DETERMINISTIC_REPLAY.md) — the replay a session is held against
 - [PHASE_13_BACKTEST_WALK_FORWARD.md](PHASE_13_BACKTEST_WALK_FORWARD.md) — the gate no candidate has passed yet

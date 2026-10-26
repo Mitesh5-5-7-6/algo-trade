@@ -69,6 +69,7 @@ import { createStrategyRegistry } from "@neelkanth/strategies";
 import { loadInstrumentMaster } from "./load-instruments.js";
 import type { LiveMarketState } from "./live-market-state.js";
 import { reconcilePaperBook } from "./paper-reconciliation.js";
+import { instrumentLookup } from "./synthetic-index.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -603,7 +604,9 @@ export async function startEngineRuntime(deps: {
     readStrategyOverride: (strategyId) =>
       Promise.resolve(enabledConfigs.get(strategyId)?.riskRules ?? null),
     readMarketView: () => marketBias.current(),
-    readInstrument: (symbol) => instruments.get(symbol),
+    readInstrument: instrumentLookup(deps.mode, (symbol) =>
+      instruments.get(symbol),
+    ),
     persistRiskLog: (logEntry) => riskLogs.insert(logEntry),
     publish,
   };

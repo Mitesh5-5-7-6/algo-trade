@@ -100,6 +100,23 @@ export const StrategyConfigSchema = z.object({
    * addition, not a replacement.
    */
   strategyVersion: z.string().min(1).optional(),
+  /**
+   * Why this strategy runs in paper validation (Phase 14 D1), when it does.
+   *
+   * A `subject` exercises the paper pipeline itself and is never promotable:
+   * nothing its paper run shows makes it eligible for anything. A `candidate`
+   * passed Phase 13's gate and names which one. Absent on an operator's own
+   * strategy. Outside the strategy version: it changes nothing decided.
+   */
+  validation: z
+    .discriminatedUnion("role", [
+      z.object({ role: z.literal("subject") }),
+      z.object({
+        role: z.literal("candidate"),
+        candidateId: z.string().min(1),
+      }),
+    ])
+    .optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 });

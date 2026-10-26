@@ -85,7 +85,7 @@ export function compareWithReplay(input: ParityInput): ParityResult {
     kind: "REPLAY" as const,
     key: e.strategyId,
     field: "replayable",
-    paper: "traded",
+    paper: "ran",
     replay: e.reason,
   }));
 
