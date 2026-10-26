@@ -130,6 +130,17 @@ the same Trades entered and exited on the same bars and for the same
 reasons; fill prices and P&L differing only by tick-against-bar timing,
 within a declared tolerance. Every difference is listed, not averaged.
 
+The replay starts from the backtest's warm-up lead — the live indicators are
+warmed from stored bars too — with the paper settings' index and breadth
+symbols, capital and limits, and compares only the session's own decisions.
+The declared tolerance (`PARITY_TOLERANCE`, version 1): entry price 10 bps,
+exit price 50 bps, exit time one decision bar, gross P&L by both legs' price
+room, charges 1 %. Every reconciliation run, BOOT and CLOSE, clean or not, is
+kept in `paper_reconciliations`, since a clean run writes no risk event; a
+BOOT after the bell that follows an earlier BOOT is a restart. A session is
+clean when it was reconciled clean at the close, ended flat, and the replay
+agreed throughout.
+
 ### D7 — Restart recovery is drilled, not assumed
 
 During a live session the process is stopped and started again: the run
