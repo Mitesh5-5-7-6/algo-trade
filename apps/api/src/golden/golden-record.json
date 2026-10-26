@@ -1,4 +1,26 @@
 {
+  "candles": [
+    {
+      "symbol": "NSE:TESTCO-EQ",
+      "interval": "1m",
+      "count": 284
+    },
+    {
+      "symbol": "NSE:TESTCO-EQ",
+      "interval": "5m",
+      "count": 71
+    },
+    {
+      "symbol": "NSE:TESTINDEX-INDEX",
+      "interval": "1m",
+      "count": 284
+    },
+    {
+      "symbol": "NSE:TESTINDEX-INDEX",
+      "interval": "5m",
+      "count": 71
+    }
+  ],
   "signals": [
     {
       "signalId": "sig_1",
@@ -127,6 +149,22 @@
       "side": "BUY",
       "confidence": 0.4658,
       "reason": "RSI re-crossed up through 30"
+    },
+    {
+      "signalId": "sig_17",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_18",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
     },
     {
       "signalId": "sig_19",
@@ -276,12 +314,12 @@
       "signalId": "sig_37",
       "strategyId": "str_ema",
       "symbol": "NSE:TESTCO-EQ",
-      "side": "HOLD",
-      "confidence": 0,
-      "reason": "no cross"
+      "side": "BUY",
+      "confidence": 0.6195,
+      "reason": "fast EMA 9 crossed above slow EMA 21"
     },
     {
-      "signalId": "sig_38",
+      "signalId": "sig_40",
       "strategyId": "str_rsi",
       "symbol": "NSE:TESTCO-EQ",
       "side": "HOLD",
@@ -289,12 +327,12 @@
       "reason": "no re-cross"
     },
     {
-      "signalId": "sig_39",
+      "signalId": "sig_41",
       "strategyId": "str_ema",
       "symbol": "NSE:TESTCO-EQ",
-      "side": "BUY",
-      "confidence": 0.6195,
-      "reason": "fast EMA 9 crossed above slow EMA 21"
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
     },
     {
       "signalId": "sig_42",
@@ -308,17 +346,9 @@
       "signalId": "sig_43",
       "strategyId": "str_ema",
       "symbol": "NSE:TESTCO-EQ",
-      "side": "HOLD",
-      "confidence": 0,
-      "reason": "no cross"
-    },
-    {
-      "signalId": "sig_44",
-      "strategyId": "str_rsi",
-      "symbol": "NSE:TESTCO-EQ",
-      "side": "HOLD",
-      "confidence": 0,
-      "reason": "no re-cross"
+      "side": "SELL",
+      "confidence": 1,
+      "reason": "exit: target"
     },
     {
       "signalId": "sig_45",
@@ -428,44 +458,44 @@
       "signalId": "sig_58",
       "strategyId": "str_rsi",
       "symbol": "NSE:TESTCO-EQ",
-      "side": "SELL",
-      "confidence": 0.6,
-      "reason": "RSI crossed down through 70 — exit long"
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_59",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
     },
     {
       "signalId": "sig_60",
-      "strategyId": "str_ema",
+      "strategyId": "str_rsi",
       "symbol": "NSE:TESTCO-EQ",
       "side": "HOLD",
       "confidence": 0,
-      "reason": "no cross"
+      "reason": "no re-cross"
     },
     {
       "signalId": "sig_61",
-      "strategyId": "str_rsi",
+      "strategyId": "str_ema",
       "symbol": "NSE:TESTCO-EQ",
       "side": "HOLD",
       "confidence": 0,
-      "reason": "no re-cross"
+      "reason": "no cross"
     },
     {
       "signalId": "sig_62",
-      "strategyId": "str_ema",
+      "strategyId": "str_rsi",
       "symbol": "NSE:TESTCO-EQ",
       "side": "HOLD",
       "confidence": 0,
-      "reason": "no cross"
+      "reason": "no re-cross"
     },
     {
       "signalId": "sig_63",
-      "strategyId": "str_rsi",
-      "symbol": "NSE:TESTCO-EQ",
-      "side": "HOLD",
-      "confidence": 0,
-      "reason": "no re-cross"
-    },
-    {
-      "signalId": "sig_64",
       "strategyId": "str_ema",
       "symbol": "NSE:TESTCO-EQ",
       "side": "HOLD",
@@ -473,7 +503,7 @@
       "reason": "no cross"
     },
     {
-      "signalId": "sig_65",
+      "signalId": "sig_64",
       "strategyId": "str_rsi",
       "symbol": "NSE:TESTCO-EQ",
       "side": "HOLD",
@@ -481,12 +511,12 @@
       "reason": "no re-cross"
     },
     {
-      "signalId": "sig_66",
+      "signalId": "sig_65",
       "strategyId": "str_ema",
       "symbol": "NSE:TESTCO-EQ",
       "side": "SELL",
       "confidence": 1,
-      "reason": "fast EMA 9 crossed below slow EMA 21 — exit long"
+      "reason": "fast EMA 9 crossed below slow EMA 21 — short"
     },
     {
       "signalId": "sig_68",
@@ -687,41 +717,227 @@
       "side": "HOLD",
       "confidence": 0,
       "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_93",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_94",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "BUY",
+      "confidence": 0.4134,
+      "reason": "RSI re-crossed up through 30"
+    },
+    {
+      "signalId": "sig_95",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_96",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_97",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_98",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_99",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_100",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_101",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_102",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_103",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "BUY",
+      "confidence": 1,
+      "reason": "exit: stop"
+    },
+    {
+      "signalId": "sig_105",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "BUY",
+      "confidence": 1,
+      "reason": "fast EMA 9 crossed above slow EMA 21"
+    },
+    {
+      "signalId": "sig_108",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_109",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_110",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_111",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_112",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_113",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_114",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_115",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no cross"
+    },
+    {
+      "signalId": "sig_116",
+      "strategyId": "str_rsi",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "HOLD",
+      "confidence": 0,
+      "reason": "no re-cross"
+    },
+    {
+      "signalId": "sig_117",
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "SELL",
+      "confidence": 1,
+      "reason": "exit: square_off"
     }
   ],
   "riskDecisions": [
     {
       "signalId": "sig_16",
+      "decision": "blocked",
+      "failedCheck": "marketBias"
+    },
+    {
+      "signalId": "sig_37",
       "decision": "approved",
       "cappedQty": 10
     },
     {
-      "signalId": "sig_39",
-      "decision": "approved",
-      "cappedQty": 10
-    },
-    {
-      "signalId": "sig_58",
+      "signalId": "sig_43",
       "decision": "approved"
     },
     {
-      "signalId": "sig_66",
+      "signalId": "sig_65",
+      "decision": "approved",
+      "cappedQty": 10
+    },
+    {
+      "signalId": "sig_94",
+      "decision": "blocked",
+      "failedCheck": "marketBias"
+    },
+    {
+      "signalId": "sig_103",
+      "decision": "approved"
+    },
+    {
+      "signalId": "sig_105",
+      "decision": "approved",
+      "cappedQty": 10
+    },
+    {
+      "signalId": "sig_117",
       "decision": "approved"
     }
   ],
   "orders": [
     {
-      "orderId": "ord_17",
-      "signalId": "sig_16",
-      "side": "BUY",
-      "qty": 10,
-      "status": "FILLED",
-      "filledPrice": 100.8104,
-      "charges": 0.4236
-    },
-    {
-      "orderId": "ord_40",
-      "signalId": "sig_39",
+      "orderId": "ord_38",
+      "signalId": "sig_37",
       "side": "BUY",
       "qty": 10,
       "status": "FILLED",
@@ -729,43 +945,150 @@
       "charges": 0.5131
     },
     {
-      "orderId": "ord_59",
-      "signalId": "sig_58",
+      "orderId": "ord_44",
+      "signalId": "sig_43",
       "side": "SELL",
       "qty": 10,
       "status": "FILLED",
-      "filledPrice": 134.7226,
-      "charges": 0.8625
+      "filledPrice": 131.1744,
+      "charges": 0.8398
     },
     {
-      "orderId": "ord_67",
-      "signalId": "sig_66",
+      "orderId": "ord_66",
+      "signalId": "sig_65",
       "side": "SELL",
       "qty": 10,
       "status": "FILLED",
       "filledPrice": 112.3338,
       "charges": 0.7192
+    },
+    {
+      "orderId": "ord_104",
+      "signalId": "sig_103",
+      "side": "BUY",
+      "qty": 10,
+      "status": "FILLED",
+      "filledPrice": 133.9369,
+      "charges": 0.5628
+    },
+    {
+      "orderId": "ord_106",
+      "signalId": "sig_105",
+      "side": "BUY",
+      "qty": 10,
+      "status": "FILLED",
+      "filledPrice": 133.4367,
+      "charges": 0.5607
+    },
+    {
+      "orderId": "ord_118",
+      "signalId": "sig_117",
+      "side": "SELL",
+      "qty": 10,
+      "status": "FILLED",
+      "filledPrice": 130.8645,
+      "charges": 0.8378
     }
   ],
   "positions": [
-    {
-      "strategyId": "str_rsi",
-      "symbol": "NSE:TESTCO-EQ",
-      "side": "LONG",
-      "qty": 0,
-      "avgEntryPrice": 100.8104,
-      "realizedPnl": 337.8361,
-      "status": "CLOSED"
-    },
     {
       "strategyId": "str_ema",
       "symbol": "NSE:TESTCO-EQ",
       "side": "LONG",
       "qty": 0,
       "avgEntryPrice": 122.111,
-      "realizedPnl": -99.0045,
-      "status": "CLOSED"
+      "realizedPnl": 89.2806,
+      "status": "CLOSED",
+      "stopLoss": 118.2956,
+      "target": 129.5588
+    },
+    {
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "SHORT",
+      "qty": 0,
+      "avgEntryPrice": 112.3338,
+      "realizedPnl": -217.3133,
+      "status": "CLOSED",
+      "stopLoss": 129.2,
+      "target": 78.77
+    },
+    {
+      "strategyId": "str_ema",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "LONG",
+      "qty": 0,
+      "avgEntryPrice": 133.4367,
+      "realizedPnl": -27.1201,
+      "status": "CLOSED",
+      "stopLoss": 113.78,
+      "target": 172.55
     }
   ],
-  "realizedPnl": 238.8316
+  "trades": [
+    {
+      "tradeId": "trd_1",
+      "strategyId": "str_ema",
+      "strategyVersion": "cfg-0b93f69ceb64ee",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "LONG",
+      "status": "CLOSED",
+      "entryOrderId": "ord_38",
+      "exitOrderId": "ord_44",
+      "entryPrice": 122.111,
+      "exitPrice": 131.1744,
+      "quantity": 10,
+      "exitReason": "TAKE_PROFIT",
+      "grossPnl": 90.6336,
+      "charges": 1.353,
+      "netPnl": 89.2806,
+      "entrySource": "LIVE_TICK"
+    },
+    {
+      "tradeId": "trd_2",
+      "strategyId": "str_ema",
+      "strategyVersion": "cfg-0b93f69ceb64ee",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "SHORT",
+      "status": "CLOSED",
+      "entryOrderId": "ord_66",
+      "exitOrderId": "ord_104",
+      "entryPrice": 112.3338,
+      "exitPrice": 133.9369,
+      "quantity": 10,
+      "exitReason": "STOP_LOSS",
+      "grossPnl": -216.0313,
+      "charges": 1.282,
+      "netPnl": -217.3133,
+      "entrySource": "LIVE_TICK"
+    },
+    {
+      "tradeId": "trd_3",
+      "strategyId": "str_ema",
+      "strategyVersion": "cfg-0b93f69ceb64ee",
+      "symbol": "NSE:TESTCO-EQ",
+      "side": "LONG",
+      "status": "CLOSED",
+      "entryOrderId": "ord_106",
+      "exitOrderId": "ord_118",
+      "entryPrice": 133.4367,
+      "exitPrice": 130.8645,
+      "quantity": 10,
+      "exitReason": "SESSION_CLOSE",
+      "grossPnl": -25.7215,
+      "charges": 1.3986,
+      "netPnl": -27.1201,
+      "entrySource": "LIVE_TICK"
+    }
+  ],
+  "sessionEvents": [
+    "MARKET_OPEN",
+    "MARKET_CLOSE"
+  ],
+  "marketView": {
+    "bias": "NEUTRAL",
+    "detail": "index BEARISH (NSE:TESTINDEX-INDEX=BEARISH); breadth BULLISH (1↑/0↓)"
+  },
+  "openAtEnd": 0,
+  "realizedPnl": -155.1528
 }

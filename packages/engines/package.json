@@ -23,6 +23,7 @@
     "@neelkanth/contracts": "workspace:*",
     "@neelkanth/core": "workspace:*",
     "@neelkanth/indicators": "workspace:*",
+    "@neelkanth/patterns": "workspace:*",
     "@neelkanth/strategies": "workspace:*",
     "zod": "^3.24.1"
   },

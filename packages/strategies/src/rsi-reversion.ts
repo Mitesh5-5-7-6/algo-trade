@@ -38,6 +38,10 @@ export interface RsiReversionState {
   prevRsi: number | null;
 }
 
+const RsiReversionSnapshotSchema = z.object({
+  prevRsi: z.number().nullable(),
+});
+
 export const rsiReversion: StrategyDefinition<
   RsiReversionParams,
   RsiReversionState
@@ -85,6 +89,11 @@ export const rsiReversion: StrategyDefinition<
           confidence: 0.6,
           qtyProposal: context.position.qty,
           reason: `RSI crossed down through ${p.overbought} — exit long`,
+          // An explicit exit (Phase 3 D1): the runner closes the whole
+          // position held and the Trade records STRATEGY_EXIT, rather than an
+          // opposite-side order the position engine nets — which a resized
+          // position would turn into a reversal.
+          exit: true,
         };
       }
       if (p.allowShort && context.position === null) {
@@ -105,5 +114,16 @@ export const rsiReversion: StrategyDefinition<
     }
 
     return hold("no re-cross");
+  },
+
+  /**
+   * The re-cross out of an extreme needs the previous bar's RSI to be
+   * visible (§0.5.6). Without it a restarted process cannot tell a reversion
+   * from a reading that was already there when it woke up.
+   */
+  stateVersion: "1.0.0",
+  snapshot: (state) => ({ prevRsi: state.prevRsi }),
+  restore: (state, snapshot) => {
+    state.prevRsi = RsiReversionSnapshotSchema.parse(snapshot).prevRsi;
   },
 };

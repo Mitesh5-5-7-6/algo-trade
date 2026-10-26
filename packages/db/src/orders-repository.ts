@@ -82,6 +82,27 @@ export class OrdersRepository {
     return found !== null;
   }
 
+  /**
+   * True when an exit order for this position is already live.
+   *
+   * The durable half of the Exit Engine's guard (Phase 3 D3). Its
+   * in-memory `Set` dies with the process, and the window it protects —
+   * exit handed off, fill not yet back — is exactly the window a restart
+   * falls into. The second exit would be a reversal under Phase 2's model,
+   * so it does not duplicate a close, it opens a phantom position on the
+   * other side.
+   *
+   * PLACED and PENDING only, matching `hasInflightOrder`: a FILLED exit is
+   * represented by the position being gone, and a REJECTED one is not live.
+   */
+  async hasExitInFlight(positionId: string): Promise<boolean> {
+    const found = await this.collection.findOne(
+      { positionId, status: { $in: ["PLACED", "PENDING"] } },
+      { projection: { _id: 1 } },
+    );
+    return found !== null;
+  }
+
   async findByOrderId(orderId: string): Promise<Order | null> {
     const doc = await this.collection.findOne(
       { orderId },
@@ -114,6 +135,22 @@ export class OrdersRepository {
       )
       .sort({ createdAt: -1 })
       .limit(limit)
+      .toArray();
+    return docs.map((doc) => OrderSchema.parse(doc));
+  }
+
+  /** Every order created or filled in the range, with no dashboard limit. */
+  async findAllByDateRange(
+    fromMs: number,
+    toMsExclusive: number,
+  ): Promise<Order[]> {
+    const range = { $gte: fromMs, $lt: toMsExclusive };
+    const docs = await this.collection
+      .find(
+        { $or: [{ filledAt: range }, { createdAt: range }] },
+        { projection: { _id: 0 } },
+      )
+      .sort({ createdAt: 1, orderId: 1 })
       .toArray();
     return docs.map((doc) => OrderSchema.parse(doc));
   }

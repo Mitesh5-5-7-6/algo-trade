@@ -219,6 +219,46 @@ describe("OrderManager reconciliation (plan/12 §8)", () => {
     };
     expect((await h.manager.reconcile(stuck)).status).toBe("unknown");
   });
+
+  it("records a broker-confirmed flat position close without submitting a new order", async () => {
+    const h = harness();
+    const reconciliationOrder: Order = {
+      orderId: "reconciliation:pos_1:paper_1",
+      signalId: "reconciliation:pos_1:paper_1",
+      strategyId: "str_1",
+      symbol: "NSE:X-EQ",
+      side: "SELL",
+      qty: 5,
+      type: "MARKET",
+      positionId: "pos_1",
+      exitReason: "BROKER_RECONCILIATION",
+      status: "FILLED",
+      mode: "paper",
+      brokerOrderId: "paper_1",
+      filledPrice: 105,
+      slippage: 0.1,
+      charges: 2,
+      filledAt: 2_000,
+      createdAt: 2_000,
+    };
+
+    await h.manager.recordBrokerReconciliationClose(reconciliationOrder);
+
+    expect(h.orders.get(reconciliationOrder.orderId)).toEqual(
+      reconciliationOrder,
+    );
+    expect(h.events).toHaveLength(1);
+    expect(h.events[0]).toMatchObject({
+      name: "ORDER_FILLED",
+      payload: {
+        orderId: reconciliationOrder.orderId,
+        side: "SELL",
+        filledPrice: 105,
+        exitReason: "BROKER_RECONCILIATION",
+      },
+    });
+    expect((h.broker as ScriptedFakeBroker).submitted).toHaveLength(0);
+  });
 });
 
 describe("reconcile completes the projection chain (crash recovery)", () => {
@@ -279,6 +319,32 @@ describe("reconcile completes the projection chain (crash recovery)", () => {
       filledPrice: 101.5,
       qty: 10,
     });
+  });
+
+  /** Phase 14 D3: the paper book kept the fill's costs; a real broker's status does not. */
+  it("books the fill's slippage and charges when the broker kept them, and 0 when not", async () => {
+    const kept = harness({
+      broker: brokerReporting({
+        status: "FILLED",
+        filledPrice: 101.5,
+        filledQty: 10,
+        filledAt: 1_700_000_000_000,
+        slippage: 0.05,
+        charges: 23.6,
+      }),
+    });
+    await kept.manager.reconcile(stuck);
+    expect(
+      kept.events.find((e) => e.name === "ORDER_FILLED")?.payload,
+    ).toMatchObject({ slippage: 0.05, charges: 23.6 });
+
+    const unknown = harness({
+      broker: brokerReporting({ status: "FILLED", filledPrice: 101.5 }),
+    });
+    await unknown.manager.reconcile(stuck);
+    expect(
+      unknown.events.find((e) => e.name === "ORDER_FILLED")?.payload,
+    ).toMatchObject({ slippage: 0, charges: 0 });
   });
 
   it("refuses to invent a fill price when the broker reports none", async () => {
@@ -516,5 +582,225 @@ describe("the decision price reaches the broker (plan/19 §5)", () => {
       stopLoss: 95,
       takeProfit: 110,
     });
+  });
+});
+
+/**
+ * The entry decision's bar travels with the instruction (§2.1, design §2
+ * drifts 1 and 3), so the Trade Engine — which reads `ORDER_FILLED` and
+ * nothing else — can record what the trade stood on without a join.
+ *
+ * Every fill path matters, not just the synchronous one: a live fill arrives
+ * on the broker stream, possibly after a restart, and is published from the
+ * PERSISTED order. A field that only lived on the in-flight signal would be
+ * lost on exactly the path a live trade takes.
+ */
+describe("the decision's bar travels with the order (§2.1)", () => {
+  const PROVENANCE = {
+    symbol: "NSE:RELIANCE-EQ",
+    interval: "5m" as const,
+    barTs: 900,
+    source: "LIVE_TICK" as const,
+  };
+  const MARKET = { volumeQuality: "SUSPECT" as const };
+
+  it("persists both on the order", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ dataProvenance: PROVENANCE, marketContext: MARKET }),
+      approved,
+    );
+
+    expect(h.orders.get("ord_1")).toMatchObject({
+      dataProvenance: PROVENANCE,
+      marketContext: MARKET,
+    });
+  });
+
+  it("forwards both on a synchronous fill", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ dataProvenance: PROVENANCE, marketContext: MARKET }),
+      approved,
+    );
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).toMatchObject({
+      dataProvenance: PROVENANCE,
+      marketContext: MARKET,
+    });
+  });
+
+  it("forwards both on a fill that arrives later on the broker stream", async () => {
+    const broker = new ScriptedFakeBroker({ pendingByDefault: true });
+    const h = harness({ broker, mode: "live" });
+    broker.onOrderUpdate((u) => {
+      void h.manager.onBrokerUpdate(u);
+    });
+    await h.manager.place(
+      signal({ dataProvenance: PROVENANCE, marketContext: MARKET }),
+      approved,
+    );
+    broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 101.5,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.events).toHaveLength(2);
+    });
+
+    expect(h.events[1]?.payload).toMatchObject({
+      dataProvenance: PROVENANCE,
+      marketContext: MARKET,
+    });
+  });
+
+  it("leaves both absent when the signal carried neither", async () => {
+    const h = harness();
+    await h.manager.place(signal(), approved);
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).not.toHaveProperty("dataProvenance");
+    expect(filled?.payload).not.toHaveProperty("marketContext");
+    expect(h.orders.get("ord_1")).not.toHaveProperty("dataProvenance");
+  });
+});
+
+/** Task 2.5, limit L4: every fill names the signal that produced its order. */
+describe("a fill names its signal (§2.5)", () => {
+  it("on a synchronous fill", async () => {
+    const h = harness();
+    await h.manager.place(signal({ signalId: "sig_42" }), approved);
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).toMatchObject({ signalId: "sig_42" });
+  });
+
+  it("on a fill that arrives later on the broker stream", async () => {
+    const broker = new ScriptedFakeBroker({ pendingByDefault: true });
+    const h = harness({ broker, mode: "live" });
+    broker.onOrderUpdate((u) => {
+      void h.manager.onBrokerUpdate(u);
+    });
+    await h.manager.place(signal({ signalId: "sig_42" }), approved);
+    broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 101.5,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.events).toHaveLength(2);
+    });
+
+    expect(h.events[1]?.payload).toMatchObject({ signalId: "sig_42" });
+  });
+});
+
+/**
+ * Tasks 2.6 and 2.8: the middle link of two chains the Trade depends on.
+ *
+ * The Exit Engine stamps `exitReason` and the Strategy Runner stamps
+ * `strategyVersion` on the signal; the Trade Engine reads them off the fill.
+ * Between the two sits this class — persist on the order, forward on every
+ * fill — and a fill published from the STORED order (the live path) is only as
+ * good as what was persisted.
+ */
+describe("exit reason and strategy version travel with the order (§2.6, §2.8)", () => {
+  it("persists both on the order and forwards both on a synchronous fill", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ side: "SELL", exitReason: "STOP_LOSS", strategyVersion: "v7" }),
+      approved,
+    );
+
+    expect(h.orders.get("ord_1")).toMatchObject({
+      exitReason: "STOP_LOSS",
+      strategyVersion: "v7",
+    });
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).toMatchObject({
+      exitReason: "STOP_LOSS",
+      strategyVersion: "v7",
+    });
+  });
+
+  it("forwards both on a fill that arrives later on the broker stream", async () => {
+    const broker = new ScriptedFakeBroker({ pendingByDefault: true });
+    const h = harness({ broker, mode: "live" });
+    broker.onOrderUpdate((u) => {
+      void h.manager.onBrokerUpdate(u);
+    });
+    await h.manager.place(
+      signal({
+        side: "SELL",
+        exitReason: "SESSION_CLOSE",
+        strategyVersion: "v7",
+      }),
+      approved,
+    );
+    broker.emitOrderUpdate({
+      status: "FILLED",
+      fill: {
+        clientOrderId: "ord_1",
+        filledPrice: 99,
+        filledQty: 10,
+        slippage: 0,
+        charges: 0,
+        filledAt: 2000,
+      },
+    });
+    await vi.waitFor(() => {
+      expect(h.events).toHaveLength(2);
+    });
+
+    expect(h.events[1]?.payload).toMatchObject({
+      exitReason: "SESSION_CLOSE",
+      strategyVersion: "v7",
+    });
+  });
+
+  /** An entry carries no reason, and must not acquire one on the way. */
+  it("leaves exitReason absent on an entry", async () => {
+    const h = harness();
+    await h.manager.place(signal(), approved);
+
+    const filled = h.events.find((e) => e.name === "ORDER_FILLED");
+    expect(filled?.payload).not.toHaveProperty("exitReason");
+  });
+});
+
+/**
+ * Task 3.1 (D3): an exit order names the position it closes, so the Exit
+ * Engine's durable in-flight check can find it after a restart.
+ */
+describe("an exit order names its position (§3.1, D3)", () => {
+  it("persists positionId from the signal", async () => {
+    const h = harness();
+    await h.manager.place(
+      signal({ side: "SELL", exitReason: "STOP_LOSS", positionId: "pos_9" }),
+      approved,
+    );
+
+    expect(h.orders.get("ord_1")?.positionId).toBe("pos_9");
+  });
+
+  it("leaves it absent on an entry", async () => {
+    const h = harness();
+    await h.manager.place(signal(), approved);
+
+    expect(h.orders.get("ord_1")).not.toHaveProperty("positionId");
   });
 });

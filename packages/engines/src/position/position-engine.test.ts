@@ -92,11 +92,18 @@ describe("PositionEngine fills (plan/13 §3)", () => {
     const h = harness();
     await h.engine.onOrderFilled(filled({ orderId: "o1", charges: 0 }));
     await h.engine.onOrderFilled(
-      filled({ orderId: "o2", side: "SELL", qty: 10, charges: 0 }),
+      filled({
+        orderId: "o2",
+        side: "SELL",
+        qty: 10,
+        charges: 0,
+        filledAt: 3000,
+      }),
     );
     const closed = h.written[h.written.length - 1];
     expect(closed?.status).toBe("CLOSED");
-    expect(closed?.closedAt).toBe(5000);
+    // The closing FILL's time, not the projection clock's 5000 (§3.4).
+    expect(closed?.closedAt).toBe(3000);
   });
 
   it("handles a reversal by closing then opening the remainder as a new position", async () => {
@@ -156,5 +163,51 @@ describe("PositionEngine lifecycle helpers (plan/13 §5, §8)", () => {
     };
     h.engine.hydrate([open]);
     expect(h.engine.getPosition("str_2", "NSE:Y-EQ")?.qty).toBe(20);
+  });
+});
+
+/**
+ * Task 3.4 (D2, audit A6): a position's lifetime is stamped from its FILLS.
+ *
+ * `openedAt` was the projection's own clock. Time-in-trade is measured from
+ * it, and D2 requires the entry fill — the same instant as the Trade's
+ * `entryTime`. On the projection clock the two could disagree, and in a
+ * replay they would be unrelated: historical fills, wall-clock positions.
+ */
+describe("PositionEngine stamps open and close from the fills (§3.4)", () => {
+  it("opens at the entry fill's time, not the projection's", async () => {
+    const h = harness(); // its clock reads 5000
+    await h.engine.onOrderFilled(filled({ filledAt: 1000 }));
+
+    expect(h.engine.getPosition("str_1", "NSE:X-EQ")?.openedAt).toBe(1000);
+  });
+
+  it("closes at the exit fill's time", async () => {
+    const h = harness();
+    await h.engine.onOrderFilled(filled({ filledAt: 1000 }));
+    await h.engine.onOrderFilled(
+      filled({ orderId: "o2", side: "SELL", filledAt: 2000 }),
+    );
+
+    const closed = h.written.at(-1);
+    expect(closed).toMatchObject({ status: "CLOSED", openedAt: 1000 });
+    expect(closed?.closedAt).toBe(2000);
+  });
+});
+
+/**
+ * Task 3.5 (D4): a trailed stop moves on the live position. The engine owns
+ * the in-memory view every consumer reads, so a trail that reached only the
+ * database would be forgotten by the next bar.
+ */
+describe("PositionEngine moves a live stop (§3.5)", () => {
+  it("updates the open position's stop in place", async () => {
+    const h = harness();
+    await h.engine.onOrderFilled(filled({ stopLoss: 95 }));
+    const id = h.engine.getPosition("str_1", "NSE:X-EQ")?.positionId ?? "";
+
+    h.engine.setStopLoss(id, 98);
+
+    expect(h.engine.getPosition("str_1", "NSE:X-EQ")?.stopLoss).toBe(98);
   });
 });

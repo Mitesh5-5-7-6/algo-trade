@@ -14,6 +14,7 @@ import {
 } from "@neelkanth/core";
 import type { EventName } from "@neelkanth/contracts";
 import { RiskEngine } from "./risk-engine.js";
+import { DailyLossLedger } from "./daily-loss-ledger.js";
 import type { PortfolioSnapshot, RiskPorts } from "./ports.js";
 
 const GLOBAL: RiskLimits = {
@@ -41,6 +42,7 @@ interface State {
   global: RiskLimits;
   override: RiskRules | null;
   failReadSession: boolean;
+  failReadDailyLoss?: boolean | Error;
   marketView: MarketView;
   instrument: Instrument | null;
 }
@@ -60,6 +62,7 @@ function harness(init: Partial<State> = {}) {
     global: GLOBAL,
     override: null,
     failReadSession: false,
+    failReadDailyLoss: false,
     marketView: UNKNOWN_MARKET_VIEW, // NEUTRAL — blocks nothing
     instrument: null, // equity by symbol suffix → lot size 1
     ...init,
@@ -73,7 +76,16 @@ function harness(init: Partial<State> = {}) {
       state.failReadSession
         ? Promise.reject(new Error("redis down"))
         : Promise.resolve(state.session),
-    readDailyRealizedLoss: () => Promise.resolve(state.dailyLoss),
+    readDailyRealizedLoss: () =>
+      state.failReadDailyLoss
+        ? Promise.reject(
+            state.failReadDailyLoss instanceof Error
+              ? state.failReadDailyLoss
+              : new Error(
+                  "daily-loss ledger not hydrated — the day's realized loss is unknown",
+                ),
+          )
+        : Promise.resolve(state.dailyLoss),
     readOpenPositionCount: () => Promise.resolve(state.openCount),
     readPosition: () => Promise.resolve(state.position),
     hasInflightIntent: () => Promise.resolve(state.inflight),
@@ -487,5 +499,59 @@ describe("RiskEngine — fail-closed (plan/14 §9)", () => {
       "fail closed",
     );
     expect(h.errors).toHaveLength(1);
+  });
+
+  it("fails closed on an unknown day when daily loss cannot be read (Task 0.7)", async () => {
+    const h = harness({ failReadDailyLoss: true });
+    const decision = await h.engine.validate(signal());
+    expect(decision).toMatchObject({
+      decision: "blocked",
+      failedCheck: "dailyLoss",
+    });
+    expect(decision.decision === "blocked" && decision.reason).toContain(
+      "fail closed",
+    );
+    expect(h.errors).toHaveLength(1);
+    expect(h.logs).toHaveLength(1);
+    expect(h.logs[0]?.decision).toBe("blocked");
+    expect(h.logs[0]?.failedCheck).toBe("dailyLoss");
+    expect(h.events[0]?.name).toBe("RISK_BLOCKED");
+    expect((h.events[0]?.payload as { failedCheck?: string }).failedCheck).toBe(
+      "dailyLoss",
+    );
+  });
+
+  it("still allows exits even when the day is unknown (asymmetry, plan/14 §5)", async () => {
+    const h = harness({
+      failReadDailyLoss: true,
+      position: longPosition,
+    });
+    const decision = await h.engine.validate(signal({ side: "SELL" }));
+    expect(decision.decision).toBe("approved");
+    expect(h.errors).toHaveLength(0); // dailyLoss check is exempt for risk-reducing exits
+  });
+
+  it("fails closed when wired to a DailyLossLedger that has not been hydrated", async () => {
+    const fakePorts = {
+      read: () => Promise.resolve(null),
+      write: () => Promise.resolve(),
+    };
+    const ledger = new DailyLossLedger({
+      ports: fakePorts,
+      onError: () => undefined,
+    });
+    // Ledger is NOT hydrated.
+    const h = harness();
+    // Replicate runtime.ts wiring where readDailyRealizedLoss delegates to ledger.lossFrom()
+    (h.engine as unknown as { ports: RiskPorts }).ports.readDailyRealizedLoss =
+      () => Promise.resolve(ledger.lossFrom(0, "2026-09-24"));
+
+    const decision = await h.engine.validate(signal());
+    expect(decision).toMatchObject({
+      decision: "blocked",
+      failedCheck: "dailyLoss",
+    });
+    expect(h.errors).toHaveLength(1);
+    expect((h.errors[0] as Error).message).toContain("not hydrated");
   });
 });

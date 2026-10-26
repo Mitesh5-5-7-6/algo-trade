@@ -1,5 +1,8 @@
 import { z } from "zod";
 import {
+  DataProvenanceSchema,
+  EntryMarketContextSchema,
+  ExitReasonSchema,
   CandleSchema,
   ContextSnapshotSchema,
   EntityIdSchema,
@@ -128,6 +131,13 @@ export const EVENT_PAYLOAD_SCHEMAS = {
 
   ORDER_FILLED: z.object({
     orderId: EntityIdSchema,
+    /**
+     * The signal behind the order (design §5.7, L4). Optional for fills
+     * published before it existed. Lets the Trade name the signals that
+     * entered and exited it without a join through an order that may be
+     * pruned — the reason Q4 copies `strategyVersion` forward too.
+     */
+    signalId: EntityIdSchema.optional(),
     /** Attributes the fill to its (strategy, symbol) position (plan/13 §3). */
     strategyId: EntityIdSchema,
     symbol: SymbolSchema,
@@ -144,6 +154,26 @@ export const EVENT_PAYLOAD_SCHEMAS = {
      */
     stopLoss: PriceSchema.optional(),
     takeProfit: PriceSchema.optional(),
+    /** The strategy version that produced this decision (Q4). */
+    strategyVersion: z.string().min(1).optional(),
+    /**
+     * Why this fill closes a position, when it does (D6).
+     *
+     * On the fill rather than left to a join, for the same reason the
+     * protective levels are: the Trade Engine is the only consumer that needs
+     * it, it reads this event and nothing else, and a stop and a session
+     * square-off at the same price are the same number and entirely different
+     * events.
+     */
+    exitReason: ExitReasonSchema.optional(),
+    /**
+     * What the entry decision stood on (design §2, drifts 1 and 3) — the
+     * decision bar and whether its volume could be trusted. On the fill for
+     * the same reason as `exitReason`: the Trade Engine reads this event and
+     * nothing else. It stamps them only when the fill OPENS a trade.
+     */
+    dataProvenance: DataProvenanceSchema.optional(),
+    marketContext: EntryMarketContextSchema.optional(),
     filledAt: TimestampSchema,
     mode: TradeModeSchema,
     ts: TimestampSchema,

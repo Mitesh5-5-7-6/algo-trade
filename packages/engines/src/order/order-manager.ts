@@ -111,12 +111,30 @@ export class OrderManager {
         orderId: this.nextOrderId(),
         signalId: signal.signalId,
         strategyId: signal.strategyId,
+        ...(signal.strategyVersion === undefined
+          ? {}
+          : { strategyVersion: signal.strategyVersion }),
         symbol: signal.symbol,
         side,
         qty,
         type: "MARKET",
         ...(signal.stopLoss !== undefined ? { stopLoss: signal.stopLoss } : {}),
         ...(signal.target !== undefined ? { takeProfit: signal.target } : {}),
+        // What the entry decision stood on, for the Trade (§2.1).
+        ...(signal.dataProvenance === undefined
+          ? {}
+          : { dataProvenance: signal.dataProvenance }),
+        ...(signal.marketContext === undefined
+          ? {}
+          : { marketContext: signal.marketContext }),
+        // The exit reason travels with the instruction, so the fill can state
+        // it without a join back to the signal (D6).
+        ...(signal.exitReason === undefined
+          ? {}
+          : { exitReason: signal.exitReason }),
+        ...(signal.positionId === undefined
+          ? {}
+          : { positionId: signal.positionId }),
         status: "PLACED",
         mode: this.mode,
         createdAt: this.now(),
@@ -329,7 +347,8 @@ export class OrderManager {
       await this.ports.updateOrder(order.orderId, patch);
       // Deliberately the same event, with the same shape, as the live path —
       // one fill projection, not two that can drift (plan/02 §6). Slippage and
-      // charges are 0: they are not knowable from a status query, and a
+      // charges are the broker's when it kept them (the paper book, Phase 14
+      // D3), else 0: a real broker's status query does not know them, and a
       // fabricated cost would be a second lie on top of the first.
       await this.ports.publish(
         "ORDER_FILLED",
@@ -340,8 +359,8 @@ export class OrderManager {
           side: order.side,
           qty: filledQty,
           filledPrice: status.filledPrice,
-          slippage: 0,
-          charges: 0,
+          slippage: status.slippage ?? 0,
+          charges: status.charges ?? 0,
           ...OrderManager.protective(order),
           filledAt,
           mode: order.mode,
@@ -361,18 +380,110 @@ export class OrderManager {
   }
 
   /**
+   * Persist and project a broker-confirmed close when reconciliation finds a
+   * local position the paper broker no longer holds. This records no new
+   * broker execution; the supplied fill is the broker book's existing close.
+   */
+  async recordBrokerReconciliationClose(order: Order): Promise<Order> {
+    if (
+      order.mode !== "paper" ||
+      order.exitReason !== "BROKER_RECONCILIATION" ||
+      order.status !== "FILLED" ||
+      order.filledPrice === undefined ||
+      order.filledAt === undefined
+    ) {
+      throw new Error("invalid broker reconciliation close");
+    }
+
+    let recorded = await this.ports.readOrder(order.orderId);
+    if (recorded === null) {
+      const inserted = await this.ports.persistOrder(order);
+      recorded = inserted ? order : await this.ports.readOrder(order.orderId);
+    }
+    if (
+      recorded === null ||
+      recorded.status !== "FILLED" ||
+      recorded.mode !== "paper" ||
+      recorded.exitReason !== "BROKER_RECONCILIATION" ||
+      recorded.signalId !== order.signalId ||
+      recorded.strategyId !== order.strategyId ||
+      recorded.positionId !== order.positionId ||
+      recorded.symbol !== order.symbol ||
+      recorded.side !== order.side ||
+      recorded.qty !== order.qty ||
+      recorded.brokerOrderId !== order.brokerOrderId ||
+      recorded.filledPrice !== order.filledPrice ||
+      recorded.slippage !== order.slippage ||
+      recorded.charges !== order.charges ||
+      recorded.filledAt !== order.filledAt
+    ) {
+      throw new Error(
+        `could not persist broker reconciliation close ${order.orderId}`,
+      );
+    }
+
+    await this.ports.publish(
+      "ORDER_FILLED",
+      {
+        orderId: recorded.orderId,
+        strategyId: recorded.strategyId,
+        symbol: recorded.symbol,
+        side: recorded.side,
+        qty: recorded.qty,
+        filledPrice: recorded.filledPrice,
+        slippage: recorded.slippage ?? 0,
+        charges: recorded.charges ?? 0,
+        exitReason: "BROKER_RECONCILIATION",
+        filledAt: recorded.filledAt,
+        mode: "paper",
+        ts: recorded.filledAt,
+      },
+      recorded.signalId,
+    );
+    return recorded;
+  }
+
+  /**
    * The protective levels to forward on ORDER_FILLED. Shared by all three fill
    * paths (synchronous, broker stream, reconcile) so a stop can never depend on
    * which route the fill happened to arrive by.
    */
   private static protective(
     order: Order,
-  ): Partial<Pick<Order, "stopLoss" | "takeProfit">> {
+  ): Partial<
+    Pick<
+      Order,
+      | "stopLoss"
+      | "takeProfit"
+      | "exitReason"
+      | "strategyVersion"
+      | "dataProvenance"
+      | "marketContext"
+      | "signalId"
+    >
+  > {
     return {
+      // Every fill names the signal behind its order (§2.5, L4).
+      signalId: order.signalId,
       ...(order.stopLoss === undefined ? {} : { stopLoss: order.stopLoss }),
       ...(order.takeProfit === undefined
         ? {}
         : { takeProfit: order.takeProfit }),
+      // Carried on the same helper as the protective levels because every
+      // ORDER_FILLED publish site already spreads it — three call sites, one
+      // place to keep them from drifting (plan/02 §6).
+      ...(order.exitReason === undefined
+        ? {}
+        : { exitReason: order.exitReason }),
+      ...(order.strategyVersion === undefined
+        ? {}
+        : { strategyVersion: order.strategyVersion }),
+      ...(order.dataProvenance === undefined
+        ? {}
+        : { dataProvenance: order.dataProvenance }),
+      ...(order.marketContext === undefined
+        ? {}
+        : { marketContext: order.marketContext }),
     };
   }
 

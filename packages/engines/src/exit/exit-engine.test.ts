@@ -33,6 +33,7 @@ function bar(
   return {
     symbol: SYM,
     interval: "5m",
+    source: "LIVE_TICK",
     open: close,
     high,
     low,
@@ -60,10 +61,14 @@ function harness(open: Position[]) {
         persisted.push(signal);
         return Promise.resolve();
       },
+      // Per-test fixtures: nothing is ever already in flight (D3).
+      hasExitInFlight: () => Promise.resolve(false),
+      readExitRules: () => null,
+      updateStopLoss: () => Promise.resolve(),
     },
     handoff: (signal) => {
       handedOff.push(signal);
-      return Promise.resolve();
+      return Promise.resolve(undefined);
     },
     nextSignalId: (() => {
       let n = 0;
@@ -82,6 +87,8 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
     expect(handedOff[0]?.side).toBe("SELL");
     expect(handedOff[0]?.qtyProposal).toBe(10);
     expect(handedOff[0]?.reason).toBe("exit: stop");
+    // Typed, so the Trade records it without parsing the sentence above (D6).
+    expect(handedOff[0]?.exitReason).toBe("STOP_LOSS");
     // Recorded before it was acted on — the audit trail, not a side effect.
     expect(persisted).toHaveLength(1);
   });
@@ -90,6 +97,7 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
     const { engine, handedOff } = harness([position()]);
     await engine.onCandleClosed(bar(111, 99));
     expect(handedOff[0]?.reason).toBe("exit: target");
+    expect(handedOff[0]?.exitReason).toBe("TAKE_PROFIT");
   });
 
   it("closes a SHORT on the mirrored levels", async () => {
@@ -146,6 +154,7 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
     await engine.onSessionTick(squareOff, squareOff);
     expect(handedOff).toHaveLength(1);
     expect(handedOff[0]?.reason).toBe("exit: square_off");
+    expect(handedOff[0]?.exitReason).toBe("SESSION_CLOSE");
     expect(handedOff[0]?.side).toBe("SELL");
   });
 
@@ -156,6 +165,9 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
         readOpenPositions: () => [position()],
         readSession: () => Promise.resolve(session),
         persistSignal: () => Promise.resolve(),
+        hasExitInFlight: () => Promise.resolve(false),
+        readExitRules: () => null,
+        updateStopLoss: () => Promise.resolve(),
       },
       handoff: () => Promise.reject(new Error("risk unavailable")),
       nextSignalId: () => "sig_1",

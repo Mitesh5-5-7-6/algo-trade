@@ -1,17 +1,9 @@
-import type { Candle, CandleInterval, Tick } from "@neelkanth/core";
-
-/** Interval durations in ms. */
-const INTERVAL_MS: Record<CandleInterval, number> = {
-  "1m": 60_000,
-  "5m": 300_000,
-  "15m": 900_000,
-  "30m": 1_800_000,
-  "60m": 3_600_000,
-};
-
-export function intervalMs(interval: CandleInterval): number {
-  return INTERVAL_MS[interval];
-}
+import {
+  intervalMs,
+  type Candle,
+  type CandleInterval,
+  type Tick,
+} from "@neelkanth/core";
 
 interface BarState {
   bucketStart: number;
@@ -123,6 +115,10 @@ export class CandleAggregator {
       close: state.close,
       volume: state.volume,
       ts: state.bucketStart,
+      // This aggregator has exactly one input: the live tick feed. Stamping it
+      // here rather than defaulting it downstream means a bar can never reach
+      // storage without saying which producer made it.
+      source: "LIVE_TICK",
     };
   }
 }

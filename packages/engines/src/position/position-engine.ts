@@ -68,6 +68,21 @@ export class PositionEngine {
     return [...this.positions.values()].filter((p) => p.status === "OPEN");
   }
 
+  /**
+   * Move a live position's stop (Phase 3 D4).
+   *
+   * The engine owns the in-memory view every consumer reads, so a trail that
+   * only reached the database would be forgotten by the very next bar.
+   */
+  setStopLoss(positionId: string, stopLoss: number): void {
+    for (const [key, position] of this.positions) {
+      if (position.positionId === positionId) {
+        this.positions.set(key, { ...position, stopLoss });
+        return;
+      }
+    }
+  }
+
   getPosition(strategyId: string, symbol: string): Position | null {
     const position = this.positions.get(PositionEngine.key(strategyId, symbol));
     return position && position.status === "OPEN" ? position : null;
@@ -84,6 +99,23 @@ export class PositionEngine {
 
   getTradeCount(): number {
     return this.tradeCount;
+  }
+
+  /**
+   * Restore the day's realized P&L after a mid-session restart (§0.5.4).
+   *
+   * Only the GLOBAL counter, because that is what the daily-loss gate reads
+   * and the only figure the ledger persists. Per-strategy realized P&L is not
+   * restored and is not claimed to be — it is a separately recorded gap
+   * (CURRENT_STATE §5.3), and seeding it with a fabricated split would hide
+   * that rather than close it.
+   *
+   * `tradeCount` is likewise left alone: it counts fills this process applied,
+   * and inventing a prior count would make the PnL snapshot lie about how many
+   * trades it saw.
+   */
+  seedDailyRealized(realizedPnl: number): void {
+    this.globalRealizedPnl = realizedPnl;
   }
 
   /** Zero the daily realized counters at session start (plan/13 §5, plan/14 §6). */
@@ -165,7 +197,6 @@ export class PositionEngine {
     state: PositionState,
     payload: EventPayload<"ORDER_FILLED">,
   ): Position {
-    const now = this.now();
     if (current === null) {
       return {
         positionId: this.nextPositionId(),
@@ -185,8 +216,11 @@ export class PositionEngine {
         ...(payload.takeProfit === undefined
           ? {}
           : { target: payload.takeProfit }),
-        openedAt: now,
-        ...(state.status === "CLOSED" ? { closedAt: now } : {}),
+        // The fill's time, not the projection's (D2, audit A6): time-in-trade
+        // is measured from here, and it must agree with the Trade's entryTime
+        // — in a replay, the projection clock is not even the same day.
+        openedAt: payload.filledAt,
+        ...(state.status === "CLOSED" ? { closedAt: payload.filledAt } : {}),
         mode: payload.mode,
       };
     }
@@ -198,7 +232,7 @@ export class PositionEngine {
       status: state.status,
       realizedPnl: state.realizedPnl,
       ...(state.status === "CLOSED" && current.closedAt === undefined
-        ? { closedAt: now }
+        ? { closedAt: payload.filledAt }
         : {}),
     };
   }

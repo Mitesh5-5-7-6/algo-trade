@@ -30,6 +30,18 @@ export class PositionsRepository {
     );
   }
 
+  /**
+   * Move a position stop, without rewriting the rest of it (Phase 3 D4).
+   *
+   * A targeted `$set` rather than an upsert of the whole document: the Exit
+   * Engine knows the stop and nothing else, and writing a stale copy of the
+   * quantity or realised P&L back over the position engine own view would be
+   * a much larger bug than the one this fixes.
+   */
+  async setStopLoss(positionId: string, stopLoss: number): Promise<void> {
+    await this.collection.updateOne({ positionId }, { $set: { stopLoss } });
+  }
+
   async findOpen(): Promise<Position[]> {
     const docs = await this.collection
       .find({ status: "OPEN" }, { projection: { _id: 0 } })

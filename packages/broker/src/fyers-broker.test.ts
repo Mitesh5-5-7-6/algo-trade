@@ -476,3 +476,31 @@ describe("FyersBroker connection state", () => {
     await broker.subscribe(["NSE:RELIANCE-EQ", "NSE:TCS-EQ"]);
   });
 });
+
+describe("FyersBroker built for market data only (Phase 14 D2)", () => {
+  it("refuses to place or cancel an order, and asks FYERS nothing", async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+    const broker = new FyersBroker(deps({ orders: "disabled" }));
+    await expect(broker.execute(order())).rejects.toThrow(
+      /order ord_1 refused — this broker was built for market data only/,
+    );
+    await expect(broker.cancel("ord_1")).rejects.toThrow(
+      /cancel of ord_1 refused/,
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("places orders as before when enabled — the default", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ s: "ok", id: "fyers_9" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+    const outcome = await new FyersBroker(deps()).execute(order());
+    expect(outcome.status).toBe("PENDING");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+});

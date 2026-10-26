@@ -1,12 +1,52 @@
-import type { Position, Signal } from "@neelkanth/core";
+import { intervalMs, type Position, type Signal } from "@neelkanth/core";
+import type { ExitReason } from "@neelkanth/core";
 import type { EventPayload } from "@neelkanth/contracts";
-import type { RiskHandoff } from "../strategy/ports.js";
 import type { ExitPorts, ExitTrigger } from "./ports.js";
+
+/**
+ * The Exit Engine's triggers, as the Trade's vocabulary (ADR §9.2).
+ *
+ * Five of the seven exit reasons are produced here. STRATEGY_EXIT comes from
+ * the Strategy Runner (Phase 3 D1), and BROKER_RECONCILIATION stays
+ * unproduced: it describes a position that went away without being asked
+ * to, which belongs with reconciliation. A reason is never approximated —
+ * mapping a square-off onto TIME_EXIT because the names rhyme would put a
+ * claim in the research dataset that no component ever made.
+ */
+const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
+  stop: "STOP_LOSS",
+  target: "TAKE_PROFIT",
+  time: "TIME_EXIT",
+  square_off: "SESSION_CLOSE",
+  manual: "MANUAL_EMERGENCY",
+};
+
+/**
+ * What became of an exit handed to risk → order (audit A7).
+ *
+ * `placed: false` means no order exists — risk blocked it, or placement was
+ * halted — so nothing is in flight and the exit must be tried again. A
+ * handoff that reports nothing is read as placed: retrying on silence could
+ * send a second closing order while the first is live.
+ */
+/**
+ * The exit model's version (Phase 4 Q3) — which triggers exist and how a bar
+ * is judged against them (Phase 3). Its arithmetic is pinned by the golden
+ * record; bump this with any change to what the engine decides.
+ */
+export const EXIT_MODEL_VERSION = "1";
+
+export interface ExitHandoffOutcome {
+  readonly placed: boolean;
+}
 
 export interface ExitEngineDeps {
   ports: ExitPorts;
-  /** The same synchronous risk→order path a strategy signal takes (plan/14 §2). */
-  handoff: RiskHandoff;
+  /**
+   * The same synchronous risk→order path a strategy signal takes (plan/14 §2),
+   * optionally saying whether an order came of it.
+   */
+  handoff: (signal: Signal) => Promise<ExitHandoffOutcome | undefined>;
   nextSignalId: () => string;
   /** Confidence stamped on an exit — protective, so deliberately high. */
   exitConfidence?: number;
@@ -15,6 +55,8 @@ export interface ExitEngineDeps {
 }
 
 /** An exit is a market order; SELL closes a LONG, BUY closes a SHORT. */
+const MINUTE_MS = 60_000;
+
 function closingSide(position: Position): "BUY" | "SELL" {
   return position.side === "LONG" ? "SELL" : "BUY";
 }
@@ -29,12 +71,16 @@ function closingSide(position: Position): "BUY" | "SELL" {
  * once opened, closed only if some strategy happened to reverse. That is not a
  * risk model — it is the absence of one.
  *
- * Three triggers, all resolved against **closed bars** so the decision is
- * reproducible from stored candles:
+ * Bar triggers are resolved against **closed bars**, judged against the levels
+ * each bar opened with, so a decision is reproducible from stored candles:
  *
- * - **stop** — the bar's low (LONG) or high (SHORT) reached the stop.
+ * - **stop** — the bar's low (LONG) or high (SHORT) reached the stop, which a
+ *   strategy's trailing rule may have tightened after earlier bars (D4).
  * - **target** — likewise for the take-profit.
- * - **square_off** — the configured intraday flatten time has passed.
+ * - **time** — the position has been held past its strategy's limit (D2).
+ *
+ * And two that are not bars: **square_off**, the intraday flatten a strategy
+ * may decline (D6), and **manual**, an operator's emergency exit (D5).
  *
  * When a single bar touches both stop and target, the **stop wins**. Nothing in
  * a 5-minute OHLC bar says which came first, and assuming the favourable one
@@ -79,9 +125,17 @@ export class ExitEngine {
       this.prune(open);
       for (const position of open) {
         if (position.symbol !== candle.symbol) continue;
-        if (this.exiting.has(position.positionId)) continue;
-        const trigger = ExitEngine.breach(position, candle);
-        if (trigger === null) continue;
+        if (await this.alreadyExiting(position.positionId)) continue;
+        // Q3 rule 4: stop, then target, then time.
+        const trigger =
+          ExitEngine.breach(position, candle) ??
+          this.heldTooLong(position, candle);
+        if (trigger === null) {
+          // Judged against the levels the bar OPENED with; only now may the
+          // bar's extreme move the stop, and only for the next bar (Q3).
+          await this.trail(position, candle);
+          continue;
+        }
         await this.exit(position, trigger, candle.close, candle.ts);
       }
     } catch (error) {
@@ -103,12 +157,123 @@ export class ExitEngine {
       const open = this.deps.ports.readOpenPositions();
       this.prune(open);
       for (const position of open) {
-        if (this.exiting.has(position.positionId)) continue;
+        if (!this.squaresOff(position.strategyId)) continue;
+        if (await this.alreadyExiting(position.positionId)) continue;
         await this.exit(position, "square_off", position.avgEntryPrice, now);
       }
     } catch (error) {
       this.deps.onError(error, { where: "onSessionTick" });
     }
+  }
+
+  /**
+   * Move the stop up behind a favourable bar (D4), for the bars after it.
+   *
+   * Called only once this bar has been judged. Trailing first would test the
+   * bar's low against a stop raised from its own high — assuming the high
+   * came first, which an OHLC bar does not say — and turned bars that took
+   * profit into stop-outs (design §5.1, audit A1).
+   *
+   * Only ever tightens: a stop that could loosen would let a protected
+   * position give its protection back. Persisted, because a restart that
+   * forgot the trail would hand the position its entry stop.
+   */
+  private async trail(
+    position: Position,
+    candle: EventPayload<"CANDLE_CLOSED">,
+  ): Promise<void> {
+    const pct = this.deps.ports.readExitRules(
+      position.strategyId,
+    )?.trailingStopPct;
+    if (pct === undefined) return;
+
+    const candidate =
+      position.side === "LONG"
+        ? candle.high * (1 - pct)
+        : candle.low * (1 + pct);
+    const current = position.stopLoss;
+    const tighter =
+      current === undefined ||
+      (position.side === "LONG" ? candidate > current : candidate < current);
+    if (tighter)
+      await this.deps.ports.updateStopLoss(position.positionId, candidate);
+  }
+
+  /**
+   * Flatten one position on an operator's instruction (D5).
+   *
+   * Reported as MANUAL_EMERGENCY, which is the honest label: a human overrode
+   * the system. Recording it as STRATEGY_EXIT would teach a strategy it did
+   * something it did not do, and the research dataset would carry that
+   * forever. Closes the whole position (Q1).
+   *
+   * False when there was nothing to close, an exit was already on its way, or
+   * risk blocked this one — the operator is told rather than a second exit
+   * sent, and never told "done" for a position still open (audit A7).
+   */
+  async exitNow(positionId: string, now: number): Promise<boolean> {
+    try {
+      const open = this.deps.ports.readOpenPositions();
+      this.prune(open);
+      const position = open.find((p) => p.positionId === positionId);
+      if (position === undefined) return false;
+      if (await this.alreadyExiting(positionId)) return false;
+      return await this.exit(position, "manual", position.avgEntryPrice, now);
+    } catch (error) {
+      this.deps.onError(error, { where: "exitNow", positionId });
+      return false;
+    }
+  }
+
+  /**
+   * Whether this strategy flattens at the intraday square-off (D6).
+   *
+   * Defaults to TRUE, and the default is the decision: a strategy that has
+   * said nothing is an intraday strategy. A strategy that is not running
+   * reports no rules, so it is flattened too.
+   */
+  private squaresOff(strategyId: string): boolean {
+    return (
+      this.deps.ports.readExitRules(strategyId)?.squareOffAtSessionEnd ?? true
+    );
+  }
+
+  /**
+   * Whether the position has been held past its configured limit (D2).
+   *
+   * From `openedAt` — the entry FILL's time — to the CLOSE of the bar being
+   * judged, which is when the decision is made. A bar's `ts` is its start;
+   * measuring to it undercounted every hold by one bar (audit A6). Judged on
+   * bar time, not the wall clock, so it is reproducible from stored candles.
+   */
+  private heldTooLong(
+    position: Position,
+    candle: EventPayload<"CANDLE_CLOSED">,
+  ): ExitTrigger | null {
+    const limit = this.deps.ports.readExitRules(
+      position.strategyId,
+    )?.maxHoldMinutes;
+    if (limit === undefined) return null;
+    const barClose = candle.ts + intervalMs(candle.interval);
+    return barClose - position.openedAt >= limit * MINUTE_MS ? "time" : null;
+  }
+
+  /**
+   * Whether an exit for this position is already on its way.
+   *
+   * Memory first — a warm session answers without a read. On a miss the
+   * durable check runs, because the in-memory Set is empty after a restart
+   * and the window it guards (handed off, not yet filled) is exactly the one
+   * a restart lands in. A second exit would be a REVERSAL under Phase 2's
+   * model, opening a phantom position rather than closing anything.
+   */
+  private async alreadyExiting(positionId: string): Promise<boolean> {
+    if (this.exiting.has(positionId)) return true;
+    if (await this.deps.ports.hasExitInFlight(positionId)) {
+      this.exiting.add(positionId);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -130,13 +295,16 @@ export class ExitEngine {
     return null;
   }
 
-  /** Record the exit decision and hand it to risk → order (plan/14 §2). */
+  /**
+   * Record the exit decision and hand it to risk → order (plan/14 §2).
+   * True unless the handoff said no order came of it.
+   */
   private async exit(
     position: Position,
     trigger: ExitTrigger,
     price: number,
     ts: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.exiting.add(position.positionId);
     const signal: Signal = {
       signalId: this.deps.nextSignalId(),
@@ -146,6 +314,10 @@ export class ExitEngine {
       confidence: this.exitConfidence,
       qtyProposal: position.qty,
       reason: `exit: ${trigger}`,
+      exitReason: EXIT_REASON[trigger],
+      // Carried so the order can be found again by position — the durable
+      // guard has nothing to match on otherwise (D3).
+      positionId: position.positionId,
       contextSnapshot: {
         price,
         indicators: {},
@@ -157,6 +329,14 @@ export class ExitEngine {
     // Persisted before it is acted on, like every other decision (plan/07):
     // an exit that fails downstream must still be visible as having been made.
     await this.deps.ports.persistSignal(signal);
-    await this.deps.handoff(signal);
+    const outcome = await this.deps.handoff(signal);
+    // No order came of it (risk blocked it), so nothing is in flight: clear
+    // the mark, or every later bar skips the position and it stays open with
+    // no exit coming until a restart — the orphan §7 forbids (audit A7).
+    if (outcome?.placed === false) {
+      this.exiting.delete(position.positionId);
+      return false;
+    }
+    return true;
   }
 }

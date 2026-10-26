@@ -27,6 +27,9 @@
       "path": "packages/strategies/tsconfig.build.json"
     },
     {
+      "path": "packages/patterns/tsconfig.build.json"
+    },
+    {
       "path": "packages/broker/tsconfig.build.json"
     },
     {

@@ -8,6 +8,13 @@ import type { OrderSide } from "@neelkanth/core";
  * over time, so they live in configuration and can be kept equal to the live
  * broker's real schedule. That equality is the whole point (fidelity, plan/11 §2).
  */
+/**
+ * The transaction-cost model's version (Phase 4 Q3). A replay declares it, so
+ * bump it whenever `computeCharges` would produce a different number for the
+ * same inputs — `model-versions.test.ts` pins each version's outputs.
+ */
+export const CHARGES_MODEL_VERSION = "1";
+
 export interface ChargeConfig {
   /** Flat brokerage per executed order. */
   brokeragePerOrder: number;

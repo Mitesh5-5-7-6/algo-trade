@@ -81,6 +81,17 @@ export class IndicatorEngine {
    * second EMA(9) on the same series is a no-op (plan/18 §2). Generic per call
    * so heterogeneous indicators register type-safely.
    */
+  /**
+   * Watch a series a strategy is registered on, whether or not it needs any
+   * indicator (Phase 6 F2). The Strategy Runner acts only on
+   * INDICATORS_UPDATED, so a series nobody tracked would never be decided on:
+   * ORB at its defaults declares no indicators, and ran only when another
+   * strategy happened to register one on the same symbol.
+   */
+  track(symbol: string, interval: CandleInterval): void {
+    this.bucket(symbol, interval);
+  }
+
   register<S>(
     symbol: string,
     interval: CandleInterval,
@@ -141,7 +152,9 @@ export class IndicatorEngine {
       const bucket = this.registry.get(
         IndicatorEngine.seriesKey(candle.symbol, candle.interval),
       );
-      if (bucket === undefined || bucket.size === 0) return;
+      // Untracked: nobody decides on this series. Tracked but empty still
+      // publishes — its strategies need the bar, not an indicator (F2).
+      if (bucket === undefined) return;
 
       for (const indicator of bucket.values()) indicator.fold(candle);
 

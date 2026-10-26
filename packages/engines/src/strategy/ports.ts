@@ -52,7 +52,36 @@ export interface StrategyPorts {
   ): Instrument | null;
   /** Last traded price for a symbol, for pricing a resolved contract. */
   readPrice(symbol: string): number | null;
+  /**
+   * Load this instance's persisted state (§0.5.6), or null when it has none.
+   *
+   * Optional: a deployment that does not persist strategy state simply omits
+   * it, and every strategy starts cold — which is the behaviour that existed
+   * before, made explicit rather than implicit.
+   */
+  loadStrategyState?(
+    strategyId: string,
+    symbol: string,
+  ): Promise<StoredStrategyState | null>;
+  /** Persist this instance's state. Paired with `loadStrategyState`. */
+  saveStrategyState?(state: StoredStrategyState): Promise<void>;
   publish: PublishFn;
+}
+
+/**
+ * A strategy instance's state as it is stored (§0.5.6).
+ *
+ * `type` and `stateVersion` travel with the snapshot because they are what
+ * makes reading it back safe: a snapshot is an opaque blob whose meaning lives
+ * entirely in the code that wrote it.
+ */
+export interface StoredStrategyState {
+  strategyId: string;
+  symbol: string;
+  type: string;
+  stateVersion: string;
+  snapshot: unknown;
+  updatedAt: number;
 }
 
 /**

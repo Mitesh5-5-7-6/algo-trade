@@ -25,6 +25,14 @@ export interface RuntimeControls {
     limits: RiskLimits;
     allocatedCapital: number;
   }): void;
+  /**
+   * Flatten one open position now, on an operator's instruction (D5).
+   *
+   * False when there was nothing to close, an exit was already in flight, or
+   * risk blocked it — the difference the operator needs, and the one a
+   * fire-and-forget call would hide.
+   */
+  exitPositionNow(positionId: string): Promise<boolean>;
   getOpenPositions(): Position[];
   realizedPnl(): number;
   unrealizedPnl(): number;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Candle, CandleInterval } from "@neelkanth/core";
 import { ema, rsi, vwap } from "@neelkanth/indicators";
 import { IndicatorEngine } from "./indicator-engine.js";
+import { provisionSeries } from "./register-spec.js";
 import type { IndicatorPorts, IndicatorSnapshot } from "./ports.js";
 
 const SYM = "NSE:RELIANCE-EQ";
@@ -14,6 +15,7 @@ function candle(
   return {
     symbol: SYM,
     interval: opts.interval ?? INT,
+    source: "LIVE_TICK",
     open: close,
     high: close,
     low: close,
@@ -172,5 +174,55 @@ describe("IndicatorEngine dedup & failure (plan/18 §2, plan/02 §10)", () => {
     await engine.onCandleClosed(candle(1, { ts: 1 }));
     expect(h.errors).toHaveLength(1);
     expect(h.errors[0]?.context["where"]).toBe("onCandleClosed");
+  });
+});
+
+/**
+ * Phase 6 finding F2: the Strategy Runner acts only on INDICATORS_UPDATED, so
+ * a series a strategy is registered on must publish on every closed bar —
+ * even when that strategy declares no indicators (ORB at its defaults).
+ * Without it, whether ORB ran depended on whether another strategy happened
+ * to register an indicator on the same symbol.
+ */
+describe("a tracked series publishes with no indicators (F2)", () => {
+  it("publishes INDICATORS_UPDATED, empty, on every closed bar", async () => {
+    const h = harness();
+    h.engine.track(SYM, INT);
+    await h.engine.onCandleClosed(candle(100, { ts: 1 }));
+    await h.engine.onCandleClosed(candle(101, { ts: 2 }));
+    const updates = h.events.filter((e) => e.name === "INDICATORS_UPDATED");
+    expect(updates.map((e) => e.payload)).toEqual([
+      { symbol: SYM, interval: INT, indicators: {}, ts: 1 },
+      { symbol: SYM, interval: INT, indicators: {}, ts: 2 },
+    ]);
+  });
+
+  it("still publishes nothing for a series nobody is registered on", async () => {
+    const h = harness();
+    h.engine.track(SYM, INT);
+    await h.engine.onCandleClosed({
+      ...candle(100, { ts: 1 }),
+      symbol: "NSE:UNWATCHED-EQ",
+    });
+    await h.engine.onCandleClosed(candle(100, { ts: 1, interval: "1m" }));
+    expect(h.events).toEqual([]);
+  });
+
+  it("is tracked by provisioning, with or without specs — the one path runtime and replay share", async () => {
+    const bare = harness();
+    provisionSeries(bare.engine, SYM, INT, []);
+    await bare.engine.onCandleClosed(candle(100, { ts: 1 }));
+    expect(
+      bare.events.filter((e) => e.name === "INDICATORS_UPDATED"),
+    ).toHaveLength(1);
+
+    const withSpec = harness();
+    provisionSeries(withSpec.engine, SYM, INT, [{ kind: "ema", period: 2 }]);
+    await withSpec.engine.onCandleClosed(candle(100, { ts: 1 }));
+    await withSpec.engine.onCandleClosed(candle(102, { ts: 2 }));
+    const last = withSpec.events
+      .filter((e) => e.name === "INDICATORS_UPDATED")
+      .at(-1);
+    expect(last?.payload).toMatchObject({ indicators: { ema2: 101 } });
   });
 });

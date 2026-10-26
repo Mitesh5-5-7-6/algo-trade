@@ -5,7 +5,7 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"],
+  "exclude": ["src/**/*.test.ts", "src/test-support/**"],
   "references": [
     { "path": "../../packages/core/tsconfig.build.json" },
     { "path": "../../packages/contracts/tsconfig.build.json" },
@@ -15,6 +15,7 @@
     { "path": "../../packages/db/tsconfig.build.json" },
     { "path": "../../packages/indicators/tsconfig.build.json" },
     { "path": "../../packages/strategies/tsconfig.build.json" },
+    { "path": "../../packages/patterns/tsconfig.build.json" },
     { "path": "../../packages/broker/tsconfig.build.json" },
     { "path": "../../packages/engines/tsconfig.build.json" }
   ]

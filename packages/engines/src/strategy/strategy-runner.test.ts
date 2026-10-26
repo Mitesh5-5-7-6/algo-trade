@@ -10,6 +10,7 @@ import type {
   StrategyConfig,
   StrategyVerdict,
 } from "@neelkanth/core";
+import { strategyVersionOf } from "@neelkanth/core";
 import type { EventName } from "@neelkanth/contracts";
 import {
   StrategyRegistry,
@@ -76,6 +77,26 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
     def("THROWS", () => {
       throw new Error("strategy blew up");
     }),
+  );
+  // Phase 3 D1: a strategy that closes what is held rather than proposing the
+  // opposite side. HOLD is what it returns for "not an entry".
+  registry.register(
+    def("EXITER", () => ({
+      side: "HOLD",
+      confidence: 1,
+      exit: true,
+      reason: "done with this one",
+    })),
+  );
+  // The same exit, written the way EMA and RSI write theirs: naming the side
+  // that would close a long. Audit A2 — while flat, that side must not open.
+  registry.register(
+    def("EXIT_SELLER", () => ({
+      side: "SELL",
+      confidence: 1,
+      exit: true,
+      reason: "done with this one",
+    })),
   );
   // Analyses one series, trades a contract derived from another — the split
   // the derivative path exists to handle.
@@ -190,6 +211,7 @@ function config(type: string, symbols = ["NSE:X-EQ"]): StrategyConfig {
 const candle = (close: number, ts = 1000) => ({
   symbol: "NSE:X-EQ",
   interval: "5m" as const,
+  source: "LIVE_TICK" as const,
   open: close,
   high: close,
   low: close,
@@ -411,5 +433,279 @@ describe("StrategyRunner derivative resolution (plan/15 §4, plan/17 §7)", () =
     expect(h.signals[0]?.symbol).toBe("NSE:X-EQ");
     expect(h.signals[0]?.underlyingSymbol).toBeUndefined();
     expect(h.resolved).toHaveLength(0);
+  });
+});
+
+describe("strategyVersion travels with the decision (§2.8, Q4)", () => {
+  /**
+   * A later edit to a strategy must never rewrite what past trades were made
+   * by. The version is therefore stamped onto the decision at the moment it is
+   * made, and copied forward from there — never joined back to the config,
+   * which is the thing that changes.
+   */
+  it("stamps the enabled config's version onto the signal", async () => {
+    const h = harness();
+    await h.runner.enable({ ...config("ALWAYS_BUY"), strategyVersion: "v3" });
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toBe("v3");
+    expect(h.signals[0]?.strategyVersion).toBe("v3");
+  });
+
+  /**
+   * Derived, not left absent (PLAN.md rule 9: every strategy is versioned).
+   *
+   * This test used to assert "absent stays absent", on the ground that a
+   * version nothing declared would be a claim nothing made. But no route ever
+   * declares one, so that rule left EVERY decision unversioned. The derived
+   * version is computed from the rule actually running — it claims only what
+   * the config says — and is labelled `cfg-` so it is never mistaken for a
+   * declared one.
+   */
+  it("derives one from the config when none is declared", async () => {
+    const h = harness();
+    const enabled = config("ALWAYS_BUY");
+    await h.runner.enable(enabled);
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toBe(strategyVersionOf(enabled));
+    expect(h.handoffs[0]?.strategyVersion).toMatch(/^cfg-/);
+  });
+
+  /** An edit that changes how it decides is a new version from then on. */
+  it("stamps a new version once a params edit is re-enabled", async () => {
+    const h = harness();
+    const before = config("ALWAYS_BUY");
+    await h.runner.enable(before);
+    h.runner.disable(before.strategyId);
+    await h.runner.enable({ ...before, params: { edited: true } });
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toMatch(/^cfg-/);
+    expect(h.handoffs[0]?.strategyVersion).not.toBe(strategyVersionOf(before));
+  });
+
+  /**
+   * The instance captures the version at enable time, so a config edited
+   * mid-session cannot restate what the running strategy has been deciding as.
+   */
+  it("keeps the version the instance was enabled with", async () => {
+    const h = harness();
+    const enabled = { ...config("ALWAYS_BUY"), strategyVersion: "v1" };
+    await h.runner.enable(enabled);
+    // The operator's object is mutated after the fact — a plausible accident.
+    enabled.strategyVersion = "v2";
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.strategyVersion).toBe("v1");
+  });
+});
+
+describe("the decision's bar travels with it (§2.1, design §2 drifts 1 and 3)", () => {
+  /**
+   * The Trade records what its entry decision stood on. The runner is the
+   * only component that holds the bar at decision time, so it stamps it, and
+   * everything downstream copies it forward — the same road as the version.
+   */
+  it("stamps the bar's key and source onto the signal", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    await fireBar(h, 150, {}, 1000);
+
+    expect(h.handoffs[0]?.dataProvenance).toEqual({
+      symbol: "NSE:X-EQ",
+      interval: "5m",
+      barTs: 1000,
+      source: "LIVE_TICK",
+    });
+  });
+
+  it("copies the bar's ingestion and volume flags exactly", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    h.runner.onCandleClosed({
+      ...candle(150),
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 2,
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    });
+    await h.runner.onIndicatorsUpdated(indicators({}));
+
+    expect(h.handoffs[0]?.dataProvenance).toMatchObject({
+      source: "BROKER_HISTORICAL",
+      ingestionVersion: 2,
+    });
+    expect(h.handoffs[0]?.marketContext).toEqual({
+      volumeAvailable: true,
+      volumeQuality: "SUSPECT",
+    });
+  });
+
+  /**
+   * A bar that says nothing about its volume yields an EMPTY context, not a
+   * defaulted one. Writing "REAL" here would be a claim no component made;
+   * absent keeps the candle's own meaning, and `{}` still says "captured".
+   */
+  it("records an empty context rather than inventing volume flags", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]?.marketContext).toEqual({});
+  });
+
+  /**
+   * A derivative decision is made on the underlying's bar. Provenance names
+   * THAT bar — the data the decision rested on — never the traded contract,
+   * which has no bar at the decision timestamp to point at.
+   */
+  it("names the analysed bar, not the traded contract, for a derivative", async () => {
+    const h = harness();
+    h.setContract(
+      {
+        symbol: "NSE:NIFTY26SEP25000CE",
+        kind: "OPTION",
+        lotSize: 65,
+        tickSize: 0.05,
+        underlying: "NIFTY",
+        expiry: 4_000_000_000_000,
+        strike: 25_000,
+        optionType: "CE",
+      },
+      150,
+    );
+    await h.runner.enable(config("OPTION_BUYER"));
+    await fireBar(h, 25_012);
+
+    expect(h.signals[0]?.symbol).toBe("NSE:NIFTY26SEP25000CE");
+    expect(h.signals[0]?.dataProvenance?.symbol).toBe("NSE:X-EQ");
+  });
+});
+
+describe("a strategy can close what it holds (§3.3, D1)", () => {
+  const held = (side: "LONG" | "SHORT", qty = 10): Position => ({
+    positionId: "pos_held",
+    strategyId: "str_EXITER",
+    symbol: "NSE:X-EQ",
+    side,
+    qty,
+    avgEntryPrice: 100,
+    status: "OPEN",
+    realizedPnl: 0,
+    unrealizedPnl: 0,
+    openedAt: 0,
+    mode: "paper",
+  });
+
+  /**
+   * Before this, the only way out was an opposite-side signal the position
+   * engine netted against — indistinguishable from a genuine reversal, which
+   * Phase 2 Q1 makes TWO trades: one closed, and a phantom facing the other
+   * way. A strategy saying "I am done" must not produce a new position.
+   */
+  it("emits a closing signal for a LONG, stamped STRATEGY_EXIT", async () => {
+    const h = harness();
+    h.setPosition(held("LONG"));
+    await h.runner.enable(config("EXITER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toHaveLength(1);
+    expect(h.handoffs[0]).toMatchObject({
+      side: "SELL",
+      exitReason: "STRATEGY_EXIT",
+      positionId: "pos_held",
+      qtyProposal: 10,
+    });
+  });
+
+  it("mirrors for a SHORT", async () => {
+    const h = harness();
+    h.setPosition(held("SHORT", 7));
+    await h.runner.enable(config("EXITER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]).toMatchObject({
+      side: "BUY",
+      exitReason: "STRATEGY_EXIT",
+      qtyProposal: 7,
+    });
+  });
+
+  /** Q1: the WHOLE position, whatever quantity the verdict proposed. */
+  it("closes the whole position, ignoring a proposed quantity", async () => {
+    const h = harness();
+    h.setPosition(held("LONG", 12));
+    await h.runner.enable(config("EXIT_SELLER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs[0]).toMatchObject({ side: "SELL", qtyProposal: 12 });
+  });
+
+  /**
+   * An exit verdict with nothing held is a strategy asking to close a position
+   * that does not exist. It must not become a new entry on the closing side —
+   * which is precisely what deriving the side without checking would do.
+   */
+  it("forwards nothing when there is no position to close", async () => {
+    const h = harness();
+    h.setPosition(null);
+    await h.runner.enable(config("EXITER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toEqual([]);
+  });
+
+  /**
+   * Audit A2: the same, when the verdict names a side. Falling back to that
+   * side while flat turned "I am done" into a SHORT entry. It is recorded as
+   * a HOLD instead — the strategy did decide, so the evaluation is kept.
+   */
+  it("does not let an exit that names a side open a position while flat", async () => {
+    const h = harness();
+    h.setPosition(null);
+    await h.runner.enable(config("EXIT_SELLER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toEqual([]);
+    expect(h.signals[0]).toMatchObject({ side: "HOLD" });
+    expect(h.signals[0]?.exitReason).toBeUndefined();
+  });
+
+  /** An ordinary HOLD is still inaction, and still never forwarded. */
+  it("leaves a plain HOLD alone", async () => {
+    const h = harness();
+    h.setPosition(held("LONG"));
+    await h.runner.enable(config("HOLDER"));
+    await fireBar(h, 150);
+
+    expect(h.handoffs).toEqual([]);
+  });
+});
+
+/**
+ * Task 3.4: the Exit Engine asks the runner for a strategy's exit rules on
+ * every closed bar, so the answer is in memory — captured when the instance
+ * was enabled, and replaced when an edit re-provisions it.
+ */
+describe("exit rules come from the enabled config (§3.4)", () => {
+  it("returns the rules the strategy was enabled with", async () => {
+    const h = harness();
+    await h.runner.enable({
+      ...config("ALWAYS_BUY"),
+      exitRules: { maxHoldMinutes: 30 },
+    });
+
+    expect(h.runner.exitRulesFor("str_ALWAYS_BUY")).toEqual({
+      maxHoldMinutes: 30,
+    });
+  });
+
+  it("returns null when none are configured, or the strategy is not running", async () => {
+    const h = harness();
+    await h.runner.enable(config("ALWAYS_BUY"));
+
+    expect(h.runner.exitRulesFor("str_ALWAYS_BUY")).toBeNull();
+    expect(h.runner.exitRulesFor("str_ghost")).toBeNull();
   });
 });

@@ -1,27 +1,48 @@
 import {
-  UNKNOWN_MARKET_VIEW,
   type Candle,
   type CandleInterval,
+  type MarketView,
   type Order,
   type Position,
   type RiskLimits,
+  type RiskLog,
   type SessionContext,
-  type SessionPhase,
   type Signal,
   type StrategyConfig,
+  type Instrument,
+  type Trade,
+  intervalMs,
+  istDateKey,
+  NSE_DEFAULT_SESSION,
 } from "@neelkanth/core";
 import type { EventName, EventPayload } from "@neelkanth/contracts";
-import { PaperBroker } from "@neelkanth/broker";
+import {
+  DEFAULT_CHARGES,
+  PaperBroker,
+  type ChargeConfig,
+  type SlippageModel,
+} from "@neelkanth/broker";
 import {
   computePortfolio,
+  ExitEngine,
+  fixtureNormalizer,
   IndicatorEngine,
+  MarketBiasEngine,
+  MarketDataEngine,
   OrderManager,
   PnlEngine,
   PositionEngine,
-  registerIndicatorSpec,
+  provisionSeries,
   RiskEngine,
+  SessionManager,
   StrategyRunner,
+  TradeEngine,
+  type ExitHandoffOutcome,
+  type ExitPorts,
   type IndicatorPorts,
+  type MarketBiasConfig,
+  type MarketBiasPorts,
+  type MarketDataPorts,
   type OrderPorts,
   type PnlPorts,
   type PositionPorts,
@@ -32,24 +53,113 @@ import { createStrategyRegistry } from "@neelkanth/strategies";
 
 /**
  * The golden-run pipeline harness (plan/27 §4): the whole machine wired with
- * in-memory ports so a recorded day of candles runs end-to-end with zero
+ * in-memory ports so a recorded day of TICKS runs end-to-end with zero
  * infrastructure. It is the determinism proof — the same fixture always
- * produces the same signals, risk decisions, orders, fills, positions, and PnL
- * (plan/02 Principle 1) — and a preview of the real composition root (plan/05
- * §3): same engines, same injected dependencies, fake ports instead of Redis/
- * Mongo. Everything is deterministic: counter-based ids, the candle timestamp
- * as the clock, fixed slippage/charges, no randomness.
+ * produces the same candles, signals, risk decisions, orders, fills, exits,
+ * positions, and PnL (plan/02 Principle 1) — and a preview of the real
+ * composition root (plan/05 §3): same engines, same order, fake ports instead
+ * of Redis/Mongo. Everything is deterministic: counter-based ids, the tick
+ * timestamp as the clock, fixed slippage/charges, no randomness.
+ *
+ * **It starts at ticks, not candles.** Production has no source of finished
+ * bars; it has a feed. The earlier harness was handed pre-baked candles, which
+ * meant normalization, aggregation and the end-of-day flush — the three steps
+ * every other number in the record depends on — were never exercised, and the
+ * record proved determinism over a strictly smaller machine than the one that
+ * trades (CURRENT_STATE §4).
  */
+
+/** The raw wire shape the fixture normalizer parses (see `normalize.ts`). */
+export interface RawTick {
+  sym: string;
+  ltp: number;
+  vol: number;
+  ts: number;
+}
 
 export interface GoldenFixture {
   symbol: string;
   interval: CandleInterval;
+  /** Every interval the aggregator builds — production builds 1m and 5m. */
+  intervals: CandleInterval[];
   /** IST session-open epoch ms; drives minutesSinceOpen. */
   sessionOpenTs: number;
-  candles: Candle[];
+  ticks: RawTick[];
   strategies: StrategyConfig[];
+  indexSymbols: string[];
+  breadthSymbols: string[];
+  biasConfig?: MarketBiasConfig;
   allocatedCapital: number;
   limits: RiskLimits;
+  /**
+   * A clock reading before the bell.
+   *
+   * The session manager reports no transition on its FIRST evaluation — it
+   * does not know the prior phase, and an honest "no transition" beats a
+   * fabricated one. So the harness, like the runtime, is running before the
+   * open; otherwise the day would begin mid-session and MARKET_OPEN would
+   * never fire.
+   */
+  preOpenTs: number;
+  /** When the intraday flatten fires. */
+  squareOffTs: number;
+  /** The first clock reading after the bell — drives the flush and MARKET_CLOSE. */
+  afterCloseTs: number;
+}
+
+/**
+ * One trading day, as the session manager and the exits see it (D6).
+ * Timestamps are epoch ms; `date` is the IST trading date.
+ */
+export interface ReplaySession {
+  date: string;
+  /** A clock reading before the bell, so the open is a real transition. */
+  preOpenTs: number;
+  sessionOpenTs: number;
+  /** When the intraday flatten fires. */
+  squareOffTs: number;
+  /** The first clock reading after the bell — drives the flush and close. */
+  afterCloseTs: number;
+}
+
+/**
+ * What a run is fed (D1). Ticks prove the feed half — normalisation,
+ * aggregation, the flush. Stored candles are what history has: the broker's
+ * record is bars, and reconstructing ticks from a bar would invent an intrabar
+ * path the data does not contain. Candles enter at `CANDLE_CLOSED`, at their
+ * close time; everything after that is shared.
+ */
+export type ReplaySource =
+  { kind: "ticks"; ticks: RawTick[] } | { kind: "candles"; candles: Candle[] };
+
+/** Everything one replay is a function of. */
+export interface ReplayInput {
+  /** The interval strategies and the market view decide on. */
+  interval: CandleInterval;
+  /** Intervals the aggregator builds from ticks (tick sources only). */
+  intervals: CandleInterval[];
+  source: ReplaySource;
+  /** Trading days, in order. */
+  sessions: ReplaySession[];
+  /** Weekend dates the exchange opened (`SessionConfig.specialSessions`). */
+  specialSessions?: string[];
+  strategies: StrategyConfig[];
+  indexSymbols: string[];
+  breadthSymbols: string[];
+  biasConfig?: MarketBiasConfig;
+  allocatedCapital: number;
+  limits: RiskLimits;
+  /**
+   * The symbol master risk sizes against. A non-equity symbol absent from it
+   * is refused ("lot size unknown"), so a synthetic index must be here (Q1).
+   */
+  instruments?: Instrument[];
+  /** How fills slip (Q3). Defaults to the harness's 5 bps. */
+  slippage?: SlippageModel;
+  /** What fills cost (Q3). Defaults to `DEFAULT_CHARGES`. */
+  charges?: ChargeConfig;
+  /** Observes each closed bar, in order, as the pipeline sees it. */
+  onCandleClosed?: (candle: Candle) => void;
 }
 
 interface SignalRow {
@@ -83,51 +193,164 @@ interface PositionRow {
   avgEntryPrice: number;
   realizedPnl: number;
   status: string;
+  /** The protective levels, recorded because the Exit Engine acts on them. */
+  stopLoss?: number;
+  target?: number;
+}
+/**
+ * A completed Trade, as research reads it (Phase 2's outcome primitive).
+ * The fields that make it evidence: both orders, why it ended, the version
+ * that decided it, and where the bar behind the entry came from.
+ */
+interface TradeRow {
+  tradeId: string;
+  strategyId: string;
+  strategyVersion?: string;
+  symbol: string;
+  side: string;
+  status: string;
+  entryOrderId: string;
+  exitOrderId?: string;
+  entryPrice: number;
+  exitPrice?: number;
+  quantity: number;
+  exitReason?: string;
+  grossPnl: number;
+  charges: number;
+  netPnl: number;
+  /** The entry bar's source — LIVE_TICK here, BROKER_HISTORICAL in history. */
+  entrySource?: string;
+}
+interface CandleCountRow {
+  symbol: string;
+  interval: string;
+  count: number;
 }
 
 export interface GoldenRecord {
+  /** Bars the aggregator produced — proof the feed half ran. */
+  candles: CandleCountRow[];
   signals: SignalRow[];
   riskDecisions: RiskDecisionRow[];
   orders: OrderRow[];
   positions: PositionRow[];
+  /** One per completed position lifecycle (§4.3). */
+  trades: TradeRow[];
+  /** Session transitions, in order, as the single session driver saw them. */
+  sessionEvents: string[];
+  /** The gate's verdict at the end of the day. */
+  marketView: { bias: string; detail: string };
+  /** Positions still open after square-off — the day must end flat. */
+  openAtEnd: number;
   realizedPnl: number;
 }
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
+/** The harness's slippage when a run names none: 5 bps, adverse. */
+export const DEFAULT_SLIPPAGE: SlippageModel = { kind: "percent", pct: 0.0005 };
+
+/**
+ * What a run decided, in full (Phase 6 D3): the complete Signals, the risk
+ * decision on each, and the complete Trades. The record summarises; research
+ * joins on these — a Trade's entry bar, a Signal's time.
+ *
+ * Deliberately NOT part of the record, so a Phase 4 fingerprint means what it
+ * meant when it was taken.
+ */
+export interface ReplayTrail {
+  signals: Signal[];
+  riskLogs: RiskLog[];
+  trades: Trade[];
+}
+
+/** Run one replay (Phase 4). */
+export async function runReplay(input: ReplayInput): Promise<GoldenRecord> {
+  return (await runReplayWithTrail(input)).record;
+}
+
+/** Run one replay and keep its trail (Phase 6). */
+export async function runReplayWithTrail(
+  input: ReplayInput,
+): Promise<{ record: GoldenRecord; trail: ReplayTrail }> {
+  const pipeline = new ReplayPipeline(input);
+  const record = await pipeline.run();
+  return { record, trail: pipeline.trail() };
+}
+
+/** The golden fixture: one tick-fed session. */
 export async function runGoldenPipeline(
   fixture: GoldenFixture,
 ): Promise<GoldenRecord> {
-  const pipeline = new GoldenPipeline(fixture);
-  return pipeline.run();
+  return runReplay({
+    interval: fixture.interval,
+    intervals: fixture.intervals,
+    source: { kind: "ticks", ticks: fixture.ticks },
+    sessions: [
+      {
+        date: istDateKey(fixture.sessionOpenTs),
+        preOpenTs: fixture.preOpenTs,
+        sessionOpenTs: fixture.sessionOpenTs,
+        squareOffTs: fixture.squareOffTs,
+        afterCloseTs: fixture.afterCloseTs,
+      },
+    ],
+    strategies: fixture.strategies,
+    indexSymbols: fixture.indexSymbols,
+    breadthSymbols: fixture.breadthSymbols,
+    ...(fixture.biasConfig === undefined
+      ? {}
+      : { biasConfig: fixture.biasConfig }),
+    allocatedCapital: fixture.allocatedCapital,
+    limits: fixture.limits,
+  });
 }
 
-class GoldenPipeline {
-  private readonly fixture: GoldenFixture;
+class ReplayPipeline {
+  private readonly fixture: ReplayInput;
+  /** The trading day being replayed. */
+  private day: ReplaySession;
+  /** Realized P&L of the days already closed — the counter resets each open. */
+  private realizedOfPastDays = 0;
   private now: number;
   private minutesSinceOpen = 0;
   private readonly hotPrice = new Map<string, number>();
   private readonly candleWindow = new Map<string, Candle[]>();
+  private readonly candleCounts = new Map<string, number>();
   private readonly ordersById = new Map<string, Order>();
   private readonly ordersBySignal = new Set<string>();
   private readonly positionsById = new Map<string, Position>();
+  /** Latest state of each Trade, in the order Trades were opened. */
+  private readonly tradesById = new Map<string, Trade>();
 
   private readonly signals: SignalRow[] = [];
   private readonly riskDecisions: RiskDecisionRow[] = [];
-  private readonly positionUpdates: PositionRow[] = [];
+  private readonly trailSignals: Signal[] = [];
+  private readonly trailRiskLogs: RiskLog[] = [];
+  private readonly sessionEvents: string[] = [];
 
   private idSeq = 0;
+  private tradeSeq = 0;
 
+  private readonly marketData: MarketDataEngine;
+  private readonly session: SessionManager;
   private readonly indicatorEngine: IndicatorEngine;
+  private readonly marketBias: MarketBiasEngine;
   private readonly runner: StrategyRunner;
+  private readonly exitEngine: ExitEngine;
   private readonly risk: RiskEngine;
   private readonly orderManager: OrderManager;
   private readonly positionEngine: PositionEngine;
   private readonly pnl: PnlEngine;
+  private readonly tradeEngine: TradeEngine;
 
-  constructor(fixture: GoldenFixture) {
+  constructor(fixture: ReplayInput) {
     this.fixture = fixture;
-    this.now = fixture.sessionOpenTs;
+    const first = fixture.sessions[0];
+    if (first === undefined)
+      throw new Error("a replay needs at least one session");
+    this.day = first;
+    this.now = first.preOpenTs;
 
     const onError = (error: unknown): never => {
       // In a golden run any engine error is a bug in the machine, not a
@@ -135,6 +358,26 @@ class GoldenPipeline {
       throw error instanceof Error ? error : new Error(String(error));
     };
     const publish = this.publish.bind(this);
+
+    // --- Market Data (the feed half) ---
+    const marketDataPorts: MarketDataPorts = {
+      writeHotSession: () => Promise.resolve(),
+      saveCandle: () => Promise.resolve(),
+      publish,
+    };
+    this.marketData = new MarketDataEngine({
+      ports: marketDataPorts,
+      normalizer: fixtureNormalizer,
+      intervals: fixture.intervals,
+      onError,
+    });
+    // ONE session driver, as production now has exactly one. `evaluate()`
+    // consumes the open/close edge, so a second instance would swallow the
+    // transition the first depends on (see MarketDataEngine's class note).
+    this.session = new SessionManager({
+      ...NSE_DEFAULT_SESSION,
+      specialSessions: fixture.specialSessions ?? [],
+    });
 
     // --- Position + PnL (projection chain) ---
     const positionPorts: PositionPorts = {
@@ -148,6 +391,28 @@ class GoldenPipeline {
       ports: positionPorts,
       nextPositionId: () => this.nextId("pos"),
       now: () => this.now,
+      onError,
+    });
+
+    // The outcome projection, keyed and fed as the runtime feeds it.
+    this.tradeEngine = new TradeEngine({
+      ports: {
+        saveTrade: (trade) => {
+          this.tradesById.set(trade.tradeId, trade);
+          return Promise.resolve();
+        },
+        loadOpenTrades: () => Promise.resolve([]),
+        findTradeByOrderId: () => Promise.resolve(null),
+        resolvePositionId: (strategyId, symbol) =>
+          this.positionEngine.getPosition(strategyId, symbol)?.positionId ??
+          null,
+      },
+      // Its own counter, so adding Trades does not renumber every signal and
+      // order after them — the record stays comparable across this change.
+      nextTradeId: () => {
+        this.tradeSeq += 1;
+        return `trd_${String(this.tradeSeq)}`;
+      },
       onError,
     });
 
@@ -172,7 +437,8 @@ class GoldenPipeline {
     const broker = new PaperBroker({
       readPrice: (symbol) => Promise.resolve(this.hotPrice.get(symbol) ?? null),
       readSessionOpen: () => Promise.resolve(true),
-      slippage: { kind: "percent", pct: 0.0005 },
+      slippage: fixture.slippage ?? DEFAULT_SLIPPAGE,
+      charges: fixture.charges ?? DEFAULT_CHARGES,
       now: () => this.now,
     });
     const orderPorts: OrderPorts = {
@@ -203,14 +469,33 @@ class GoldenPipeline {
       onError,
     });
 
+    // --- Market bias (the gate risk reads) ---
+    const biasPorts: MarketBiasPorts = {
+      readCandleWindow: (symbol, interval, count) =>
+        Promise.resolve(this.window(symbol, interval).slice(-count)),
+    };
+    this.marketBias = new MarketBiasEngine({
+      ports: biasPorts,
+      indexSymbols: () => this.fixture.indexSymbols,
+      breadthSymbols: () => this.fixture.breadthSymbols,
+      interval: fixture.interval,
+      now: () => this.now,
+      ...(fixture.biasConfig === undefined
+        ? {}
+        : { config: fixture.biasConfig }),
+      onError,
+    });
+
     // --- Risk Engine ---
     const riskPorts: RiskPorts = {
-      readSession: () => Promise.resolve<SessionPhase>("open"),
-      // NEUTRAL: the golden run exercises the pipeline's mechanics, not the
-      // market gate, and a neutral view blocks nothing (see MarketView).
-      readMarketView: () => UNKNOWN_MARKET_VIEW,
+      readSession: () => Promise.resolve(this.session.phase(this.now)),
+      // The REAL gate, not a neutral stand-in: production blocks entries that
+      // disagree with the index + breadth read, and a harness that always sees
+      // NEUTRAL would never reproduce a day where that mattered.
+      readMarketView: () => this.marketBias.current(),
       // Equity fixture — lot size 1 by definition, no symbol master needed.
-      readInstrument: () => null,
+      readInstrument: (symbol) =>
+        fixture.instruments?.find((i) => i.symbol === symbol) ?? null,
       readDailyRealizedLoss: () =>
         Promise.resolve(Math.max(0, -this.positionEngine.realizedPnl())),
       readOpenPositionCount: () =>
@@ -242,6 +527,7 @@ class GoldenPipeline {
       readGlobalLimits: () => Promise.resolve(this.fixture.limits),
       readStrategyOverride: () => Promise.resolve(null),
       persistRiskLog: (log) => {
+        this.trailRiskLogs.push(log);
         this.riskDecisions.push({
           signalId: log.signalId,
           decision: log.decision,
@@ -267,13 +553,47 @@ class GoldenPipeline {
       onError,
     });
 
+    // --- Exit Engine ---
+    const exitPorts: ExitPorts = {
+      readOpenPositions: () => this.positionEngine.getOpenPositions(),
+      readSession: () => Promise.resolve<SessionContext>(this.sessionContext()),
+      persistSignal: (signal) => {
+        this.recordSignal(signal);
+        return Promise.resolve();
+      },
+      // Phase 3, wired as the runtime wires it. The durable in-flight check
+      // reads this run's own orders (D3)…
+      hasExitInFlight: (positionId) =>
+        Promise.resolve(
+          [...this.ordersById.values()].some(
+            (o) =>
+              o.positionId === positionId &&
+              (o.status === "PLACED" || o.status === "PENDING"),
+          ),
+        ),
+      // …exit rules come from the running instances, as in production…
+      readExitRules: (strategyId) => this.runner.exitRulesFor(strategyId),
+      // …and a trail moves the live position and its stored copy (D4).
+      updateStopLoss: (positionId, stopLoss) => {
+        this.positionEngine.setStopLoss(positionId, stopLoss);
+        const stored = this.positionsById.get(positionId);
+        if (stored !== undefined)
+          this.positionsById.set(positionId, { ...stored, stopLoss });
+        return Promise.resolve();
+      },
+    };
+    this.exitEngine = new ExitEngine({
+      ports: exitPorts,
+      handoff: (signal) => this.handoff(signal),
+      nextSignalId: () => this.nextId("sig"),
+      onError,
+    });
+
     // --- Strategy Runner ---
     const strategyPorts: StrategyPorts = {
-      readSession: () => Promise.resolve<SessionContext>(this.session()),
+      readSession: () => Promise.resolve<SessionContext>(this.sessionContext()),
       readCandleWindow: (symbol, interval, count) =>
-        Promise.resolve(
-          (this.candleWindow.get(`${symbol}|${interval}`) ?? []).slice(-count),
-        ),
+        Promise.resolve(this.window(symbol, interval).slice(-count)),
       readPosition: (strategyId, symbol) =>
         Promise.resolve(this.positionEngine.getPosition(strategyId, symbol)),
       // The fixture trades cash equity, so no strategy declares a derivative
@@ -282,14 +602,7 @@ class GoldenPipeline {
       readPrice: () => null,
       readSentiment: () => Promise.resolve(0),
       persistSignal: (signal) => {
-        this.signals.push({
-          signalId: signal.signalId,
-          strategyId: signal.strategyId,
-          symbol: signal.symbol,
-          side: signal.side,
-          confidence: round4(signal.confidence),
-          reason: signal.reason,
-        });
+        this.recordSignal(signal);
         return Promise.resolve();
       },
       publish,
@@ -298,25 +611,59 @@ class GoldenPipeline {
       registry: createStrategyRegistry(),
       ports: strategyPorts,
       provisionIndicators: (symbol, interval, specs) => {
-        for (const spec of specs) {
-          registerIndicatorSpec(this.indicatorEngine, symbol, interval, spec);
-        }
+        provisionSeries(this.indicatorEngine, symbol, interval, specs);
         return this.indicatorEngine.warmUp(symbol, interval);
       },
-      handoff: (signal) => this.handoff(signal),
+      handoff: async (signal) => {
+        await this.handoff(signal);
+      },
       nextSignalId: () => this.nextId("sig"),
       onError,
     });
+  }
+
+  /** The complete decisions behind the record — call after `run`. */
+  trail(): ReplayTrail {
+    return {
+      signals: [...this.trailSignals],
+      riskLogs: [...this.trailRiskLogs],
+      trades: [...this.tradesById.values()],
+    };
   }
 
   async run(): Promise<GoldenRecord> {
     for (const config of this.fixture.strategies) {
       await this.runner.enable(config);
     }
-    for (const candle of this.fixture.candles) {
-      await this.feedCandle(candle);
+
+    for (const day of this.fixture.sessions) {
+      this.day = day;
+      // Boot before the bell, so the open is a real transition rather than
+      // the first thing the session manager ever saw.
+      await this.driveSession(day.preOpenTs);
+
+      await this.feedDay(day);
+
+      // The day's end, driven by the same session manager on the same clock:
+      // square off while risk will still approve exits, then flush the bars
+      // the aggregator is still holding open, then announce the close.
+      await this.driveSession(day.squareOffTs);
+      await this.driveSession(day.afterCloseTs);
+      this.realizedOfPastDays += this.positionEngine.realizedPnl();
     }
+
+    const view = this.marketBias.current();
     return {
+      candles: [...this.candleCounts.entries()]
+        .map(([key, count]) => {
+          const [symbol = "", interval = ""] = key.split("|");
+          return { symbol, interval, count };
+        })
+        .sort((a, b) =>
+          `${a.symbol}|${a.interval}`.localeCompare(
+            `${b.symbol}|${b.interval}`,
+          ),
+        ),
       signals: this.signals,
       riskDecisions: this.riskDecisions,
       orders: [...this.ordersById.values()].map((o) => ({
@@ -338,39 +685,176 @@ class GoldenPipeline {
         avgEntryPrice: round4(p.avgEntryPrice),
         realizedPnl: round4(p.realizedPnl),
         status: p.status,
+        ...(p.stopLoss === undefined ? {} : { stopLoss: round4(p.stopLoss) }),
+        ...(p.target === undefined ? {} : { target: round4(p.target) }),
       })),
-      realizedPnl: round4(this.positionEngine.realizedPnl()),
+      trades: [...this.tradesById.values()].map((t) => ({
+        tradeId: t.tradeId,
+        strategyId: t.strategyId,
+        ...(t.strategyVersion === undefined
+          ? {}
+          : { strategyVersion: t.strategyVersion }),
+        symbol: t.symbol,
+        side: t.side,
+        status: t.status,
+        entryOrderId: t.entryOrderId,
+        ...(t.exitOrderId === undefined ? {} : { exitOrderId: t.exitOrderId }),
+        entryPrice: round4(t.entryPrice),
+        ...(t.exitPrice === undefined
+          ? {}
+          : { exitPrice: round4(t.exitPrice) }),
+        quantity: t.quantity,
+        ...(t.exitReason === undefined ? {} : { exitReason: t.exitReason }),
+        grossPnl: round4(t.grossPnl ?? 0),
+        charges: round4(t.charges),
+        netPnl: round4(t.netPnl ?? 0),
+        ...(t.dataProvenance === undefined
+          ? {}
+          : { entrySource: t.dataProvenance.source }),
+      })),
+      sessionEvents: this.sessionEvents,
+      marketView: { bias: view.bias, detail: view.detail },
+      openAtEnd: this.positionEngine.getOpenPositions().length,
+      // Every day's, not the last day's: the Position Engine's counter is the
+      // risk gate's daily figure and resets at each open.
+      realizedPnl: round4(this.realizedOfPastDays),
     };
   }
 
-  private async feedCandle(candle: Candle): Promise<void> {
-    this.now = candle.ts;
-    this.minutesSinceOpen = Math.round(
-      (candle.ts - this.fixture.sessionOpenTs) / 60_000,
-    );
+  /** Feed one day's input, in time order, through the door it arrives by. */
+  private async feedDay(day: ReplaySession): Promise<void> {
+    const within = (ts: number): boolean =>
+      ts >= day.preOpenTs && ts < day.afterCloseTs;
+    const source = this.fixture.source;
+    if (source.kind === "ticks") {
+      for (const tick of source.ticks) {
+        if (within(tick.ts)) await this.feedTick(tick);
+      }
+      return;
+    }
+    for (const candle of source.candles) {
+      const closeTs = candle.ts + intervalMs(candle.interval);
+      if (!within(closeTs)) continue;
+      // A stored bar arrives when it closes — never before (D7).
+      await this.driveSession(closeTs);
+      await this.publish("CANDLE_CLOSED", candle);
+    }
+  }
+
+  /**
+   * One raw message, through the same door production uses.
+   *
+   * The session is evaluated before the tick is ingested, so a bar that closes
+   * after the bell is still judged against the phase that was in force — the
+   * same ordering the runtime's timer produces.
+   */
+  private async feedTick(tick: RawTick): Promise<void> {
+    await this.driveSession(tick.ts);
+    await this.marketData.ingestRaw(tick);
+  }
+
+  /**
+   * The single session driver (plan/17 §6).
+   *
+   * Production has exactly one, for a reason recorded in the Market Data
+   * Engine: `evaluate()` consumes the open/close edge, so two callers sharing a
+   * manager means one of them silently never sees a transition. The harness
+   * therefore drives it here and nowhere else.
+   */
+  private async driveSession(now: number): Promise<void> {
+    if (now < this.now) return;
+    this.now = now;
+    this.minutesSinceOpen = Math.round((now - this.day.sessionOpenTs) / 60_000);
+    const evaluation = this.session.evaluate(now);
+
+    if (evaluation.marketOpened) {
+      this.indicatorEngine.onMarketOpen();
+      this.positionEngine.resetDaily();
+      this.sessionEvents.push("MARKET_OPEN");
+    }
+    // Flatten before the close, while the session is still open enough for
+    // risk to approve the exits. By MARKET_CLOSE it is too late — the Risk
+    // Engine's session check would block every exit order.
+    if (evaluation.phase === "open") {
+      await this.exitEngine.onSessionTick(now, this.day.squareOffTs);
+    }
+    if (evaluation.marketClosed) {
+      // Before anyone hears the market shut: the aggregator holds each
+      // interval's final bucket open until a later tick pushes it forward, and
+      // after the close no such tick arrives.
+      await this.marketData.flushOpenBars();
+      this.sessionEvents.push("MARKET_CLOSE");
+      await this.pnl.snapshot(istDateKey(now));
+    }
+  }
+
+  /**
+   * A closed bar, routed exactly as the runtime routes it.
+   *
+   * The order is load-bearing and is production's: protective exits are judged
+   * before new decisions, so a bar that both hits a stop and sets up an entry
+   * closes the position first; and the market view is refreshed before
+   * strategies decide, so the gate they are checked against reflects the bar
+   * they are deciding on.
+   */
+  private async onCandleClosed(candle: Candle): Promise<void> {
+    this.fixture.onCandleClosed?.(candle);
     this.hotPrice.set(candle.symbol, candle.close);
+    this.appendWindow(candle);
+
+    this.runner.onCandleClosed(candle); // cache the bar for the indicator update
+    await this.exitEngine.onCandleClosed(candle);
+    await this.marketBias.refresh();
+    await this.indicatorEngine.onCandleClosed(candle); // → INDICATORS_UPDATED
+  }
+
+  private appendWindow(candle: Candle): void {
     const key = `${candle.symbol}|${candle.interval}`;
     const window = this.candleWindow.get(key) ?? [];
     window.push(candle);
     this.candleWindow.set(key, window);
-
-    this.runner.onCandleClosed(candle); // cache the bar for the indicator update
-    await this.indicatorEngine.onCandleClosed(candle); // → INDICATORS_UPDATED → runner
+    this.candleCounts.set(key, (this.candleCounts.get(key) ?? 0) + 1);
   }
 
-  /** The synchronous risk→order handoff (plan/14 §2). */
-  private async handoff(signal: Signal): Promise<void> {
+  private window(symbol: string, interval: CandleInterval): Candle[] {
+    return this.candleWindow.get(`${symbol}|${interval}`) ?? [];
+  }
+
+  /**
+   * The synchronous risk→order handoff (plan/14 §2), saying whether an order
+   * came of it — as the runtime's exit handoff does since Phase 3 (audit A7),
+   * so a blocked exit is retried here exactly as it is in production.
+   */
+  private async handoff(signal: Signal): Promise<ExitHandoffOutcome> {
     const decision = await this.risk.validate(signal);
-    if (decision.decision === "approved") {
-      await this.orderManager.place(signal, decision);
-    }
+    if (decision.decision !== "approved") return { placed: false };
+    const result = await this.orderManager.place(signal, decision);
+    return {
+      placed: result.status !== "rejected" && result.status !== "halted",
+    };
   }
 
-  /** The in-memory event bus: record, then route to the next consumer. */
+  private recordSignal(signal: Signal): void {
+    this.trailSignals.push(signal);
+    this.signals.push({
+      signalId: signal.signalId,
+      strategyId: signal.strategyId,
+      symbol: signal.symbol,
+      side: signal.side,
+      confidence: round4(signal.confidence),
+      reason: signal.reason,
+    });
+  }
+
+  /** The in-memory event bus: route to the next consumer, as the runtime does. */
   private async publish<N extends EventName>(
     name: N,
     payload: EventPayload<N>,
   ): Promise<void> {
+    if (name === "CANDLE_CLOSED") {
+      await this.onCandleClosed(payload as EventPayload<"CANDLE_CLOSED">);
+      return;
+    }
     if (name === "INDICATORS_UPDATED") {
       await this.runner.onIndicatorsUpdated(
         payload as EventPayload<"INDICATORS_UPDATED">,
@@ -378,34 +862,39 @@ class GoldenPipeline {
       return;
     }
     if (name === "ORDER_FILLED") {
-      await this.positionEngine.onOrderFilled(
-        payload as EventPayload<"ORDER_FILLED">,
-      );
+      const filled = payload as EventPayload<"ORDER_FILLED">;
+      // Position first, then the Trade that reads it, then the strategy —
+      // the runtime's order (Phase 2, L5).
+      await this.positionEngine.onOrderFilled(filled);
+      await this.tradeEngine.onOrderFilled(filled);
+      this.runner.onOrderFilled(filled);
+      return;
+    }
+    if (name === "ORDER_PLACED") {
+      this.runner.onOrderPlaced(payload as EventPayload<"ORDER_PLACED">);
+      return;
+    }
+    if (name === "ORDER_REJECTED") {
+      this.runner.onOrderRejected(payload as EventPayload<"ORDER_REJECTED">);
+      return;
+    }
+    if (name === "RISK_BLOCKED") {
+      this.runner.onRiskBlocked(payload as EventPayload<"RISK_BLOCKED">);
       return;
     }
     if (name === "POSITION_UPDATED") {
-      const p = payload as EventPayload<"POSITION_UPDATED">;
-      this.positionUpdates.push({
-        strategyId: p.strategyId,
-        symbol: p.symbol,
-        side: p.side,
-        qty: p.qty,
-        avgEntryPrice: round4(p.avgEntryPrice),
-        realizedPnl: round4(p.realizedPnl),
-        status: p.status,
-      });
       await this.pnl.refresh(); // realized changed (plan/13 §5)
       return;
     }
-    // SIGNAL_CREATED / RISK_BLOCKED / ORDER_PLACED / PNL_UPDATED: captured via
-    // the durable-write ports; nothing to route.
+    // MARKET_TICK / SIGNAL_CREATED / PNL_UPDATED: captured via the
+    // durable-write ports; nothing to route.
   }
 
-  private session(): SessionContext {
+  private sessionContext(): SessionContext {
     return {
-      phase: "open",
+      phase: this.session.phase(this.now),
       minutesSinceOpen: this.minutesSinceOpen,
-      sessionOpenTs: this.fixture.sessionOpenTs,
+      sessionOpenTs: this.day.sessionOpenTs,
     };
   }
 
@@ -414,3 +903,5 @@ class GoldenPipeline {
     return `${prefix}_${String(this.idSeq)}`;
   }
 }
+
+export type { MarketView };
