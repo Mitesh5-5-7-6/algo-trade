@@ -28,6 +28,11 @@ export interface SystemStatus {
      * look identical without it and call for opposite responses.
      */
     detail?: string;
+    /**
+     * Connected, but no tick for this long during market hours. A socket that
+     * is up is not data that flows — this is what tells them apart.
+     */
+    silentSeconds?: number;
   };
   market: {
     exchange: string;

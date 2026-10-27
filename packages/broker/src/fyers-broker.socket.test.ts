@@ -151,6 +151,54 @@ describe("the FYERS market-data socket", () => {
     });
   });
 
+  it("restores the subscription exactly once per connection, after every reconnect", async () => {
+    const b = broker();
+    // The Market Data Engine resubscribes on every "connected" state change;
+    // the broker resubscribes on every socket connect. Both fire at once.
+    b.onConnectionChange((s) => {
+      if (s === "connected") void b.subscribe(["NSE:NIFTY50-INDEX"]);
+    });
+    await b.subscribe(["NSE:NIFTY50-INDEX"]);
+    await b.connect();
+
+    last().emit("connect");
+    last().emit("close", 1006, "dropped");
+    last().emit("connect");
+
+    expect(last().subscribed).toEqual([
+      ["NSE:NIFTY50-INDEX"],
+      ["NSE:NIFTY50-INDEX"],
+    ]);
+  });
+
+  it("subscribes a changed set, and retries one whose subscribe failed", async () => {
+    const b = broker();
+    await b.subscribe(["NSE:NIFTY50-INDEX"]);
+    await b.connect();
+    last().subscribeResult = Promise.reject(new Error("timeout"));
+    last().emit("connect");
+    await new Promise((r) => setImmediate(r));
+    last().subscribeResult = Promise.resolve();
+
+    await b.subscribe(["NSE:NIFTY50-INDEX"]);
+    await b.subscribe(["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"]);
+
+    expect(last().subscribed).toEqual([
+      ["NSE:NIFTY50-INDEX"],
+      ["NSE:NIFTY50-INDEX"],
+      ["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"],
+    ]);
+  });
+
+  it("shares one connect between two callers rather than racing", async () => {
+    const b = broker();
+
+    await Promise.all([b.connect(), b.connect()]);
+
+    expect(sdk.built).toHaveLength(1);
+    expect(events.filter((e) => e.kind === "rebuilt")).toEqual([]);
+  });
+
   it("reports why it closed and what failed, instead of swallowing them", async () => {
     const b = broker();
     await b.connect();

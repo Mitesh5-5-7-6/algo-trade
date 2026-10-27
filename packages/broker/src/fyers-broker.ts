@@ -487,6 +487,10 @@ export class FyersBroker implements Broker, HistoryProvider {
   private socket: FyersDataSocketInstance | null = null;
   /** The access token `socket` was built with. */
   private socketToken: string | null = null;
+  /** The symbol set already sent on the current connection, sorted and joined. */
+  private sentSubscription: string | null = null;
+  /** The connect in progress, so two callers share it rather than race. */
+  private connecting: Promise<void> | null = null;
   /** The order-update feed. Null until `connect` succeeds. */
   private orderSocket: FyersOrderSocketInstance | null = null;
   private connectionState: BrokerConnectionState = "disconnected";
@@ -803,7 +807,17 @@ export class FyersBroker implements Broker, HistoryProvider {
    * The SDK is confined to this method and `subscribe`/`disconnect` below.
    * Everything upstream still sees only the `Broker` port.
    */
-  async connect(): Promise<void> {
+  connect(): Promise<void> {
+    // Boot and a token stored from Settings can call this at once; two runs
+    // would each build a socket, and the second would retire the first
+    // mid-handshake.
+    this.connecting ??= this.openDataSocket().finally(() => {
+      this.connecting = null;
+    });
+    return this.connecting;
+  }
+
+  private async openDataSocket(): Promise<void> {
     const accessToken = await this.deps.getToken();
     // A live socket on the current token needs nothing. One on another token
     // is rebuilt below — that is the morning re-login, and returning early
@@ -867,6 +881,9 @@ export class FyersBroker implements Broker, HistoryProvider {
 
     socket.on("connect", () => {
       if (!current()) return;
+      // A new connection holds no subscription yet — cleared before the state
+      // change, whose listeners may subscribe at once.
+      this.sentSubscription = null;
       this.updateState("connected");
       // Subscriptions do not survive a reconnect (plan/17 §7), and the SDK
       // reconnects on its own — so re-establish them on every connect, not
@@ -937,6 +954,7 @@ export class FyersBroker implements Broker, HistoryProvider {
     const socket = this.socket;
     this.socket = null;
     this.socketToken = null;
+    this.sentSubscription = null;
     if (socket) {
       // Neither method is documented in the README, so both are optional in
       // our declaration and feature-checked rather than assumed.
@@ -956,20 +974,24 @@ export class FyersBroker implements Broker, HistoryProvider {
     socket: FyersDataSocketInstance,
     symbols: readonly string[],
   ): void {
-    try {
-      void Promise.resolve(socket.subscribe(symbols)).catch(
-        (error: unknown) => {
-          this.deps.onFeedEvent?.({
-            kind: "error",
-            detail: `subscribe failed: ${describe(error)}`,
-          });
-        },
-      );
-    } catch (error) {
+    // Once per connection per set. A reconnect is heard twice — here on
+    // `connect`, and by the Market Data Engine through the state change —
+    // and both asked the SDK, so every reconnect subscribed the set twice.
+    const key = [...symbols].sort().join(",");
+    if (this.sentSubscription === key) return;
+    this.sentSubscription = key;
+    const failed = (error: unknown) => {
+      // Not sent after all: a later call may try again.
+      if (this.socket === socket) this.sentSubscription = null;
       this.deps.onFeedEvent?.({
         kind: "error",
         detail: `subscribe failed: ${describe(error)}`,
       });
+    };
+    try {
+      void Promise.resolve(socket.subscribe(symbols)).catch(failed);
+    } catch (error) {
+      failed(error);
     }
   }
 

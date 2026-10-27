@@ -1,22 +1,13 @@
 import type { SystemStatus } from "@/lib/data";
 import { formatTimeIST } from "@/lib/format";
+import { brokerChip } from "@/lib/broker-status";
 
 /**
  * Broker / Market / Engine health chips (plan/06 §7: a broken connection must
  * never look like a healthy one — each chip carries an explicit state dot).
  */
-/**
- * "NO FEED" rather than "disconnected": the operator needs the consequence,
- * not the state name. A disconnected feed means no candles, so no strategy can
- * ever fire — which otherwise looks identical to a quiet market.
- */
-function brokerLabel(state: SystemStatus["broker"]["state"]): string {
-  if (state === "connected") return "FEED LIVE";
-  if (state === "connecting") return "CONNECTING…";
-  return "NO FEED";
-}
-
 export function StatusStrip({ status }: { status: SystemStatus }) {
+  const broker = brokerChip(status.broker);
   // "0 signals" alone is ambiguous: a strategy that evaluates all day and
   // finds no setup reads identically to one that never ran. Showing the
   // evaluation count next to it separates them at a glance — "0 signals /
@@ -32,12 +23,11 @@ export function StatusStrip({ status }: { status: SystemStatus }) {
 
   return (
     <div className="statusstrip">
-      <div className="status-chip">
+      <div className="status-chip" title={status.broker.detail}>
         <span className="k">Broker</span>
         <span>
-          <span className={`dot ${status.broker.connected ? "ok" : "bad"}`} />{" "}
-          {status.broker.name} ·{" "}
-          <span className="mono">{brokerLabel(status.broker.state)}</span>
+          <span className={`dot ${broker.dot}`} /> {status.broker.name} ·{" "}
+          <span className="mono">{broker.label}</span>
         </span>
       </div>
       <div className="status-chip">

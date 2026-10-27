@@ -56,6 +56,11 @@ export interface BrokerConnection {
   /** When the state last changed; undefined if it never has. */
   since?: number | undefined;
   /**
+   * Set while connected during market hours with no tick for over a minute:
+   * the socket is up, but nothing is flowing. Absent when data arrives.
+   */
+  silentSeconds?: number | undefined;
+  /**
    * Why it is not connected, in words the operator can act on — when we know.
    *
    * `disconnected` alone cannot distinguish "no token yet, go authorise" from

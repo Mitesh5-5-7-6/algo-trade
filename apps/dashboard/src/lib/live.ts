@@ -158,6 +158,9 @@ export function useDashboardData(enabled = true): LiveDashboard {
       ...(control.data?.broker?.detail === undefined
         ? {}
         : { detail: control.data.broker.detail }),
+      ...(control.data?.broker?.silentSeconds === undefined
+        ? {}
+        : { silentSeconds: control.data.broker.silentSeconds }),
     },
     market: {
       exchange: mock.status.market.exchange,

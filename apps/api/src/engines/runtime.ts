@@ -70,6 +70,7 @@ import { loadInstrumentMaster } from "./load-instruments.js";
 import type { LiveMarketState } from "./live-market-state.js";
 import { reconcilePaperBook } from "./paper-reconciliation.js";
 import { instrumentLookup } from "./synthetic-index.js";
+import { FEED_SILENCE_MS, feedSilentSeconds } from "./feed-health.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -97,12 +98,6 @@ const HOT_KEY_TTL_SECONDS = 300;
  */
 const DAILY_LOSS_TTL_SECONDS = 2 * 86_400;
 
-/**
- * How long a connected feed may stay silent during market hours before the
- * engine says so. Longer than any plausible gap between ticks on a thin
- * instrument, far shorter than the broker's ~120s idle disconnect.
- */
-const FEED_SILENCE_MS = 60_000;
 const OPTION_CHAIN_CACHE_MS = 30_000;
 
 /** The intervals the aggregator builds, and therefore the ones we can seed. */
@@ -395,8 +390,20 @@ export async function startEngineRuntime(deps: {
       );
       return;
     }
+    // Where each symbol came from, so a missing one can be traced to its
+    // source: no strategy enabled, a settings list emptied, or no contract.
     log.info(
-      { symbols, traded: traded.length, indices: settings.indexSymbols.length },
+      {
+        symbols,
+        strategies: [...enabledConfigs].map(([strategyId, c]) => ({
+          strategyId,
+          symbols: c.symbols,
+        })),
+        traded: traded.length,
+        indices: settings.indexSymbols.length,
+        breadth: settings.breadthSymbols.length,
+        contracts: trackedContracts.size,
+      },
       "market data working set",
     );
   };
@@ -1131,10 +1138,27 @@ export async function startEngineRuntime(deps: {
       return equityTracker.points();
     },
     brokerConnection() {
+      const connected = brokerState.state === "connected";
+      const silentSeconds = feedSilentSeconds({
+        connected,
+        marketOpen: state.session.phase === "open",
+        since: brokerState.since,
+        lastTickAt,
+        now: Date.now(),
+      });
       return {
         state: brokerState.state,
-        connected: brokerState.state === "connected",
+        connected,
         since: brokerState.since,
+        ...(silentSeconds === null
+          ? {}
+          : {
+              silentSeconds,
+              detail:
+                `Connected, but no market data for ${String(silentSeconds)}s ` +
+                "while the market is open — the subscription is not " +
+                'delivering. The "fyers feed:" log lines say why.',
+            }),
       };
     },
     sampleEquity(now) {
