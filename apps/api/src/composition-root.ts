@@ -181,6 +181,27 @@ export async function bootstrap(
       appId: config.FYERS_APP_ID,
       // Paper reads FYERS market data only: it cannot place an order (D2).
       orders: config.BROKER_MODE === "live" ? "enabled" : "disabled",
+      // Why the feed closed, what failed, what the server acknowledged — the
+      // only record of a feed that connects and then delivers nothing.
+      onFeedEvent: (event) => {
+        if (event.kind === "control")
+          brokerLog.info(
+            { message: event.message },
+            "fyers feed: server message",
+          );
+        else if (event.kind === "rebuilt")
+          brokerLog.info(
+            { reason: event.reason },
+            "fyers feed: socket rebuilt",
+          );
+        else
+          brokerLog.warn(
+            { detail: event.detail },
+            event.kind === "closed"
+              ? "fyers feed: closed"
+              : "fyers feed: error",
+          );
+      },
       // FYERS access tokens last about a day, and nothing refreshes them yet
       // (jobs/token-lifecycle is still a stub). So the ordinary morning state
       // is "a token exists and is stale" — and handing a stale one to the SDK

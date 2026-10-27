@@ -32,7 +32,9 @@ declare module "fyers-api-v3" {
   }
 
   export interface FyersDataSocketInstance {
-    on(event: "connect" | "close", handler: () => void): void;
+    on(event: "connect", handler: () => void): void;
+    /** The SDK passes the websocket's close code and reason, when it has them. */
+    on(event: "close", handler: (...detail: unknown[]) => void): void;
     on(event: "message", handler: (message: FyersDataMessage) => void): void;
     on(event: "error", handler: (error: unknown) => void): void;
 
@@ -40,8 +42,17 @@ declare module "fyers-api-v3" {
     connect(): void;
     /** Enables the SDK's own reconnect loop. */
     autoreconnect(retries?: number): void;
-    /** `depth` requests market depth, which arrives as a separate tick. */
-    subscribe(symbols: readonly string[], depth?: boolean): void;
+    /**
+     * `depth` requests market depth, which arrives as a separate tick.
+     *
+     * Async in the shipped build: it first resolves the symbols to feed
+     * tokens over HTTP, and a failure there surfaces as a rejection or an
+     * `error` event — never as a tick.
+     */
+    subscribe(
+      symbols: readonly string[],
+      depth?: boolean,
+    ): void | Promise<void>;
     unsubscribe(symbols: readonly string[], depth?: boolean): void;
 
     /** Present in the shipped build, but not documented in the README. */
@@ -119,5 +130,11 @@ declare module "fyers-api-v3" {
       logPath?: string,
       enableLogging?: boolean,
     ): FyersDataSocketInstance;
+    /**
+     * The process-wide instance `getInstance` hands back. It is built on the
+     * FIRST call only — every later call returns it and ignores the token it
+     * is given — so a new token needs this cleared to take effect.
+     */
+    instance?: FyersDataSocketInstance;
   };
 }

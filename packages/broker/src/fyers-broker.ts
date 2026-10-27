@@ -50,6 +50,54 @@ export interface FyersBrokerDeps {
    * (ADR §13.1) is enforced by this code, not by how it is wired.
    */
   orders?: "enabled" | "disabled";
+  /**
+   * What the market-data socket says that is not a tick: why it closed, what
+   * failed, and its own acknowledgements. Every one of these was discarded,
+   * so a feed that connected and then received nothing looked identical to a
+   * quiet market, with nothing anywhere saying why.
+   */
+  onFeedEvent?: (event: FyersFeedEvent) => void;
+}
+
+/** A non-tick event from the FYERS market-data socket. */
+export type FyersFeedEvent =
+  /** The socket closed; `detail` is the code and reason, when given. */
+  | { kind: "closed"; detail: string }
+  /** The SDK reported a failure — a subscribe, a token, a protocol error. */
+  | { kind: "error"; detail: string }
+  /** The server's own message: a connect or subscribe acknowledgement. */
+  | { kind: "control"; message: Record<string, unknown> }
+  /** A new socket replaced the old one, and why. */
+  | { kind: "rebuilt"; reason: string };
+
+/** Readable text for whatever the SDK hands an error or close handler. */
+function describe(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "string") return value;
+  try {
+    // Typed as string, but undefined for undefined and functions.
+    const json = JSON.stringify(value) as string | undefined;
+    return json ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * A message that is the server talking, not a price: `{ type: "cn", s: "ok" }`
+ * on connect, a subscribe acknowledgement, an error. A tick always carries an
+ * `ltp`; these never do.
+ */
+function isControlMessage(
+  message: unknown,
+): message is Record<string, unknown> {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    !Array.isArray(message) &&
+    !("ltp" in message) &&
+    ("s" in message || "type" in message)
+  );
 }
 
 /** Loose shape for FYERS API JSON responses. */
@@ -437,6 +485,8 @@ export class FyersBroker implements Broker, HistoryProvider {
   private readonly historyProvider: FyersHistoryProvider | null;
   /** The vendor SDK's feed client. Null until `connect` succeeds. */
   private socket: FyersDataSocketInstance | null = null;
+  /** The access token `socket` was built with. */
+  private socketToken: string | null = null;
   /** The order-update feed. Null until `connect` succeeds. */
   private orderSocket: FyersOrderSocketInstance | null = null;
   private connectionState: BrokerConnectionState = "disconnected";
@@ -754,10 +804,17 @@ export class FyersBroker implements Broker, HistoryProvider {
    * Everything upstream still sees only the `Broker` port.
    */
   async connect(): Promise<void> {
-    if (this.connectionState === "connected") return;
-    this.updateState("connecting");
-
     const accessToken = await this.deps.getToken();
+    // A live socket on the current token needs nothing. One on another token
+    // is rebuilt below — that is the morning re-login, and returning early
+    // here on "connected" is what kept yesterday's token alive all day.
+    if (
+      this.connectionState === "connected" &&
+      this.socket !== null &&
+      accessToken === this.socketToken
+    )
+      return;
+    this.updateState("connecting");
     if (!accessToken) {
       // No token means the operator has not completed the FYERS OAuth round
       // trip. Stay disconnected and say so — the control plane reports this,
@@ -765,6 +822,26 @@ export class FyersBroker implements Broker, HistoryProvider {
       // to be visible (plan/06 §7).
       this.updateState("disconnected");
       return;
+    }
+
+    // The SDK keeps ONE socket per process and builds it on the first
+    // `getInstance` only: every later call returns that socket and ignores
+    // the token it is given. So a socket is never reused — the old one is
+    // closed and the SDK's instance cleared, or a fresh token after the
+    // daily expiry never reaches the feed, which then connects, is refused,
+    // and reconnects on the dead token every few seconds.
+    if (this.socket !== null) {
+      const reason =
+        accessToken === this.socketToken
+          ? "reconnect requested while not connected"
+          : "a new access token was stored";
+      this.retireDataSocket();
+      // The order socket was opened with the same token: it follows.
+      if (this.orderSocket !== null) {
+        this.orderSocket.close();
+        this.orderSocket = null;
+      }
+      this.deps.onFeedEvent?.({ kind: "rebuilt", reason });
     }
 
     // `APPID:AccessToken` — the SDK decodes the token half as a JWT for its
@@ -777,35 +854,61 @@ export class FyersBroker implements Broker, HistoryProvider {
         "",
         false, // the SDK's own file logging; ours is structured (plan/23 §3)
       );
-    } catch {
+    } catch (error) {
+      this.deps.onFeedEvent?.({ kind: "error", detail: describe(error) });
       this.updateState("disconnected");
       return;
     }
 
     this.socket = socket;
+    this.socketToken = accessToken;
+    // Events from a socket since replaced must not move this broker's state.
+    const current = () => this.socket === socket;
 
     socket.on("connect", () => {
+      if (!current()) return;
       this.updateState("connected");
       // Subscriptions do not survive a reconnect (plan/17 §7), and the SDK
       // reconnects on its own — so re-establish them on every connect, not
       // just the first.
       if (this.subscribedSymbols.length > 0) {
-        socket.subscribe(this.subscribedSymbols);
+        this.subscribeOn(socket, this.subscribedSymbols);
       }
     });
 
     socket.on("message", (message) => {
+      if (!current()) return;
+      // The server's own messages are not ticks: reported, not forwarded, so
+      // the tick path never logs a connect acknowledgement as an error.
+      if (isControlMessage(message)) {
+        this.deps.onFeedEvent?.(
+          message["s"] === "error"
+            ? { kind: "error", detail: describe(message) }
+            : { kind: "control", message },
+        );
+        return;
+      }
       // Forwarded untranslated; `fyersNormalizer` owns the shape (plan/04 §4).
       for (const handler of this.dataHandlers) handler(message);
     });
 
-    socket.on("close", () => {
+    socket.on("close", (...detail: unknown[]) => {
+      if (!current()) return;
+      this.deps.onFeedEvent?.({
+        kind: "closed",
+        detail:
+          detail.length === 0
+            ? "no code or reason given"
+            : detail.map(describe).join(" "),
+      });
       this.updateState("disconnected");
     });
 
-    socket.on("error", () => {
-      // A socket error is followed by `close`, which owns the state change.
-      // Swallowed here rather than double-reporting a single outage.
+    socket.on("error", (error) => {
+      if (!current()) return;
+      // Reported, not acted on: `close` owns the state change. Discarding it
+      // is what hid every subscribe and token failure the SDK reported.
+      this.deps.onFeedEvent?.({ kind: "error", detail: describe(error) });
     });
 
     socket.connect();
@@ -822,15 +925,52 @@ export class FyersBroker implements Broker, HistoryProvider {
     this.orderSocket = null;
     if (orderSocket) orderSocket.close();
 
+    this.retireDataSocket();
+    this.updateState("disconnected");
+  }
+
+  /**
+   * Close the data socket and clear the SDK's process-wide instance, so the
+   * next `getInstance` builds a new one with the token it is given.
+   */
+  private retireDataSocket(): void {
     const socket = this.socket;
     this.socket = null;
+    this.socketToken = null;
     if (socket) {
       // Neither method is documented in the README, so both are optional in
       // our declaration and feature-checked rather than assumed.
       if (typeof socket.close === "function") socket.close();
       else if (typeof socket.disconnect === "function") socket.disconnect();
     }
-    this.updateState("disconnected");
+    if (fyersDataSocket.instance === socket) delete fyersDataSocket.instance;
+  }
+
+  /**
+   * Subscribe on the SDK, and hear how it went. The call is async — it first
+   * resolves the symbols to feed tokens over HTTP — and was fired and
+   * forgotten, so a failure there left a connected socket that never
+   * received a tick, idled out every two minutes, and said nothing.
+   */
+  private subscribeOn(
+    socket: FyersDataSocketInstance,
+    symbols: readonly string[],
+  ): void {
+    try {
+      void Promise.resolve(socket.subscribe(symbols)).catch(
+        (error: unknown) => {
+          this.deps.onFeedEvent?.({
+            kind: "error",
+            detail: `subscribe failed: ${describe(error)}`,
+          });
+        },
+      );
+    } catch (error) {
+      this.deps.onFeedEvent?.({
+        kind: "error",
+        detail: `subscribe failed: ${describe(error)}`,
+      });
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -839,7 +979,7 @@ export class FyersBroker implements Broker, HistoryProvider {
     // before the socket is up is valid and ordering-independent.
     this.subscribedSymbols = symbols;
     if (this.connectionState !== "connected" || this.socket === null) return;
-    this.socket.subscribe(symbols);
+    this.subscribeOn(this.socket, symbols);
   }
 
   onData(handler: (raw: unknown) => void): void {
