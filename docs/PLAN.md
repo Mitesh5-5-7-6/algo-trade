@@ -133,6 +133,21 @@ phase may only start when its dependency is complete.
 | 13    | Backtest + walk-forward            | COMPLETE    |
 | 14    | Paper validation                   | IN PROGRESS |
 | 15    | Promotion                          | READY       |
+| 16    | Operator notifications (Telegram)  | READY       |
+| 17    | Setup odds (the "Time Machine")    | READY       |
+| 18    | NSE F&O scanner                    | READY       |
+| 19    | Operator skills (Claude Code)      | READY       |
+| 20    | Corporate announcements (News)     | READY       |
+
+**Phases 16–20 are tracks, not steps on the main line.** The main line is
+0 → 15. A track names its dependency and changes nothing the trading path
+decides. A track task may start when its dependency is complete **and** the
+main line has either finished its current task or is waiting on calendar time
+(14.7's live sessions). One task is still active at a time across everything
+(§25), and the main line always has priority. The recommended order, and why,
+is in [LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md)
+§2. Their sections are §30–§34, appended after §29 so that no cited section
+number moves.
 
 **Phase status is derived, never typed.** A phase is `COMPLETE` only when every
 one of its tasks is `COMPLETE`; `IN PROGRESS` when any task is `IN PROGRESS` or
@@ -901,7 +916,7 @@ the detailed design for this phase and keeps each task's dependencies.
 | 14.5  | The session report and the parity check against the replay (D6)                                                                            | COMPLETE | `2487724` | `apps/api/src/paper/parity.ts` `compareWithReplay` (every difference listed, none averaged; declared `PARITY_TOLERANCE`) and `apps/api/src/paper/session-report-store.ts` `reportSessionFromStore` (signals with risk decisions, orders with slippage against the decision price, Trades, P&L, reconciliation runs, restarts; kept in `paper_session_reports`); the runtime records every BOOT/CLOSE reconciliation in `paper_reconciliations`. `apps/api/src/paper/parity.test.ts` 7/7, `apps/api/src/paper/session-report.test.ts` 4/4, strict `apps/api/src/paper/session-report-store.integration.test.ts` 3/3, strict `runtime.restart.integration.test.ts` 9/9; 6 mutants killed; strict workspace run 23/24 tasks, the one API failure an ECONNRESET in `apps/api/src/knowledge/read.integration.test.ts`, 3/3 on rerun. Design D6                                                                                                                                                                                                     |
 | 14.6  | The test subject, provisioned; the paper session runbook and CLI; the restart drill (D1, D7)                                               | COMPLETE | `188bcd1` | `apps/api/src/paper/subject.ts` `provisionSubject` (ORB and EMA_CROSSOVER on NIFTY 50 and NIFTY BANK, enabled, `validation: subject`; all checked before any write; NSE indices only; an existing subject left untouched); `apps/api/src/engines/synthetic-index.ts` — in paper only, a traded index is the replay's lot-1 synthetic instrument (FYERS lists the indices with lot 0; operator's decision), one definition for runtime, replay and parity; `apps/api/scripts/paper.mts` provision / report / reports, run end to end on a scratch database and refusing `neelkanth_research`; `docs/design/PHASE_14_PAPER_RUNBOOK.md` with the restart drill — the drill itself is performed in 14.7's live sessions. `apps/api/src/engines/synthetic-index.test.ts` 3/3 (3 mutants killed), strict `apps/api/src/paper/subject.integration.test.ts` 3/3, `packages/core/src/core.test.ts` 137/137; strict workspace run 23/24 tasks, the one API failure an ECONNRESET in `apps/api/src/realtime/bridge.test.ts`, 6/6 on rerun. Design D1, D7 |
 | 14.7  | Acceptance: five live paper sessions, one with a restart, each reported and parity-checked (D8)                                            | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| 14.8  | Option entries buy the contract: a bearish verdict buys a put, never writes one                                                            | COMPLETE | `a06da80` | `packages/engines/src/strategy/strategy-runner.ts` `entrySide`: an OPTION entry is a BUY of the contract its direction chose (a bearish verdict resolves a PE and buys it); a FUTURE keeps SELL; exits still close what is held; the strategy hears back the direction it proposed. `packages/engines/src/strategy/strategy-runner.test.ts` 35/35 — the put bought with its stop below the premium, the outcome reported as SELL, the future still sold; 3 mutants killed. Strict `pnpm test:integration`: 1,661 passed, 0 skipped, the one failure an ECONNRESET in `apps/api/src/research/store.integration.test.ts`, 6/6 on strict rerun                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 14.8  | Option entries buy the contract: a bearish verdict buys a put, never writes one                                                            | COMPLETE | `7862fbf` | `packages/engines/src/strategy/strategy-runner.ts` `entrySide`: an OPTION entry is a BUY of the contract its direction chose (a bearish verdict resolves a PE and buys it); a FUTURE keeps SELL; exits still close what is held; the strategy hears back the direction it proposed. `packages/engines/src/strategy/strategy-runner.test.ts` 35/35 — the put bought with its stop below the premium, the outcome reported as SELL, the future still sold; 3 mutants killed. Strict `pnpm test:integration`: 1,661 passed, 0 skipped, the one failure an ECONNRESET in `apps/api/src/research/store.integration.test.ts`, 6/6 on strict rerun                                                                                                                                                                                                                                                                                                                                                                                                   |
 | 14.9  | The kill switch blocks entries, never exits                                                                                                | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 14.10 | Sizing regressions pinned: BANKNIFTY capacity, `loosensLimits` on the F&O fields, F&O sizing version                                       | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 14.11 | FYERS order status codes mapped as the vendor defines them (1, 2, 4, 5, 6, 7)                                                              | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -947,21 +962,38 @@ Live requires every safety gate.
 The 2026-10-30 audit found Live's broker path materially narrower than
 [ARCHITECTURE_DECISION.md](architecture/ARCHITECTURE_DECISION.md) §13.2, §15,
 §16 and §19 require. Promotion cannot land a strategy on it, so these come
-first, one at a time, each proven in paper before Live.
+first, one at a time, each proven in paper before Live. Decisions and open
+questions:
+[LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md)
+§3–§4, whose §11 lists the external facts a task must verify before it is
+built.
 
-| ID    | Task                                                                                                 | STATUS | Commit | Evidence |
-| ----- | ---------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 15.1  | Partial fills: a partly filled order is recorded and projected by its filled quantity                | READY  | —      | —        |
-| 15.2  | Broker capability ports — positions, order book, trade book, funds — and Live reconciliation on them | READY  | —      | —        |
-| 15.3  | Order-socket health watched; a silent feed recovered, not only logged                                | READY  | —      | —        |
-| 15.4  | FYERS token lifecycle: real expiry, 401 classified and surfaced, the schedule in IST                 | READY  | —      | —        |
-| 15.5  | The rate limiter on the Live REST path                                                               | READY  | —      | —        |
-| 15.6  | Instrument master refreshed daily; freeze quantity and order slicing; BSE F&O                        | READY  | —      | —        |
-| 15.7  | The §13.2 Live gates, and Live allowed only on a named Live database                                 | READY  | —      | —        |
-| 15.8  | Broker margin as an F&O sizing capacity, its basis recorded (§20.4)                                  | READY  | —      | —        |
-| 15.9  | Risk checks: decision-price staleness, trades and orders per day, concentration, unrealised loss     | READY  | —      | —        |
-| 15.10 | Step-up for every loosening: enabling a strategy, clearing its risk rules, market hours              | READY  | —      | —        |
-| 15.11 | OAuth `state` checked; logger redaction completed; the dashboard shows the real mode                 | READY  | —      | —        |
+| ID    | Task                                                                                                                        | STATUS  | Commit | Evidence                                                                                                 |
+| ----- | --------------------------------------------------------------------------------------------------------------------------- | ------- | ------ | -------------------------------------------------------------------------------------------------------- |
+| 15.1  | Partial fills: a partly filled order is recorded and projected by its filled quantity                                       | READY   | —      | —                                                                                                        |
+| 15.2  | Broker capability ports — positions, order book, trade book, funds — and Live reconciliation on them                        | READY   | —      | —                                                                                                        |
+| 15.3  | Order-socket health watched; a silent feed recovered, not only logged                                                       | READY   | —      | —                                                                                                        |
+| 15.4  | FYERS token lifecycle: real expiry, 401 classified and surfaced, the schedule in IST                                        | READY   | —      | —                                                                                                        |
+| 15.5  | The rate limiter on the Live REST path                                                                                      | READY   | —      | —                                                                                                        |
+| 15.6  | Instrument master refreshed daily; freeze quantity and order slicing; BSE F&O                                               | READY   | —      | —                                                                                                        |
+| 15.7  | The §13.2 Live gates, and Live allowed only on a named Live database                                                        | READY   | —      | —                                                                                                        |
+| 15.8  | Broker margin as an F&O sizing capacity, its basis recorded (§20.4)                                                         | READY   | —      | —                                                                                                        |
+| 15.9  | Risk checks: decision-price staleness, trades and orders per day, concentration, unrealised loss                            | READY   | —      | —                                                                                                        |
+| 15.10 | Step-up for every loosening: enabling a strategy, clearing its risk rules, market hours                                     | READY   | —      | —                                                                                                        |
+| 15.11 | OAuth `state` checked; logger redaction completed; the dashboard shows the real mode                                        | READY   | —      | —                                                                                                        |
+| 15.12 | The F&O ban list: fetched from the exchange's publication, a Risk Engine block on new entries, fail closed when unknown     | READY   | —      | —                                                                                                        |
+| 15.13 | SEBI's retail algo framework: what binds is verified and cited, the order-rate threshold enforced below it                  | READY   | —      | —                                                                                                        |
+| 15.14 | Price bands and circuit limits: a LIMIT order outside the band refused before it is sent                                    | READY   | —      | —                                                                                                        |
+| 15.15 | Kill cancels working entry orders; flatten-all is a separate action behind step-up                                          | READY   | —      | —                                                                                                        |
+| 15.16 | Confirm-each-order mode for a newly promoted strategy: an order's fingerprint confirmed before it is sent; exits never held | READY   | —      | —                                                                                                        |
+| 15.17 | Per-strategy P&L snapshots populated (CURRENT_STATE §5.3)                                                                   | READY   | —      | —                                                                                                        |
+| 15.18 | The daily P&L snapshot survives a process down at the close, backfilled from Trades (§5.4)                                  | READY   | —      | —                                                                                                        |
+| 15.19 | Signal outcomes written back to the signal (§5.5)                                                                           | READY   | —      | —                                                                                                        |
+| 15.20 | The session calendar settable behind step-up from the exchange's published calendar; the §5.6 holiday guard                 | READY   | —      | —                                                                                                        |
+| 15.21 | `/health` and `/readiness` separated; Live readiness requires feed, order socket, token and clean reconciliation            | READY   | —      | —                                                                                                        |
+| 15.22 | Probe what is suspected: the accepted `orderTag` format, the `options-chain-v3` spot row, the connect race                  | READY   | —      | —                                                                                                        |
+| 15.23 | Documentation brought to the code: ADR §15's option-chain endpoint; CURRENT_STATE re-audited                                | READY   | —      | —                                                                                                        |
+| 15.24 | Promotion: a candidate that passed Phases 13 and 14 goes Live with human approval, watched by Phase 16                      | BLOCKED | —      | reason: no candidate has passed the Phase 13 gate (§18), and Live requires 15.1–15.23 and Phase 16 first |
 
 ---
 
@@ -995,7 +1027,8 @@ Market Track                    News Track
                      Research
 ```
 
-News must not block the core market-data → trade → replay path.
+News must not block the core market-data → trade → replay path. Its tasks are
+Phase 20 (§34).
 
 ---
 
@@ -1068,7 +1101,8 @@ A phase is complete only when:
 
 Phases 0 to 13 are complete. The immediate priority is **Phase 14 — Paper
 validation**; it has no candidate to paper-trade until one passes the Phase 13
-gate.
+gate. Its next tasks are 14.9–14.12, then Phase 16 (so the live sessions are
+watched), then 14.7's five live sessions.
 
 Do not begin Phase 15 until Phase 14's acceptance criteria pass. Do not begin
 research phases until replay and Trade outcomes are trustworthy. Do not build
@@ -1125,3 +1159,148 @@ do not hold is the answer to "what do I build now".
 arithmetically impossible only at N = 1. It previously stood at three, which is
 how a single commit could implement `0.5.4`–`0.5.6` and, in that same commit,
 leave a board saying they had not been started.
+
+---
+
+## 30. Phase 16 — Operator notifications (Telegram)
+
+**STATUS: READY**
+
+A track (§4). **Depends on:** nothing on the main line; it consumes the
+existing event bus. Recommended before 14.7, so the five live sessions are
+watched.
+
+Outbound only, never on the order path, every message from a real event and
+naming its mode. Decisions in
+[LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md) §5.
+
+| ID   | Task                                                                                                                                             | STATUS | Commit | Evidence |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ------ | -------- |
+| 16.1 | ADR §21 decided: the event catalogue and severities, outbound only, no inbound commands; answer design Q1–Q2                                     | READY  | —      | —        |
+| 16.2 | Notifier port and Telegram transport: optional config, token redacted, timeout, bounded queue, retry-after honoured                              | READY  | —      | —        |
+| 16.3 | Bus events for what only logs today: feed silent and recovered, trading halted and resumed, broker token missing or expiring                     | READY  | —      | —        |
+| 16.4 | The catalogue wired from the bus: CRITICAL immediate, WARNING coalesced, INFO as it happens; deduplicated; `[PAPER]` / `[LIVE]` on every message | READY  | —      | —        |
+| 16.5 | Scheduled in IST: the pre-open token message and the post-close summary                                                                          | READY  | —      | —        |
+| 16.6 | Every message kept in `notifications`, sent or failed; `GET /notifications`                                                                      | READY  | —      | —        |
+| 16.7 | Acceptance: one paper session delivers every category to a test chat; with Telegram unreachable, no decision changes                             | READY  | —      | —        |
+
+### Done when
+
+During a paper session the operator receives, in Telegram, every halt, every
+rejection, every fill and close with its reason, the feed and token warnings,
+and the day's summary; each is kept and readable; and a Telegram outage is
+proven to change nothing the trading path does.
+
+---
+
+## 31. Phase 17 — Setup odds (the "Time Machine")
+
+**STATUS: READY**
+
+A track (§4). **Depends on:** Phases 4, 7 and 13 (complete).
+
+For one plan — entry, stop, target, now — how often does the target come
+before the stop, by resampling past sessions and by the plan's own rule over
+real history, never blended. Underlyings only: an option plan's odds are the
+index's. Decisions in
+[LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md) §6.
+
+| ID   | Task                                                                                                                      | STATUS | Commit | Evidence |
+| ---- | ------------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 17.1 | Answer design Q1–Q4: historical expiry dates, resampling scheme, cost basis, where a plan comes from                      | READY  | —      | —        |
+| 17.2 | The pool from stored candles: full sessions from the calendar, special sessions excluded, strictly before the plan's date | READY  | —      | —        |
+| 17.3 | The resampling engine: seeded, stop before target on a shared bar, outcomes and R, bands                                  | READY  | —      | —        |
+| 17.4 | History through the existing replay, the plan expressed as a strategy configuration                                       | READY  | —      | —        |
+| 17.5 | The verdict against break-even `1 / (1 + R)`; Phase 7's intervals and INSUFFICIENT_SAMPLE                                 | READY  | —      | —        |
+| 17.6 | Manifest and fingerprint; kept in the research database; operator CLI; read-only proven                                   | READY  | —      | —        |
+| 17.7 | Acceptance: plans on the real year run twice with identical fingerprints; a lookahead mutant killed                       | READY  | —      | —        |
+
+### Done when
+
+A plan's odds are reported by both methods, each with its sample size and
+limitations, judged against break-even, reproducible from its fingerprint, and
+blind to its own day and anything after it.
+
+---
+
+## 32. Phase 18 — NSE F&O scanner
+
+**STATUS: READY**
+
+A track (§4). **Depends on:** 15.2 (broker ports), 15.6 (instrument master
+refresh), 15.12 (the F&O ban list).
+
+Candidates, never signals. Every instrument selected or rejected with its
+reason and the timestamp of its data. Decisions in
+[LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md) §7.
+
+| ID   | Task                                                                                                                     | STATUS | Commit | Evidence |
+| ---- | ------------------------------------------------------------------------------------------------------------------------ | ------ | ------ | -------- |
+| 18.1 | Answer design Q1–Q2; measure the FYERS history rate limit (Phase 1 Q3)                                                   | READY  | —      | —        |
+| 18.2 | The universe from the instrument master: active F&O underlyings and the indices                                          | READY  | —      | —        |
+| 18.3 | Conditions from the Phase 5 detectors; each instrument selected or rejected with its reason and data time                | READY  | —      | —        |
+| 18.4 | Indian filters from verified sources: the ban list, OI and volume liquidity, price band; a partial scan labelled PARTIAL | READY  | —      | —        |
+| 18.5 | Scan runs kept; operator CLI                                                                                             | READY  | —      | —        |
+| 18.6 | Acceptance: a pre-open scan run twice, identical; nothing the scanner writes is read by the order path                   | READY  | —      | —        |
+
+### Done when
+
+A pre-open scan of the F&O universe names every candidate and every rejection
+with its reason and data time, excludes banned and expiring instruments, is
+reproducible, and cannot reach an order.
+
+---
+
+## 33. Phase 19 — Operator skills (Claude Code)
+
+**STATUS: READY**
+
+A track (§4). **Depends on:** the CLI each skill wraps; 19.4 waits for Phases
+17 and 18.
+
+Code decides, Claude explains: each skill wraps an existing CLI and adds no
+logic. A skill never places or cancels an order, toggles trading, changes a
+limit or setting, reads `.env*`, or touches a paper or Live database. Decisions
+in [LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md)
+§8.
+
+| ID   | Task                                                                                                                | STATUS | Commit | Evidence |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 19.1 | Skill conventions: layout under `.claude/skills/`, the never-list, what a skill must not claim                      | READY  | —      | —        |
+| 19.2 | Board status and next task; the paper session report                                                                | READY  | —      | —        |
+| 19.3 | Replay; candidates and verdicts                                                                                     | READY  | —      | —        |
+| 19.4 | Setup odds, the scanner, a research question                                                                        | READY  | —      | —        |
+| 19.5 | Acceptance: each skill on a scratch database reproduces its CLI's numbers verbatim; a refused command stays refused | READY  | —      | —        |
+
+### Done when
+
+The operator can ask Claude for the board, a session report, a replay, a
+verdict, setup odds, a scan or a research answer, and gets the CLI's own
+numbers with their limits stated, through skills that cannot touch trading.
+
+---
+
+## 34. Phase 20 — Corporate announcements (the News track)
+
+**STATUS: READY**
+
+A track (§4, §22). **Depends on:** 20.1's answers; nothing is ingested before
+them.
+
+Official sources only, provenance on every item, never a trigger. Decisions in
+[LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md) §9.
+
+| ID   | Task                                                                                                                | STATUS | Commit | Evidence |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
+| 20.1 | Verify access and terms of use for NSE and BSE announcements and SEBI circulars; record each answer with its source | READY  | —      | —        |
+| 20.2 | Decide retention: the `news` collection's 30-day TTL is too short for research                                      | READY  | —      | —        |
+| 20.3 | Ingestion into `news`: source, URL, publication and ingestion times; idempotent                                     | READY  | —      | —        |
+| 20.4 | Symbol mapping; announcements in the knowledge base, behind the agent's `newsContext` tool                          | READY  | —      | —        |
+| 20.5 | Optional: no new entries in a stock on its results day, declared behind step-up                                     | READY  | —      | —        |
+| 20.6 | Acceptance: a week ingested twice, nothing duplicated, every item with provenance; no order path reads `news`       | READY  | —      | —        |
+
+### Done when
+
+Official announcements arrive with their provenance, are mapped to the
+instruments they concern, are searchable by the research agent, and can never
+cause an order.

@@ -17,9 +17,10 @@ Start with `PLAN.md`: it decides what to build. The other three answer why the s
 
 One per phase, written before the code. A design states the decisions an implementation must follow, and names the questions it must not answer by guessing.
 
-| Design                                                                 | Phase                      | Status                  |
-| ---------------------------------------------------------------------- | -------------------------- | ----------------------- |
-| [design/PHASE_1_HISTORICAL_DATA.md](design/PHASE_1_HISTORICAL_DATA.md) | 1 — Historical market data | Design, not implemented |
+| Design                                                                             | Phase                      | Status                  |
+| ---------------------------------------------------------------------------------- | -------------------------- | ----------------------- |
+| [design/PHASE_1_HISTORICAL_DATA.md](design/PHASE_1_HISTORICAL_DATA.md)             | 1 — Historical market data | Design, not implemented |
+| [design/LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md) | 15 readiness; 16–20        | Design, not implemented |
 
 ---
 
