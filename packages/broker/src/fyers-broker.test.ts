@@ -342,7 +342,7 @@ describe("FyersBroker.readOptionChain", () => {
       ],
     });
     const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/data/optionchain?");
+    expect(url).toContain("/data/options-chain-v3?");
     expect(url).toContain("symbol=NSE%3ANIFTY50-INDEX");
     expect((options.headers as Record<string, string>)["Authorization"]).toBe(
       `${APP_ID}:${ACCESS_TOKEN}`,

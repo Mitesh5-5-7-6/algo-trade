@@ -466,20 +466,28 @@ export class StrategyRunner {
     // derived from the position (D1), and one with nothing to close is a HOLD.
     if (signal.side === "HOLD") return;
 
+    // The strategy hears back about the direction it PROPOSED. For an option
+    // entry that is not the order's side — a bearish verdict buys a put — and
+    // a latch keyed on side would otherwise release the wrong entry.
+    const proposedSide =
+      signal.exitReason === undefined && verdict.side !== "HOLD"
+        ? verdict.side
+        : signal.side;
+
     // Below-threshold signals are recorded but not forwarded (plan/15 §6). The
     // strategy still has to hear about it: it marked an entry as proposed, and
     // a proposal nobody will ever act on must not sit there spending the day.
     if (verdict.confidence < this.minConfidence) {
       this.resolve(instance, {
         signalId: signal.signalId,
-        side: signal.side,
+        side: proposedSide,
         status: "REJECTED",
         reason: "below the confidence threshold",
       });
       return;
     }
 
-    this.remember(signal.signalId, instance, signal.side);
+    this.remember(signal.signalId, instance, proposedSide);
     await this.deps.handoff(signal); // synchronous risk→order (plan/14 §2)
   }
 
@@ -694,7 +702,7 @@ export class StrategyRunner {
             : "BUY"
           : verdict.exit === true
             ? "HOLD"
-            : verdict.side,
+            : entrySide(instance, verdict.side),
       confidence: verdict.confidence,
       ...(verdict.qtyProposal === undefined
         ? {}
@@ -727,4 +735,22 @@ export class StrategyRunner {
       ts,
     };
   }
+}
+
+/**
+ * The order side of an entry.
+ *
+ * An option strategy's verdict names a DIRECTION, and the direction picks the
+ * contract — bullish a call, bearish a put (`optionTypeForSide`). The contract
+ * is always bought: selling the put a bearish verdict chose would open a short
+ * put, whose loss runs to the strike rather than the premium and whose
+ * percentage stop, set below the premium, sits on the profit side. A future has no such split — selling one
+ * IS the bearish trade — so only options are rewritten.
+ */
+function entrySide(
+  instance: Instance,
+  side: StrategyVerdict["side"],
+): StrategyVerdict["side"] {
+  if (side === "HOLD") return side;
+  return instance.strategy.derivative()?.kind === "OPTION" ? "BUY" : side;
 }

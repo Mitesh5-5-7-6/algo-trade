@@ -649,8 +649,12 @@ export class FyersBroker implements Broker, HistoryProvider {
         symbol: fyersIndexSymbol(underlying),
         strikecount: "10",
       });
+      // `options-chain-v3`, the path the vendor SDK itself calls
+      // (`config.js` → `optionChain`). `/data/optionchain` is not a FYERS
+      // endpoint: every request failed, this returned null, and every
+      // chain-reading strategy held all day on "option chain not available".
       const response = await fetch(
-        `https://api-t1.fyers.in/data/optionchain?${params.toString()}`,
+        `https://api-t1.fyers.in/data/options-chain-v3?${params.toString()}`,
         { method: "GET", headers },
       );
       const data = (await response.json()) as FyersResponse;

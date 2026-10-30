@@ -14,6 +14,7 @@ import { strategyVersionOf } from "@neelkanth/core";
 import type { EventName } from "@neelkanth/contracts";
 import {
   StrategyRegistry,
+  type SignalResolution,
   type StrategyDefinition,
 } from "@neelkanth/strategies";
 import { StrategyRunner } from "./strategy-runner.js";
@@ -115,6 +116,39 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
     }),
   });
 
+  // The bearish half: its verdict says SELL, meaning "buy a put", and it keeps
+  // what it is told about its proposals so a test can see the side it hears.
+  const outcomes: SignalResolution[] = [];
+  registry.register({
+    ...def("OPTION_PUT_BUYER", () => ({
+      side: "SELL",
+      confidence: 1,
+      stopLossPct: 0.3,
+      targetPct: 0.6,
+      reason: "index breakdown",
+    })),
+    derivative: () => ({
+      underlying: "NIFTY",
+      kind: "OPTION" as const,
+      strikeOffset: 0,
+    }),
+    onSignalOutcome: (_state, resolution) => outcomes.push(resolution),
+  });
+  // A future has no call/put split: selling one IS the bearish trade.
+  registry.register({
+    ...def("FUTURE_SELLER", () => ({
+      side: "SELL",
+      confidence: 1,
+      stopLoss: 25_100,
+      reason: "index breakdown",
+    })),
+    derivative: () => ({
+      underlying: "NIFTY",
+      kind: "FUTURE" as const,
+      strikeOffset: 0,
+    }),
+  });
+
   const signals: Signal[] = [];
   const events: { name: EventName; payload: unknown }[] = [];
   const handoffs: Signal[] = [];
@@ -184,6 +218,7 @@ function harness(opts: { minConfidence?: number; maxErrors?: number } = {}) {
     errors,
     provisioned,
     resolved,
+    outcomes,
     setSession: (s: SessionContext) => (session = s),
     setPosition: (p: Position | null) => (position = p),
     setContract: (c: Instrument | null, price: number | null) => {
@@ -343,6 +378,19 @@ describe("StrategyRunner derivative resolution (plan/15 §4, plan/17 §7)", () =
     strike: 25_000,
     optionType: "CE",
   };
+  const NIFTY_PE: Instrument = {
+    ...NIFTY_CE,
+    symbol: "NSE:NIFTY26SEP25000PE",
+    optionType: "PE",
+  };
+  const NIFTY_FUT: Instrument = {
+    symbol: "NSE:NIFTY26SEPFUT",
+    kind: "FUTURE",
+    lotSize: 65,
+    tickSize: 0.1,
+    underlying: "NIFTY",
+    expiry: 4_000_000_000_000,
+  };
 
   function derivativeHarness() {
     const h = harness();
@@ -413,6 +461,71 @@ describe("StrategyRunner derivative resolution (plan/15 §4, plan/17 §7)", () =
 
     expect(h.handoffs).toHaveLength(0);
     expect(h.signals[0]?.side).toBe("HOLD");
+  });
+
+  /**
+   * A bearish option verdict picks a PUT and BUYS it. Forwarding the verdict's
+   * SELL wrote the put instead: a short whose loss runs to the strike, its percentage
+   * stop below the premium — on the profit side of a short.
+   */
+  it("buys the put a bearish option verdict chose — never sells it", async () => {
+    const h = derivativeHarness();
+    h.setContract(NIFTY_PE, 120);
+    await h.runner.enable(config("OPTION_PUT_BUYER"));
+    await fireBar(h, 24_988);
+
+    // The direction still chooses the contract: SELL resolves a put.
+    expect(h.resolved[0]?.side).toBe("SELL");
+    expect(h.handoffs).toHaveLength(1);
+    expect(h.handoffs[0]).toMatchObject({
+      symbol: "NSE:NIFTY26SEP25000PE",
+      side: "BUY",
+    });
+    expect(h.handoffs[0]?.exitReason).toBeUndefined();
+    // Long premium: the stop is below what was paid, the target above.
+    expect(h.handoffs[0]?.stopLoss).toBeCloseTo(84, 6); // 120 × (1 − 0.3)
+    expect(h.handoffs[0]?.target).toBeCloseTo(192, 6); // 120 × (1 + 0.6)
+  });
+
+  /**
+   * The strategy hears back about the direction it proposed. A latch keyed on
+   * side — ORB's is — would otherwise move its bullish entry when the put it
+   * bought fills.
+   */
+  it("reports a put's outcome to the strategy as the SELL it proposed", async () => {
+    const h = derivativeHarness();
+    h.setContract(NIFTY_PE, 120);
+    await h.runner.enable(config("OPTION_PUT_BUYER"));
+    await fireBar(h, 24_988);
+
+    h.runner.onRiskBlocked({
+      signalId: "sig_1",
+      strategyId: "str_OPTION_PUT_BUYER",
+      symbol: "NSE:NIFTY26SEP25000PE",
+      failedCheck: "positionSize",
+      reason: "test",
+      ts: 1000,
+    });
+    expect(h.outcomes).toEqual([
+      expect.objectContaining({
+        signalId: "sig_1",
+        side: "SELL",
+        status: "REJECTED",
+      }),
+    ]);
+  });
+
+  /** A future has no call/put split, so its bearish verdict stays a SELL. */
+  it("still sells a future on a bearish verdict", async () => {
+    const h = derivativeHarness();
+    h.setContract(NIFTY_FUT, 25_000);
+    await h.runner.enable(config("FUTURE_SELLER"));
+    await fireBar(h, 24_988);
+
+    expect(h.handoffs[0]).toMatchObject({
+      symbol: "NSE:NIFTY26SEPFUT",
+      side: "SELL",
+    });
   });
 
   it("reports its derivative targets so the runtime can subscribe them", async () => {
