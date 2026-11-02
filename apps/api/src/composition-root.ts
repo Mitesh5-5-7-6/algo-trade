@@ -17,8 +17,13 @@ import {
   UsersRepository,
   BrokerTokensRepository,
   PaperBrokerOrdersRepository,
+  TradesRepository,
+  OrdersRepository,
+  RiskLogsRepository,
+  PaperReconciliationsRepository,
   type MongoConnection,
 } from "@neelkanth/db";
+import { istDayStart, isTradingDayIST } from "@neelkanth/core";
 import cors from "@fastify/cors";
 import { buildServer, type ApiServer } from "./server.js";
 import type { DependencyCheck } from "./health.js";
@@ -51,7 +56,8 @@ import { createRealtimeBridge } from "./realtime/index.js";
 import { modeDatabaseProblem } from "./environment.js";
 import { createNotifier } from "./notifications/create.js";
 import { subscribeCatalogue } from "./notifications/catalogue.js";
-import { BrokerTokenWatch } from "./engines/token-watch.js";
+import { createDailyMessages } from "./notifications/daily.js";
+import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
@@ -196,6 +202,45 @@ export async function bootstrap(
       brokerLog.warn({ err: error, ...context }, "token event not published");
     },
   );
+  // FYERS access tokens last about a day, and nothing refreshes them yet
+  // (jobs/token-lifecycle is still a stub). So the ordinary morning state is
+  // "a token exists and is stale" — and handing a stale one to the SDK just
+  // makes it throw while decoding the JWT, which surfaced as a bare NO FEED
+  // indistinguishable from a network fault.
+  //
+  // One lookup for every reader — the broker, and the pre-open message (task
+  // 16.5) — so each says the same thing, stated once and plainly where a
+  // logger exists, and reported to the token watch (task 16.3).
+  const lookupFyersToken = async (): Promise<{
+    status: TokenLookup;
+    accessToken: string | null;
+  }> => {
+    const user = await users.findFirstUser();
+    if (!user) {
+      brokerLog.warn("no operator account — cannot load a FYERS token");
+      tokenWatch.observe("absent");
+      return { status: "absent", accessToken: null };
+    }
+    const token = await brokerTokens.getDecryptedToken(user.userId);
+    if (!token) {
+      brokerLog.warn(
+        "no FYERS token stored — connect the broker from Settings",
+      );
+      tokenWatch.observe("absent");
+      return { status: "absent", accessToken: null };
+    }
+    if (token.expiresAt <= Date.now()) {
+      brokerLog.warn(
+        { expiredAt: new Date(token.expiresAt).toISOString() },
+        "FYERS access token EXPIRED — reconnect from Settings; the feed " +
+          "stays down until a fresh token is stored (plan/19 §3)",
+      );
+      tokenWatch.observe("expired");
+      return { status: "expired", accessToken: null };
+    }
+    tokenWatch.observe("present");
+    return { status: "present", accessToken: token.accessToken };
+  };
   // Shared by the Paper Broker (reader) and the engine runtime (writer).
   const liveState = createLiveMarketState();
   let broker: Broker;
@@ -228,41 +273,7 @@ export async function bootstrap(
               : "fyers feed: error",
           );
       },
-      // FYERS access tokens last about a day, and nothing refreshes them yet
-      // (jobs/token-lifecycle is still a stub). So the ordinary morning state
-      // is "a token exists and is stale" — and handing a stale one to the SDK
-      // just makes it throw while decoding the JWT, which surfaced as a bare
-      // NO FEED indistinguishable from a network fault.
-      //
-      // Checked here, where a logger exists, so the reason is stated once and
-      // plainly instead of being inferred from a silent disconnect.
-      getToken: async () => {
-        const user = await users.findFirstUser();
-        if (!user) {
-          brokerLog.warn("no operator account — cannot load a FYERS token");
-          tokenWatch.observe("absent");
-          return null;
-        }
-        const token = await brokerTokens.getDecryptedToken(user.userId);
-        if (!token) {
-          brokerLog.warn(
-            "no FYERS token stored — connect the broker from Settings",
-          );
-          tokenWatch.observe("absent");
-          return null;
-        }
-        if (token.expiresAt <= Date.now()) {
-          brokerLog.warn(
-            { expiredAt: new Date(token.expiresAt).toISOString() },
-            "FYERS access token EXPIRED — reconnect from Settings; the feed " +
-              "stays down until a fresh token is stored (plan/19 §3)",
-          );
-          tokenWatch.observe("expired");
-          return null;
-        }
-        tokenWatch.observe("present");
-        return token.accessToken;
-      },
+      getToken: async () => (await lookupFyersToken()).accessToken,
     });
   }
 
@@ -355,6 +366,70 @@ export async function bootstrap(
     runtime.sampleEquity(Date.now());
   }, EQUITY_SAMPLE_MS);
   equityTimer.unref();
+
+  // The pre-open token message and the day summary, on the IST clock (16.5).
+  let dailyTimer: ReturnType<typeof setInterval> | undefined;
+  if (notifier.enabled) {
+    const settingsRepo = new SettingsRepository(mongo.db);
+    const trades = new TradesRepository(mongo.db);
+    const orders = new OrdersRepository(mongo.db);
+    const riskLogs = new RiskLogsRepository(mongo.db);
+    const reconciliations = new PaperReconciliationsRepository(mongo.db);
+    const daily = createDailyMessages({
+      notifier,
+      mode: config.BROKER_MODE,
+      // Provisional until task 16.1 records the answer (design §5.3 Q2).
+      includeInfo: true,
+      isTradingDay: async (day) =>
+        isTradingDayIST(
+          day,
+          new Set((await settingsRepo.getGlobal()).marketHolidays),
+        ),
+      ...(fyersBroker === null
+        ? {}
+        : { tokenStatus: async () => (await lookupFyersToken()).status }),
+      readSummary: async (day) => {
+        const from = istDayStart(day);
+        const to = from + 86_400_000;
+        const dayTrades = await trades.findRange(from, to);
+        const closed = dayTrades.filter((t) => t.status === "CLOSED");
+        const runs =
+          config.BROKER_MODE === "paper"
+            ? await reconciliations.forSession(day)
+            : [];
+        const close = runs.find((run) => run.at === "CLOSE");
+        return {
+          trades: dayTrades.length,
+          closed: closed.length,
+          wins: closed.filter((t) => (t.netPnl ?? 0) > 0).length,
+          losses: closed.filter((t) => (t.netPnl ?? 0) < 0).length,
+          netPnl: closed.reduce((sum, t) => sum + (t.netPnl ?? 0), 0),
+          rejections: (await orders.findAllByDateRange(from, to)).filter(
+            (o) => o.status === "REJECTED",
+          ).length,
+          riskBlocks: (await riskLogs.findRange(from, to)).filter(
+            (log) => log.decision === "blocked",
+          ).length,
+          reconciliation:
+            config.BROKER_MODE !== "paper"
+              ? "not applicable"
+              : close === undefined
+                ? "not run"
+                : close.clean
+                  ? "clean"
+                  : "mismatch",
+        };
+      },
+      onError: (error, context) => {
+        notifyLog.warn({ err: error, ...context }, "daily message failed");
+      },
+    });
+    dailyTimer = setInterval(() => {
+      void daily.tick(Date.now());
+    }, 60_000);
+    dailyTimer.unref();
+    void daily.tick(Date.now());
+  }
 
   let tokenLifecycle: { close(): Promise<void> } | undefined;
   if (
@@ -529,6 +604,7 @@ export async function bootstrap(
       const shutdownLog = componentLogger(logger, "api.shutdown");
       clearInterval(sessionTimer);
       clearInterval(equityTimer);
+      if (dailyTimer !== undefined) clearInterval(dailyTimer);
       stopMeter?.();
       shutdownLog.info("closing realtime bridge + http server");
       // The bridge owns the shared HTTP server's close (io.close closes it too),
