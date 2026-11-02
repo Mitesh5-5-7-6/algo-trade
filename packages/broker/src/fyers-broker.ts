@@ -51,6 +51,14 @@ export interface FyersBrokerDeps {
    */
   orders?: "enabled" | "disabled";
   /**
+   * How long an order-path request (place, cancel, order book) may take before
+   * it is abandoned (task 14.12). Ours, not the vendor's — FYERS documents no
+   * timeout — and deliberately finite: with none, a hung request held its
+   * caller forever. An abandoned PLACE is an UNKNOWN outcome, never a refusal.
+   * Default 10 s.
+   */
+  requestTimeoutMs?: number;
+  /**
    * What the market-data socket says that is not a tick: why it closed, what
    * failed, and its own acknowledgements. Every one of these was discarded,
    * so a feed that connected and then received nothing looked identical to a
@@ -381,6 +389,28 @@ function round2(value: number): number {
 }
 
 /**
+ * A FYERS JSON body, or null when the body is not one — a gateway's HTML error
+ * page, a truncated response. Null is not a refusal: it is the absence of any
+ * answer, and the order path treats it as such.
+ */
+async function readFyersJson(
+  response: Response,
+): Promise<FyersResponse | null> {
+  try {
+    const body: unknown = await response.json();
+    return typeof body === "object" && body !== null
+      ? (body as FyersResponse)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error && err.message !== "" ? err.message : String(err);
+}
+
+/**
  * FYERS order status code → ours, as FYERS documents it (API v3 appendix,
  * "Order Status", read 2026-11-02): 1 Cancelled, 2 Traded / Filled, 3 For
  * future use, 4 Transit, 5 Rejected, 6 Pending. The SDK's order-socket
@@ -609,42 +639,66 @@ export class FyersBroker implements Broker, HistoryProvider {
       orderTag: order.clientOrderId, // Crucial for reconciliation (plan/19 §5)
     };
 
+    // Nothing has left the process yet, so a failure here is a refusal the
+    // order provably did not get past.
+    let headers: Awaited<ReturnType<FyersBroker["getHeaders"]>>;
     try {
-      const headers = await this.getHeaders(token);
-      const response = await fetch(
-        "https://api-t1.fyers.in/api/v3/orders/sync",
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify(payload),
-        },
-      );
-
-      const data = (await response.json()) as FyersResponse;
-
-      if (!response.ok || data.s !== "ok") {
-        return {
-          status: "REJECTED",
-          clientOrderId: order.clientOrderId,
-          reason: data.message || "Broker rejected order",
-          code: data.code?.toString(),
-        };
-      }
-
-      // Live orders are generally async, so we return PENDING.
-      // Actual fill comes via WebSocket (onOrderUpdate).
-      return {
-        status: "PENDING",
-        clientOrderId: order.clientOrderId,
-        brokerOrderId: data.id || "unknown",
-      };
+      headers = await this.getHeaders(token);
     } catch (err: unknown) {
       return {
         status: "REJECTED",
         clientOrderId: order.clientOrderId,
-        reason: (err as Error).message || "Network error",
+        reason: `not sent: ${errorMessage(err)}`,
       };
     }
+
+    // From here the request may have reached FYERS. Only an answer FYERS
+    // actually gave can say REJECTED. A network error, a timeout, a 5xx or a
+    // body that is not FYERS's JSON says nothing about whether the order
+    // exists — and reporting that as REJECTED made the Order Manager treat a
+    // possibly-live order as finished, dropping its fill when it came (task
+    // 14.12). Those THROW: the Order Manager keeps the order PLACED, never
+    // retries it blind, and reconcile() settles it against the order book.
+    let response: Response;
+    try {
+      response = await fetch("https://api-t1.fyers.in/api/v3/orders/sync", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+      });
+    } catch (err: unknown) {
+      throw new Error(
+        `FYERS order ${order.clientOrderId}: outcome unknown — ${errorMessage(err)}`,
+      );
+    }
+    const data = await readFyersJson(response);
+    if (data === null || response.status >= 500) {
+      throw new Error(
+        `FYERS order ${order.clientOrderId}: outcome unknown — HTTP ${String(response.status)}${data === null ? ", unreadable body" : ""}`,
+      );
+    }
+
+    if (!response.ok || data.s !== "ok") {
+      return {
+        status: "REJECTED",
+        clientOrderId: order.clientOrderId,
+        reason: data.message || "Broker rejected order",
+        code: data.code?.toString(),
+      };
+    }
+
+    // Live orders are generally async, so we return PENDING.
+    // Actual fill comes via WebSocket (onOrderUpdate).
+    return {
+      status: "PENDING",
+      clientOrderId: order.clientOrderId,
+      brokerOrderId: data.id || "unknown",
+    };
+  }
+
+  private get requestTimeoutMs(): number {
+    return this.deps.requestTimeoutMs ?? 10_000;
   }
 
   async readOptionChain(
@@ -695,6 +749,7 @@ export class FyersBroker implements Broker, HistoryProvider {
       method: "DELETE",
       headers,
       body: JSON.stringify({ id: stat.brokerOrderId }),
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
     });
 
     const data = (await response.json()) as FyersResponse;
@@ -703,20 +758,35 @@ export class FyersBroker implements Broker, HistoryProvider {
     }
   }
 
+  /**
+   * `found: false` means FYERS's order book was read and the order is not in
+   * it — the one answer that licenses a resubmit (`Broker.status`). Being
+   * unable to read the book is a different fact and THROWS: no token, a
+   * network error, a timeout, an HTTP error or an unreadable body. All of
+   * those used to come back `found: false`, so an outage looked exactly like
+   * proof that the order never existed (task 14.12).
+   */
   async status(clientOrderId: string): Promise<BrokerOrderStatus> {
     if (this.deps.checkRateLimit) await this.deps.checkRateLimit();
     const token = await this.deps.getToken();
-    if (!token) return { clientOrderId, found: false };
+    if (!token) {
+      throw new Error(
+        `FYERS order book unavailable for ${clientOrderId}: no access token`,
+      );
+    }
 
     const headers = await this.getHeaders(token);
     const response = await fetch("https://api-t1.fyers.in/api/v3/orders", {
       method: "GET",
       headers,
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
     });
 
-    const data = (await response.json()) as FyersResponse;
-    if (!response.ok || data.s !== "ok" || !data.orderBook) {
-      return { clientOrderId, found: false };
+    const data = await readFyersJson(response);
+    if (data === null || !response.ok || data.s !== "ok" || !data.orderBook) {
+      throw new Error(
+        `FYERS order book unavailable for ${clientOrderId}: HTTP ${String(response.status)}${data?.message === undefined ? "" : ` — ${data.message}`}`,
+      );
     }
 
     const order = data.orderBook.find((o) => o.orderTag === clientOrderId);

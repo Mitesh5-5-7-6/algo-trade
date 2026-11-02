@@ -38,7 +38,12 @@ export interface Broker {
   /**
    * The broker's current view of an order — the reconcile half of
    * reconcile-then-decide after an unknown outcome (plan/12 §8). `found:false`
-   * is the only thing that licenses a safe resubmit.
+   * is the only thing that licenses a safe resubmit, so it means "asked, and
+   * not there" and nothing else. When the broker cannot be asked at all — no
+   * token, the network, a timeout — this THROWS (task 14.12).
+   *
+   * `execute` follows the same rule: it returns REJECTED only on the broker's
+   * own refusal, and throws when the outcome is unknown.
    */
   status(clientOrderId: string): Promise<BrokerOrderStatus>;
 

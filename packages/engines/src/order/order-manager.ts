@@ -1,5 +1,6 @@
 import type {
   BrokerOrderRequest,
+  BrokerOrderStatus,
   TradeMode,
   ExecutionOutcome,
   Order,
@@ -307,7 +308,17 @@ export class OrderManager {
 
   /** Reconcile a stuck PLACED/PENDING order against the broker (plan/12 §8). */
   async reconcile(order: Order): Promise<OrderResult> {
-    const status = await this.broker.status(order.orderId);
+    let status: BrokerOrderStatus;
+    try {
+      status = await this.broker.status(order.orderId);
+    } catch (error) {
+      // The broker could not be asked (task 14.12). That proves nothing about
+      // the order, so it stays exactly as recorded — PLACED/PENDING, still
+      // blocking a duplicate entry — for the next reconcile. Never thrown: at
+      // boot one unreachable broker call must not stop the process starting.
+      this.onError(error, { where: "broker.status", orderId: order.orderId });
+      return { status: "unknown", orderId: order.orderId };
+    }
     if (!status.found) {
       // Verifiably absent at the broker — safe to leave for resubmit decision.
       return { status: "unknown", orderId: order.orderId };

@@ -264,6 +264,45 @@ describe("OrderManager reconciliation (plan/12 §8)", () => {
     expect((await h.manager.reconcile(stuck)).status).toBe("unknown");
   });
 
+  /**
+   * Task 14.12. A broker that cannot be asked proves nothing about the order.
+   * reconcile used to let the throw escape, so at boot one unreachable FYERS
+   * call with a single stuck order stopped the whole process starting. Now
+   * the order is left exactly as recorded, still blocking a duplicate entry.
+   */
+  it("leaves the order as recorded when the broker cannot be asked", async () => {
+    const broker: ExecutionBroker = {
+      execute: () => Promise.reject(new Error("unused")),
+      cancel: () => Promise.resolve(),
+      status: () =>
+        Promise.reject(new Error("order book unavailable: HTTP 503")),
+    };
+    const h = harness({ broker });
+    const stuck: Order = {
+      orderId: "ord_y",
+      signalId: "sig_y",
+      strategyId: "str_1",
+      symbol: "NSE:X-EQ",
+      side: "BUY",
+      qty: 5,
+      type: "MARKET",
+      status: "PENDING",
+      mode: "live",
+      createdAt: 1000,
+    };
+    h.orders.set("ord_y", stuck);
+
+    const result = await h.manager.reconcile(stuck);
+    expect(result).toEqual({ status: "unknown", orderId: "ord_y" });
+    expect(h.orders.get("ord_y")).toEqual(stuck); // untouched
+    expect(h.events).toHaveLength(0);
+    expect(h.errors).toEqual([
+      expect.objectContaining({
+        context: { where: "broker.status", orderId: "ord_y" },
+      }),
+    ]);
+  });
+
   it("records a broker-confirmed flat position close without submitting a new order", async () => {
     const h = harness();
     const reconciliationOrder: Order = {

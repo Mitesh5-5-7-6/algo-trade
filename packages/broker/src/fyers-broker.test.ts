@@ -269,18 +269,92 @@ describe("FyersBroker.execute (plan/19 §5)", () => {
     }
   });
 
-  it("returns REJECTED on network failure", async () => {
+  /**
+   * Task 14.12. Only FYERS's own answer can say REJECTED. A request that may
+   * have reached FYERS and got no readable answer is an UNKNOWN outcome, and
+   * execute throws so the Order Manager keeps the order PLACED for reconcile
+   * — it used to come back REJECTED, and a fill for that live order was then
+   * dropped as arriving after a terminal state.
+   */
+  it("throws, never REJECTED, when the network fails mid-request", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new Error("ECONNREFUSED")),
     );
 
     const broker = new FyersBroker(deps());
+    await expect(broker.execute(order())).rejects.toThrow(
+      /outcome unknown.*ECONNREFUSED/,
+    );
+  });
+
+  it("abandons a request that outlives its timeout, as an unknown outcome", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => {
+              reject(new Error("The operation was aborted due to timeout"));
+            });
+          }),
+      ),
+    );
+
+    const broker = new FyersBroker(deps({ requestTimeoutMs: 20 }));
+    await expect(broker.execute(order())).rejects.toThrow(/outcome unknown/);
+  });
+
+  it("throws on a server error — FYERS may have taken the order", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: () => Promise.resolve({ s: "error", message: "bad gateway" }),
+      }),
+    );
+
+    const broker = new FyersBroker(deps());
+    await expect(broker.execute(order())).rejects.toThrow(
+      /outcome unknown.*HTTP 502/,
+    );
+  });
+
+  it("throws on a body that is not FYERS's JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.reject(new SyntaxError("Unexpected token <")),
+      }),
+    );
+
+    const broker = new FyersBroker(deps());
+    await expect(broker.execute(order())).rejects.toThrow(
+      /outcome unknown.*unreadable body/,
+    );
+  });
+
+  /** FYERS answered and refused: that IS known, and stays REJECTED. */
+  it("returns REJECTED when FYERS answers with a refusal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: () =>
+          Promise.resolve({ s: "error", code: -50, message: "Invalid qty" }),
+      }),
+    );
+
+    const broker = new FyersBroker(deps());
     const outcome = await broker.execute(order());
-    expect(outcome.status).toBe("REJECTED");
-    if (outcome.status === "REJECTED") {
-      expect(outcome.reason).toBe("ECONNREFUSED");
-    }
+    expect(outcome).toMatchObject({
+      status: "REJECTED",
+      reason: "Invalid qty",
+    });
   });
 
   it("invokes rate limiter before making the request", async () => {
@@ -375,12 +449,30 @@ describe("FyersBroker.status (plan/12 §8 reconciliation)", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns found:false when no token", async () => {
+  /**
+   * Task 14.12. `found: false` licenses a resubmit, so it may only mean "the
+   * book was read and the order is not in it". Not being able to read the
+   * book used to return it too — an outage indistinguishable from proof.
+   */
+  it("throws, never found:false, when there is no token to ask with", async () => {
     const broker = new FyersBroker(
       deps({ getToken: () => Promise.resolve(null) }),
     );
-    const s = await broker.status("ord_1");
-    expect(s).toEqual({ clientOrderId: "ord_1", found: false });
+    await expect(broker.status("ord_1")).rejects.toThrow(/no access token/);
+  });
+
+  it("throws, never found:false, when the order book cannot be read", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({ s: "error", message: "unavailable" }),
+      }),
+    );
+
+    const broker = new FyersBroker(deps());
+    await expect(broker.status("ord_1")).rejects.toThrow(/HTTP 503/);
   });
 
   /**
