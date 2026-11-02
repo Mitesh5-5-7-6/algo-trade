@@ -169,15 +169,13 @@ describe("TelegramTransport (task 16.2)", () => {
     expect(JSON.stringify(result)).not.toContain(TOKEN);
     expect(JSON.stringify(result)).toContain("<bot-token>");
 
-    const echoed = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        reply(401, {
-          ok: false,
-          error_code: 401,
-          description: `Unauthorized ${TOKEN}`,
-        }),
-      );
+    const echoed = vi.fn<typeof fetch>().mockResolvedValue(
+      reply(401, {
+        ok: false,
+        error_code: 401,
+        description: `Unauthorized ${TOKEN}`,
+      }),
+    );
     expect(
       JSON.stringify(await transport(echoed).send(critical)),
     ).not.toContain(TOKEN);
