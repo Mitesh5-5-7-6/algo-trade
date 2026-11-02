@@ -70,9 +70,11 @@ function fakeRuntime() {
   const calls: string[] = [];
   let tradingEnabled = true;
   const controls: RuntimeControls = {
-    setTradingEnabled(enabled) {
-      tradingEnabled = enabled;
-      calls.push(`setTradingEnabled:${String(enabled)}`);
+    setTradingEnabled(change) {
+      tradingEnabled = change.enabled;
+      calls.push(
+        `setTradingEnabled:${String(change.enabled)}:${change.source}`,
+      );
     },
     enableStrategy(config) {
       calls.push(`enable:${config.strategyId}`);
@@ -447,6 +449,15 @@ describe("settings & control routes", () => {
     });
     expect(resumed.json()).toEqual({ tradingEnabled: true });
     expect(runtime.isTradingEnabled()).toBe(true);
+    // Task 16.3: each control names itself, for TRADING_HALTED / RESUMED.
+    await app.inject({ method: "POST", url: "/control/kill" });
+    expect(
+      runtime.calls.filter((c) => c.startsWith("setTradingEnabled:")),
+    ).toEqual([
+      "setTradingEnabled:false:pause",
+      "setTradingEnabled:true:operator",
+      "setTradingEnabled:false:kill",
+    ]);
     // Resume is a ⚠ route — it must go through the step-up gate (plan/21 §5).
     expect(stepUps).toEqual(["hunter2"]);
   });

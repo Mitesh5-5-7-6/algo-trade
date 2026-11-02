@@ -180,8 +180,11 @@ export function createRuntimeProjection(
         "picked up by that process.",
     }),
 
-    setTradingEnabled(enabled) {
-      notify("setTradingEnabled", { enabled });
+    setTradingEnabled(change) {
+      notify("setTradingEnabled", {
+        enabled: change.enabled,
+        source: change.source,
+      });
     },
     enableStrategy(config: StrategyConfig) {
       notify("enableStrategy", { strategyId: config.strategyId });

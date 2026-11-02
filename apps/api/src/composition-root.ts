@@ -50,6 +50,7 @@ import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 import { modeDatabaseProblem } from "./environment.js";
 import { createNotifier } from "./notifications/create.js";
+import { BrokerTokenWatch } from "./engines/token-watch.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
@@ -185,6 +186,15 @@ export async function bootstrap(
 
   // --- Broker (plan/19 §2) ---
   const brokerLog = componentLogger(logger, "api.broker");
+  // Every token lookup below reports what it found; the watch turns that into
+  // BROKER_TOKEN_MISSING / RESTORED on the edge (task 16.3).
+  const tokenWatch = new BrokerTokenWatch(
+    "fyers",
+    config.BROKER_MODE,
+    (error, context) => {
+      brokerLog.warn({ err: error, ...context }, "token event not published");
+    },
+  );
   // Shared by the Paper Broker (reader) and the engine runtime (writer).
   const liveState = createLiveMarketState();
   let broker: Broker;
@@ -229,6 +239,7 @@ export async function bootstrap(
         const user = await users.findFirstUser();
         if (!user) {
           brokerLog.warn("no operator account — cannot load a FYERS token");
+          tokenWatch.observe("absent");
           return null;
         }
         const token = await brokerTokens.getDecryptedToken(user.userId);
@@ -236,6 +247,7 @@ export async function bootstrap(
           brokerLog.warn(
             "no FYERS token stored — connect the broker from Settings",
           );
+          tokenWatch.observe("absent");
           return null;
         }
         if (token.expiresAt <= Date.now()) {
@@ -244,8 +256,10 @@ export async function bootstrap(
             "FYERS access token EXPIRED — reconnect from Settings; the feed " +
               "stays down until a fresh token is stored (plan/19 §3)",
           );
+          tokenWatch.observe("expired");
           return null;
         }
+        tokenWatch.observe("present");
         return token.accessToken;
       },
     });
@@ -307,6 +321,9 @@ export async function bootstrap(
     mode: config.BROKER_MODE,
     liveState,
   });
+
+  // Token events need the bus; a missing token already seen is announced now.
+  tokenWatch.attach((name, payload) => runtime.bus.publish(name, payload));
 
   // Establish the broker data feed (plan/19 §4).
   // Done before enabling strategies so indicator warm-up has live prices.

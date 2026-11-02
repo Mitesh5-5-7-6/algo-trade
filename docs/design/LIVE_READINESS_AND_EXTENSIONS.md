@@ -197,7 +197,11 @@ Promotes ADR §21 from `PROPOSED` to `DECIDED` with these decisions.
   from re-reading a dashboard value. Three sources that only log today get
   bus events, added to the contract catalogue rather than changing an
   existing one: feed silent / recovered, trading halted / resumed (kill,
-  pause, resume, reconciliation halt), and broker token missing / expiring.
+  pause, resume, reconciliation halt), and broker token missing / restored.
+  Each fires on the transition only. _Token expiring_ is not built yet: the
+  stored expiry is an assumed 14 hours, not the token's own, and a warning
+  computed from a guess would be invented data. It comes with 15.4's real
+  expiry. Events raised during boot are published once the bus exists.
 - **D4 — Every message names its mode.** `[PAPER]` or `[LIVE]` leads every
   message, taken from the injected mode, never inferred from the broker object
   (CURRENT_STATE §4.3).

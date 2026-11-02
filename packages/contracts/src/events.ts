@@ -22,7 +22,7 @@ import {
 } from "@neelkanth/core";
 
 /**
- * The 14-event catalog (plan/09 §6). These constants are the ONLY way to name
+ * The event catalog (plan/09 §6; 21 events since task 16.3). These constants are the ONLY way to name
  * an event — string literals at emit/subscribe sites are banned (plan/25 §3):
  * a typo'd channel name doesn't error, it silently talks to nobody.
  */
@@ -42,6 +42,14 @@ export const EVENT_NAMES = [
   "MARKET_OPEN",
   "MARKET_CLOSE",
   "SYSTEM_ERROR",
+  // Phase 16 (task 16.3): states that only logged, made events so the
+  // operator can be told about them (design LIVE_READINESS_AND_EXTENSIONS §5).
+  "FEED_SILENT",
+  "FEED_RECOVERED",
+  "TRADING_HALTED",
+  "TRADING_RESUMED",
+  "BROKER_TOKEN_MISSING",
+  "BROKER_TOKEN_RESTORED",
 ] as const;
 
 export const EventNameSchema = z.enum(EVENT_NAMES);
@@ -227,6 +235,63 @@ export const EVENT_PAYLOAD_SCHEMAS = {
     level: z.enum(["error", "fatal"]),
     message: z.string().min(1),
     context: z.record(z.string(), z.unknown()),
+    ts: TimestampSchema,
+  }),
+
+  /**
+   * Connected, market open, and no ticks for longer than the silence window.
+   * Once per episode. `silentSeconds` is null when no tick has arrived since
+   * boot — "never" is not a number of seconds.
+   */
+  FEED_SILENT: z.object({
+    broker: z.string().min(1),
+    mode: TradeModeSchema,
+    silentSeconds: z.number().int().nonnegative().nullable(),
+    subscribed: z.number().int().nonnegative(),
+    ts: TimestampSchema,
+  }),
+
+  /** Ticks arriving again after FEED_SILENT. */
+  FEED_RECOVERED: z.object({
+    broker: z.string().min(1),
+    mode: TradeModeSchema,
+    ts: TimestampSchema,
+  }),
+
+  /**
+   * Trading went from enabled to disabled — on the transition only, so a
+   * second pause is not a second halt. `source` says who stopped it.
+   */
+  TRADING_HALTED: z.object({
+    source: z.enum(["pause", "kill", "reconciliation"]),
+    reason: z.string().min(1),
+    mode: TradeModeSchema,
+    ts: TimestampSchema,
+  }),
+
+  /** Trading went from disabled to enabled — only ever by the operator, behind step-up. */
+  TRADING_RESUMED: z.object({
+    source: z.literal("operator"),
+    mode: TradeModeSchema,
+    ts: TimestampSchema,
+  }),
+
+  /**
+   * A broker token lookup found none usable, where the last one did (or at
+   * boot). `expired` is judged against the stored expiry — today an assumed
+   * one (task 15.4) — and `absent` means nothing is stored.
+   */
+  BROKER_TOKEN_MISSING: z.object({
+    broker: z.string().min(1),
+    mode: TradeModeSchema,
+    reason: z.enum(["absent", "expired"]),
+    ts: TimestampSchema,
+  }),
+
+  /** A usable token found again after BROKER_TOKEN_MISSING. */
+  BROKER_TOKEN_RESTORED: z.object({
+    broker: z.string().min(1),
+    mode: TradeModeSchema,
     ts: TimestampSchema,
   }),
 } as const satisfies Record<EventName, z.ZodTypeAny>;

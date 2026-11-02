@@ -253,6 +253,38 @@ export async function startEngineRuntime(deps: {
     } as SessionContext,
   };
 
+  /**
+   * The kill gate's one writer, announcing each real change with who made it
+   * (task 16.3): pause, kill and a reconciliation mismatch halt; only the
+   * operator resumes. On the transition only — a second pause is not a second
+   * halt — so the operator is told once.
+   */
+  function switchTrading(
+    change:
+      | {
+          readonly enabled: false;
+          readonly source: "pause" | "kill" | "reconciliation";
+          readonly reason: string;
+        }
+      | { readonly enabled: true; readonly source: "operator" },
+  ): void {
+    const was = state.tradingEnabled;
+    state.tradingEnabled = change.enabled;
+    if (was === change.enabled) return;
+    const ts = Date.now();
+    const sent = change.enabled
+      ? publish("TRADING_RESUMED", { source: "operator", mode: deps.mode, ts })
+      : publish("TRADING_HALTED", {
+          source: change.source,
+          reason: change.reason,
+          mode: deps.mode,
+          ts,
+        });
+    sent.catch((error: unknown) => {
+      onError(error, { at: "publish trading switch" });
+    });
+  }
+
   // Market-data feed state, tracked so the control plane can report it
   // (plan/19 §4). Starts `disconnected` and is only ever moved by the broker
   // itself — a feed that never connects must read as never connected, which is
@@ -920,7 +952,11 @@ export async function startEngineRuntime(deps: {
       findBookOrder: (orderId) => paperBook.find(orderId),
       findAllFills: () => paperBook.allFills(),
       disableTrading: async () => {
-        state.tradingEnabled = false;
+        switchTrading({
+          enabled: false,
+          source: "reconciliation",
+          reason: `paper broker reconciliation mismatch at ${at}`,
+        });
         await settingsRepo.setTradingEnabled(false);
       },
       persistRiskEvent: (event) => riskEvents.insert(event),
@@ -1093,8 +1129,19 @@ export async function startEngineRuntime(deps: {
         rows: snapshot.rows,
       });
     },
-    setTradingEnabled(enabled) {
-      state.tradingEnabled = enabled;
+    setTradingEnabled(change) {
+      switchTrading(
+        change.enabled
+          ? change
+          : {
+              enabled: false,
+              source: change.source,
+              reason:
+                change.source === "kill"
+                  ? "operator kill switch"
+                  : "operator pause",
+            },
+      );
     },
     async enableStrategy(config) {
       enabledConfigs.set(config.strategyId, {
@@ -1200,20 +1247,36 @@ export async function startEngineRuntime(deps: {
         if (lastTickAt === 0 || silentFor > FEED_SILENCE_MS) {
           if (!silenceReported) {
             silenceReported = true;
+            const silentSeconds =
+              lastTickAt === 0 ? null : Math.round(silentFor / 1000);
+            const subscribed = deriveWorkingSet(enabledConfigs.values()).length;
             log.warn(
               {
                 lastTickAt: lastTickAt === 0 ? null : lastTickAt,
-                silentSeconds:
-                  lastTickAt === 0 ? null : Math.round(silentFor / 1000),
-                subscribed: deriveWorkingSet(enabledConfigs.values()).length,
+                silentSeconds,
+                subscribed,
               },
               "FEED SILENT — broker connected and market open, but no ticks " +
                 "are arriving; check the working set and the broker subscription",
             );
+            // Task 16.3: an event too, so the operator can be told, not only
+            // the log reader.
+            await publish("FEED_SILENT", {
+              broker: "fyers",
+              mode: deps.mode,
+              silentSeconds,
+              subscribed,
+              ts: now,
+            });
           }
         } else if (silenceReported) {
           silenceReported = false;
           log.info({}, "feed recovered — ticks are arriving again");
+          await publish("FEED_RECOVERED", {
+            broker: "fyers",
+            mode: deps.mode,
+            ts: now,
+          });
         }
       }
       if (evaluation.marketOpened) {

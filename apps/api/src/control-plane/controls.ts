@@ -13,9 +13,18 @@ import type { EquityPoint } from "@neelkanth/engines";
  * that seam. Defined as an interface so the routes are unit-testable with a
  * fake, without standing up Redis.
  */
+/**
+ * A change to the kill gate, and who made it (task 16.3). Paired so that a
+ * resume can only ever be the operator's, and a halt names which control
+ * stopped trading — the TRADING_HALTED event carries it to the operator.
+ */
+export type TradingSwitch =
+  | { readonly enabled: false; readonly source: "pause" | "kill" }
+  | { readonly enabled: true; readonly source: "operator" };
+
 export interface RuntimeControls {
   /** Reflect a pause/kill/resume into the hot kill gate (plan/12 §4). */
-  setTradingEnabled(enabled: boolean): void;
+  setTradingEnabled(change: TradingSwitch): void;
   /** Register + warm + start a strategy live (plan/15 §4). */
   enableStrategy(config: StrategyConfig): Promise<void>;
   /** Stop a strategy live. */

@@ -671,13 +671,13 @@ export function registerControlPlane(
   // Pause/kill are deliberately friction-free — stopping must never be gated.
   app.post("/control/pause", async () => {
     await settings.setTradingEnabled(false);
-    runtime.setTradingEnabled(false);
+    runtime.setTradingEnabled({ enabled: false, source: "pause" });
     return { tradingEnabled: false };
   });
 
   app.post("/control/kill", async () => {
     await settings.setTradingEnabled(false);
-    runtime.setTradingEnabled(false);
+    runtime.setTradingEnabled({ enabled: false, source: "kill" });
     return { killed: true, tradingEnabled: false };
   });
 
@@ -687,7 +687,7 @@ export function registerControlPlane(
     const body = parse(StepUpBody, request.body ?? {});
     await verifyStepUp(request.authUser?.userId, body.stepUpPassword);
     await settings.setTradingEnabled(true);
-    runtime.setTradingEnabled(true);
+    runtime.setTradingEnabled({ enabled: true, source: "operator" });
     return { tradingEnabled: true };
   });
 }

@@ -646,6 +646,11 @@ describe("paper reconciliation at runtime boot (Phase 14 D4)", () => {
           recordedAt: filledAt + 1,
         });
 
+        const halts: unknown[] = [];
+        await runtime.bus.subscribe("TRADING_HALTED", (event) => {
+          halts.push(event.payload);
+        });
+
         await runtime.syncSession(openTs);
         await runtime.syncSession(closeTs);
 
@@ -654,6 +659,15 @@ describe("paper reconciliation at runtime boot (Phase 14 D4)", () => {
             .collection("paper_reconciliations")
             .findOne({ at: "CLOSE" }, { projection: { _id: 0 } }),
         ).toMatchObject({ clean: false, ts: closeTs });
+        // Task 16.3: the halt is an event the operator can be told about.
+        await vi.waitFor(() => {
+          expect(halts).toEqual([
+            expect.objectContaining({
+              source: "reconciliation",
+              mode: "paper",
+            }),
+          ]);
+        });
         expect(runtime.positionEngine.getOpenPositions()).toHaveLength(0);
         expect(
           (await new SettingsRepository(db).getGlobal()).tradingEnabled,
@@ -746,6 +760,91 @@ describe("watched paper LIMIT orders (Phase 14 D5)", () => {
         expect(await book.find("runtime_limit_expire")).toMatchObject({
           status: "CANCELLED",
           reason: "session closed",
+        });
+      } finally {
+        await runtime.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
+});
+
+describe("the operator has events to be told about (task 16.3)", () => {
+  it(
+    "announces each halt and resume once, naming who made it",
+    async () => {
+      const runtime = await boot();
+      try {
+        const switches: { name: string; source: string }[] = [];
+        await runtime.bus.subscribe("TRADING_HALTED", (event) => {
+          switches.push({ name: event.name, source: event.payload.source });
+        });
+        await runtime.bus.subscribe("TRADING_RESUMED", (event) => {
+          switches.push({ name: event.name, source: event.payload.source });
+        });
+
+        runtime.setTradingEnabled({ enabled: false, source: "pause" });
+        // Already halted: a second pause, or a kill on top, is no new halt.
+        runtime.setTradingEnabled({ enabled: false, source: "pause" });
+        runtime.setTradingEnabled({ enabled: false, source: "kill" });
+        runtime.setTradingEnabled({ enabled: true, source: "operator" });
+        runtime.setTradingEnabled({ enabled: false, source: "kill" });
+
+        await vi.waitFor(() => {
+          expect(switches).toEqual([
+            { name: "TRADING_HALTED", source: "pause" },
+            { name: "TRADING_RESUMED", source: "operator" },
+            { name: "TRADING_HALTED", source: "kill" },
+          ]);
+        });
+      } finally {
+        await runtime.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
+
+  it(
+    "announces a silent feed once, and its recovery",
+    async () => {
+      const broker = new ScriptedFakeBroker();
+      const runtime = await boot(broker);
+      // 09:15 IST on a trading Wednesday: the market is open.
+      const openTs = Date.UTC(2024, 0, 3, 3, 45);
+      try {
+        const feed: { name: string; silentSeconds?: number | null }[] = [];
+        await runtime.bus.subscribe("FEED_SILENT", (event) => {
+          feed.push({
+            name: event.name,
+            silentSeconds: event.payload.silentSeconds,
+          });
+        });
+        await runtime.bus.subscribe("FEED_RECOVERED", (event) => {
+          feed.push({ name: event.name });
+        });
+        await broker.connect();
+
+        // Connected and open, and no tick since boot: silent — "never", not
+        // a number of seconds.
+        await runtime.syncSession(openTs);
+        // Still silent on the next pass: not announced twice.
+        await runtime.syncSession(openTs + 15_000);
+        await runtime.bus.publish("MARKET_TICK", {
+          symbol: SYMBOL,
+          ltp: 100,
+          volume: 1,
+          ts: openTs + 20_000,
+        });
+        // The in-process bus dispatches on setImmediate, after publish returns;
+        // one more turn and the runtime has seen the tick.
+        await new Promise((resolve) => setImmediate(resolve));
+        await runtime.syncSession(openTs + 30_000);
+
+        await vi.waitFor(() => {
+          expect(feed).toEqual([
+            { name: "FEED_SILENT", silentSeconds: null },
+            { name: "FEED_RECOVERED" },
+          ]);
         });
       } finally {
         await runtime.shutdown();
