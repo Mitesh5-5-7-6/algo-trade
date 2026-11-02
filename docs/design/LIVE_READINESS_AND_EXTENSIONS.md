@@ -357,6 +357,30 @@ The reference's central idea: **code decides, Claude explains.**
 - **D4.** Each `SKILL.md` names the exact command, its inputs, what each
   output field means, and what the skill must not claim — the reference's
   "a scan is not a buy list" discipline.
+- **D5 — Enforced, not trusted (19.1).** The conventions live in
+  [`.claude/skills/README.md`](../../.claude/skills/README.md), and
+  `scripts/check-skills.mjs` (`pnpm check:skills`) holds every skill to them.
+  Every shell line in a skill must match an `ALLOW` entry exactly: the CLI, its
+  directory, its env file, its subcommand and its flags. A `--db=` must be the
+  research database or a scratch one. An entry is added by the task that adds
+  its skill, and it cites the line where its CLI refuses, so D3's "only CLIs
+  that refuse" is checked rather than asserted. A skill has no
+  `allowed-tools`: the operator approves each command at the prompt.
+
+### 8.2 Open questions
+
+- **Q1 — The paper report and D3 conflict.** D2 lists the paper session
+  report (`paper.mts`), and D3 (with PLAN §33) says a skill never runs
+  against a paper trading database. `paper.mts` runs only against the paper
+  database: `provision` writes `strategies`, and `report` writes
+  `paper_session_reports` unless `--dry-run` is given. Two readings are
+  possible:
+  - **(a)** No paper skill at all.
+  - **(b)** A read-only exception: `report --dry-run` and `reports` only,
+    which change nothing.
+
+  Until it is decided, the stricter reading (a) holds, because `ALLOW` has no
+  `paper.mts` entry. The decision is needed before 19.2's paper report.
 
 ---
 

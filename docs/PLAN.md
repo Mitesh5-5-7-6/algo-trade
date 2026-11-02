@@ -136,7 +136,7 @@ phase may only start when its dependency is complete.
 | 16    | Operator notifications (Telegram)  | IN PROGRESS |
 | 17    | Setup odds (the "Time Machine")    | READY       |
 | 18    | NSE F&O scanner                    | READY       |
-| 19    | Operator skills (Claude Code)      | READY       |
+| 19    | Operator skills (Claude Code)      | IN PROGRESS |
 | 20    | Corporate announcements (News)     | READY       |
 
 **Phases 16–20 are tracks, not steps on the main line.** The main line is
@@ -1253,7 +1253,7 @@ reproducible, and cannot reach an order.
 
 ## 33. Phase 19 — Operator skills (Claude Code)
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 A track (§4). **Depends on:** the CLI each skill wraps; 19.4 waits for Phases
 17 and 18.
@@ -1264,13 +1264,13 @@ limit or setting, reads `.env*`, or touches a paper or Live database. Decisions
 in [LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md)
 §8.
 
-| ID   | Task                                                                                                                | STATUS | Commit | Evidence |
-| ---- | ------------------------------------------------------------------------------------------------------------------- | ------ | ------ | -------- |
-| 19.1 | Skill conventions: layout under `.claude/skills/`, the never-list, what a skill must not claim                      | READY  | —      | —        |
-| 19.2 | Board status and next task; the paper session report                                                                | READY  | —      | —        |
-| 19.3 | Replay; candidates and verdicts                                                                                     | READY  | —      | —        |
-| 19.4 | Setup odds, the scanner, a research question                                                                        | READY  | —      | —        |
-| 19.5 | Acceptance: each skill on a scratch database reproduces its CLI's numbers verbatim; a refused command stays refused | READY  | —      | —        |
+| ID   | Task                                                                                                                | STATUS      | Commit | Evidence |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ----------- | ------ | -------- |
+| 19.1 | Skill conventions: layout under `.claude/skills/`, the never-list, what a skill must not claim                      | IN PROGRESS | —      | —        |
+| 19.2 | Board status and next task; the paper session report                                                                | READY       | —      | —        |
+| 19.3 | Replay; candidates and verdicts                                                                                     | READY       | —      | —        |
+| 19.4 | Setup odds, the scanner, a research question                                                                        | READY       | —      | —        |
+| 19.5 | Acceptance: each skill on a scratch database reproduces its CLI's numbers verbatim; a refused command stays refused | READY       | —      | —        |
 
 ### Done when
 
