@@ -19,6 +19,9 @@ const REDACT_PATHS = [
   "sessionId",
   "cookie",
   "authorization",
+  // The Telegram bot token (Phase 16 D5) — the Bot API puts it in the URL.
+  "botToken",
+  "*.botToken",
   "*.accessToken",
   "*.refreshToken",
   "*.password",

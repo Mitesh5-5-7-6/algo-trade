@@ -49,6 +49,7 @@ import { corsOptions } from "./cors.js";
 import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 import { modeDatabaseProblem } from "./environment.js";
+import { createNotifier } from "./notifications/create.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
@@ -84,6 +85,20 @@ export async function bootstrap(
   logger: Logger,
 ): Promise<AppContext> {
   const log = componentLogger(logger, "api.bootstrap");
+
+  // Operator notifications (Phase 16). Said once either way, so "off" is a
+  // stated fact rather than a silence that looks like a quiet day (D5). Not
+  // yet subscribed to anything: the event catalogue is task 16.4.
+  const notifyLog = componentLogger(logger, "notifications");
+  const notifier = createNotifier(config, (error, context) => {
+    notifyLog.warn({ err: error, ...context }, "notification problem");
+  });
+  log.info(
+    { notifications: notifier.enabled ? "telegram" : "off" },
+    notifier.enabled
+      ? "operator notifications on (Telegram)"
+      : "operator notifications off — TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID unset",
+  );
 
   // --- Infrastructure ---
   log.info("connecting mongo");

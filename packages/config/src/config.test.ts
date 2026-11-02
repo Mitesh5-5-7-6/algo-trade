@@ -138,6 +138,60 @@ describe("FYERS redirect URL (must match the route apps/api serves)", () => {
   });
 });
 
+describe("Telegram notifications (Phase 16)", () => {
+  const BOT = "123456789:AAH-example_token";
+
+  it("is off when neither is set — not an error", () => {
+    const config = loadConfig(validEnv);
+    expect(config.TELEGRAM_BOT_TOKEN).toBeUndefined();
+    expect(config.TELEGRAM_CHAT_ID).toBeUndefined();
+  });
+
+  it("accepts a bot and a chat together, including a group's negative id", () => {
+    const config = loadConfig({
+      ...validEnv,
+      TELEGRAM_BOT_TOKEN: BOT,
+      TELEGRAM_CHAT_ID: "-1001234567890",
+    });
+    expect(config.TELEGRAM_CHAT_ID).toBe("-1001234567890");
+  });
+
+  it("refuses a bot without a chat, and a chat without a bot", () => {
+    expect(() => loadConfig({ ...validEnv, TELEGRAM_BOT_TOKEN: BOT })).toThrow(
+      /TELEGRAM_CHAT_ID/,
+    );
+    expect(() =>
+      loadConfig({ ...validEnv, TELEGRAM_CHAT_ID: "12345" }),
+    ).toThrow(/TELEGRAM_BOT_TOKEN/);
+  });
+
+  it("reads empty values as unset", () => {
+    const config = loadConfig({
+      ...validEnv,
+      TELEGRAM_BOT_TOKEN: "",
+      TELEGRAM_CHAT_ID: "",
+    });
+    expect(config.TELEGRAM_BOT_TOKEN).toBeUndefined();
+  });
+
+  it("refuses values that cannot be a bot token or a chat", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        TELEGRAM_BOT_TOKEN: "not-a-token",
+        TELEGRAM_CHAT_ID: "12345",
+      }),
+    ).toThrow(ConfigValidationError);
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        TELEGRAM_BOT_TOKEN: BOT,
+        TELEGRAM_CHAT_ID: "my chat",
+      }),
+    ).toThrow(ConfigValidationError);
+  });
+});
+
 describe("FYERS_WEBHOOK_SECRET", () => {
   it("reads an empty value as unset, not as a zero-length secret", () => {
     expect(

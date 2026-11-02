@@ -78,6 +78,35 @@ const EnvSchema = z
       z.string().min(16).optional(),
     ),
 
+    // --- Notifications (Phase 16) ---
+    /**
+     * The operator's Telegram bot, from @BotFather. Optional, and unset means
+     * notifications are off — said once at boot, never an error. A secret: it
+     * sits in the Bot API's URL path, so it is never logged and never put in
+     * a message. Empty is read as unset, like FYERS_WEBHOOK_SECRET.
+     */
+    TELEGRAM_BOT_TOKEN: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string()
+        .regex(
+          /^\d+:[A-Za-z0-9_-]+$/,
+          "must look like a BotFather token: <digits>:<token>",
+        )
+        .optional(),
+    ),
+    /** Where notifications go: a numeric chat id (groups are negative) or @channel. */
+    TELEGRAM_CHAT_ID: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string()
+        .regex(
+          /^(-?\d+|@[A-Za-z0-9_]+)$/,
+          "must be a numeric chat id or an @username",
+        )
+        .optional(),
+    ),
+
     // --- Telemetry ---
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace"])
@@ -101,6 +130,25 @@ const EnvSchema = z
           });
         }
       }
+    }
+
+    // A bot without a chat, or a chat without a bot, is a half-done setup: it
+    // would boot believing notifications were on and deliver nothing. Both or
+    // neither.
+    if (
+      (env.TELEGRAM_BOT_TOKEN === undefined) !==
+      (env.TELEGRAM_CHAT_ID === undefined)
+    ) {
+      const missing =
+        env.TELEGRAM_BOT_TOKEN === undefined
+          ? "TELEGRAM_BOT_TOKEN"
+          : "TELEGRAM_CHAT_ID";
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [missing],
+        message:
+          "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set together or not at all",
+      });
     }
 
     // The redirect URL must point at the route that actually exists (apps/api
