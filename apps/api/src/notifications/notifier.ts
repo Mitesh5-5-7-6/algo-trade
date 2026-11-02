@@ -24,6 +24,16 @@ export interface Notification {
   readonly title: string;
   /** Detail, if any. Never a secret, a token or a broker identifier (D5). */
   readonly body?: string;
+  /** Set on a message that must go once (task 16.6), e.g. `summary:2026-11-02`. */
+  readonly dedupeKey?: string;
+}
+
+/** What became of one message (task 16.6, D7). */
+export interface DeliveryOutcome {
+  readonly notification: Notification;
+  readonly outcome: "sent" | "failed" | "dropped";
+  readonly attempts: number;
+  readonly reason?: string;
 }
 
 /** The port the rest of the system sees. */
@@ -74,6 +84,12 @@ export interface QueuedNotifierDeps {
   readonly retryBackoffMs?: number;
   /** Test seam. */
   readonly sleep?: (ms: number) => Promise<void>;
+  /**
+   * Told what became of every message — sent, failed or dropped — so it can
+   * be kept (task 16.6). Called synchronously; a throw here is reported,
+   * never allowed to stop delivery.
+   */
+  readonly onOutcome?: (outcome: DeliveryOutcome) => void;
   /** Failures and drops are reported here — counted and logged, never thrown (D2). */
   readonly onError: (error: unknown, context: Record<string, unknown>) => void;
 }
@@ -166,8 +182,22 @@ export class QueuedNotifier implements Notifier {
     return true;
   }
 
+  private report(outcome: DeliveryOutcome): void {
+    try {
+      this.deps.onOutcome?.(outcome);
+    } catch (error) {
+      this.deps.onError(error, { where: "notifier.onOutcome" });
+    }
+  }
+
   private drop(notification: Notification): void {
     this.dropped += 1;
+    this.report({
+      notification,
+      outcome: "dropped",
+      attempts: 0,
+      reason: "notification queue full",
+    });
     this.deps.onError(new Error("notification queue full — message dropped"), {
       where: "notifier.queue",
       severity: notification.severity,
@@ -221,11 +251,18 @@ export class QueuedNotifier implements Notifier {
       }
       if (result.ok) {
         this.sent += 1;
+        this.report({ notification, outcome: "sent", attempts: attempt });
         return;
       }
       const last = !result.retryable || attempt === this.maxAttempts;
       if (last) {
         this.failed += 1;
+        this.report({
+          notification,
+          outcome: "failed",
+          attempts: attempt,
+          reason: result.reason,
+        });
         this.deps.onError(
           new Error(`notification not delivered: ${result.reason}`),
           {

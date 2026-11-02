@@ -21,6 +21,7 @@ import {
   OrdersRepository,
   RiskLogsRepository,
   PaperReconciliationsRepository,
+  NotificationsRepository,
   type MongoConnection,
 } from "@neelkanth/db";
 import { istDayStart, isTradingDayIST } from "@neelkanth/core";
@@ -94,20 +95,6 @@ export async function bootstrap(
 ): Promise<AppContext> {
   const log = componentLogger(logger, "api.bootstrap");
 
-  // Operator notifications (Phase 16). Said once either way, so "off" is a
-  // stated fact rather than a silence that looks like a quiet day (D5). Not
-  // yet subscribed to anything: the event catalogue is task 16.4.
-  const notifyLog = componentLogger(logger, "notifications");
-  const notifier = createNotifier(config, (error, context) => {
-    notifyLog.warn({ err: error, ...context }, "notification problem");
-  });
-  log.info(
-    { notifications: notifier.enabled ? "telegram" : "off" },
-    notifier.enabled
-      ? "operator notifications on (Telegram)"
-      : "operator notifications off — TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID unset",
-  );
-
   // --- Infrastructure ---
   log.info("connecting mongo");
   const mongo = await connectMongo(config.MONGO_URI); // pings; throws if down
@@ -121,6 +108,47 @@ export async function bootstrap(
     await mongo.close();
     throw new Error(`refusing to start: ${wrongDatabase}`);
   }
+
+  // Operator notifications (Phase 16). Said once either way, so "off" is a
+  // stated fact rather than a silence that looks like a quiet day (D5). Every
+  // message's fate is kept in `notifications` (task 16.6) — a failed write is
+  // logged and never touches delivery.
+  const notifyLog = componentLogger(logger, "notifications");
+  const notificationsRepo = new NotificationsRepository(mongo.db);
+  const notifier = createNotifier(
+    config,
+    (error, context) => {
+      notifyLog.warn({ err: error, ...context }, "notification problem");
+    },
+    (outcome) => {
+      notificationsRepo
+        .record({
+          notificationId: `ntf_${randomUUID()}`,
+          ts: Date.now(),
+          severity: outcome.notification.severity,
+          mode: outcome.notification.mode,
+          title: outcome.notification.title,
+          ...(outcome.notification.body === undefined
+            ? {}
+            : { body: outcome.notification.body }),
+          outcome: outcome.outcome,
+          attempts: outcome.attempts,
+          ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
+          ...(outcome.notification.dedupeKey === undefined
+            ? {}
+            : { dedupeKey: outcome.notification.dedupeKey }),
+        })
+        .catch((error: unknown) => {
+          notifyLog.warn({ err: error }, "notification record not kept");
+        });
+    },
+  );
+  log.info(
+    { notifications: notifier.enabled ? "telegram" : "off" },
+    notifier.enabled
+      ? "operator notifications on (Telegram)"
+      : "operator notifications off — TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID unset",
+  );
   log.info("connecting redis");
   // Connection errors during an outage repeat rapidly while ioredis retries;
   // throttle to one line per source per 30s so a real outage is visible
@@ -420,6 +448,7 @@ export async function bootstrap(
                   : "mismatch",
         };
       },
+      alreadySent: (key) => notificationsRepo.wasSent(key),
       onError: (error, context) => {
         notifyLog.warn({ err: error, ...context }, "daily message failed");
       },

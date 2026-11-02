@@ -22,6 +22,7 @@ import {
   ensureIndexes,
   PositionsRepository,
   RiskEventsRepository,
+  NotificationsRepository,
   SignalsRepository,
   StrategiesRepository,
   type MongoConnection,
@@ -155,6 +156,7 @@ afterEach(async () => {
   await connection.db.collection("strategies").deleteMany({});
   await connection.db.collection("settings").deleteMany({});
   await connection.db.collection("risk_events").deleteMany({});
+  await connection.db.collection("notifications").deleteMany({});
   await connection.db.collection("candles").deleteMany({});
   await connection.db.collection("trades").deleteMany({});
 });
@@ -196,6 +198,46 @@ describe("risk event routes (Phase 14 D4)", () => {
         type: "BROKER_RECONCILIATION",
       },
     ]);
+  });
+});
+
+describe("notification routes (task 16.6)", () => {
+  it("shows what the operator was told, and what failed to reach them", async () => {
+    makeApp();
+    const kept = new NotificationsRepository(connection.db);
+    await kept.record({
+      notificationId: "ntf_sent",
+      ts: 1_800_000_000_000,
+      severity: "CRITICAL",
+      mode: "paper",
+      title: "Trading halted (kill)",
+      body: "operator kill switch",
+      outcome: "sent",
+      attempts: 1,
+    });
+    await kept.record({
+      notificationId: "ntf_failed",
+      ts: 1_800_000_001_000,
+      severity: "WARNING",
+      mode: "paper",
+      title: "Market feed silent",
+      outcome: "failed",
+      attempts: 3,
+      reason: "HTTP 502: Bad Gateway",
+    });
+
+    const response = await app.inject({ method: "GET", url: "/notifications" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([
+      expect.objectContaining({
+        notificationId: "ntf_failed",
+        outcome: "failed",
+      }),
+      expect.objectContaining({ notificationId: "ntf_sent", outcome: "sent" }),
+    ]);
+    // The TTL field stays internal.
+    expect(JSON.stringify(response.json())).not.toContain("createdAt");
   });
 });
 

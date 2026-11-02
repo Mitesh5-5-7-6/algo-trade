@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DISABLED_NOTIFIER,
   QueuedNotifier,
+  type DeliveryOutcome,
   type Notification,
   type NotificationTransport,
   type SendResult,
@@ -233,6 +234,61 @@ describe("QueuedNotifier (task 16.2)", () => {
       expect(notifier.stats()).toMatchObject({ sent: 1, failed: 1 });
       expect(errors).toHaveLength(1);
     });
+  });
+});
+
+describe("every message's fate is reported, to be kept (task 16.6)", () => {
+  it("reports sent, failed and dropped, with attempts and reason", async () => {
+    const outcomes: DeliveryOutcome[] = [];
+    const t = scriptedTransport([
+      { ok: true },
+      { ok: false, retryable: false, reason: "HTTP 403: blocked" },
+    ]);
+    t.hold();
+    const notifier = new QueuedNotifier({
+      transport: t.transport,
+      capacity: 1,
+      sleep: () => Promise.resolve(),
+      onError: () => undefined,
+      onOutcome: (o) => outcomes.push(o),
+    });
+    notifier.notify(note("CRITICAL", "halted")); // in flight → sent
+    notifier.notify(note("WARNING", "rejected")); // queued → failed
+    notifier.notify(note("INFO", "fill")); // queue full → dropped
+    t.release();
+    await notifier.idle();
+
+    expect(
+      outcomes.map((o) => [
+        o.notification.title,
+        o.outcome,
+        o.attempts,
+        o.reason,
+      ]),
+    ).toEqual([
+      ["fill", "dropped", 0, "notification queue full"],
+      ["halted", "sent", 1, undefined],
+      ["rejected", "failed", 1, "HTTP 403: blocked"],
+    ]);
+  });
+
+  it("keeps delivering when keeping the record throws", async () => {
+    const errors: unknown[] = [];
+    const t = scriptedTransport();
+    const notifier = new QueuedNotifier({
+      transport: t.transport,
+      sleep: () => Promise.resolve(),
+      onError: (error) => errors.push(error),
+      onOutcome: () => {
+        throw new Error("mongo down");
+      },
+    });
+    notifier.notify(note("CRITICAL", "a"));
+    notifier.notify(note("CRITICAL", "b"));
+    await notifier.idle();
+    expect(t.sent).toEqual(["a", "b"]);
+    expect(notifier.stats().sent).toBe(2);
+    expect(errors).toHaveLength(2);
   });
 });
 

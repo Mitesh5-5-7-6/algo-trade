@@ -23,8 +23,8 @@ import type { Notifier, Severity } from "./notifier.js";
  * from storage rather than counted in memory, so a mid-session restart does
  * not quietly halve the day.
  *
- * Each message is sent once per trading day per process. A restart after the
- * summary time sends it again; keeping a durable record is task 16.6.
+ * Each message is sent once per trading day — across restarts too, when
+ * `alreadySent` reads the kept record (task 16.6).
  */
 
 export interface DaySummary {
@@ -49,6 +49,12 @@ export interface DailyMessagesDeps {
   /** Absent when no broker is configured: there is no token to speak of. */
   readonly tokenStatus?: () => Promise<TokenLookup>;
   readonly readSummary: (dateKey: string) => Promise<DaySummary>;
+  /**
+   * Whether a message with this key was already delivered (task 16.6), so a
+   * restart after the summary time does not send the day summary twice.
+   * Absent means in-memory only.
+   */
+  readonly alreadySent?: (dedupeKey: string) => Promise<boolean>;
   /** IST "HH:MM" — the token message's window opens. Default 09:00. */
   readonly preOpenAt?: string;
   /** IST "HH:MM" — the token message's window closes (the open). Default 09:15. */
@@ -100,15 +106,17 @@ export function createDailyMessages(deps: DailyMessagesDeps): {
   let tokenSentFor: string | null = null;
   let summarySentFor: string | null = null;
 
-  const send = (severity: Severity, title: string, body?: string): void => {
+  const send = (
+    severity: Severity,
+    title: string,
+    body: string,
+    dedupeKey: string,
+  ): void => {
     if (severity === "INFO" && !deps.includeInfo) return;
-    deps.notifier.notify({
-      severity,
-      mode: deps.mode,
-      title,
-      ...(body === undefined ? {} : { body }),
-    });
+    deps.notifier.notify({ severity, mode: deps.mode, title, body, dedupeKey });
   };
+  const sentBefore = async (dedupeKey: string): Promise<boolean> =>
+    deps.alreadySent === undefined ? false : deps.alreadySent(dedupeKey);
 
   return {
     async tick(now) {
@@ -125,7 +133,7 @@ export function createDailyMessages(deps: DailyMessagesDeps): {
         if (!tokenDue && !summaryDue) return;
         if (!(await deps.isTradingDay(day))) return;
 
-        if (tokenDue) {
+        if (tokenDue && !(await sentBefore(`token:${day}`))) {
           tokenSentFor = day;
           const status = await tokenStatus();
           if (status === "present") {
@@ -133,19 +141,28 @@ export function createDailyMessages(deps: DailyMessagesDeps): {
               "INFO",
               "Broker token present for today's session",
               "Its expiry is not known yet (task 15.4): reconnect if the feed drops.",
+              `token:${day}`,
             );
           } else {
             send(
               "WARNING",
               `Broker token ${status === "expired" ? "expired" : "missing"} before the open`,
               "Reconnect the broker from Settings before 09:15, or the feed and orders will not start.",
+              `token:${day}`,
             );
           }
         }
         if (summaryDue) {
           summarySentFor = day;
-          const message = formatSummary(day, await deps.readSummary(day));
-          send(message.severity, message.title, message.body);
+          if (!(await sentBefore(`summary:${day}`))) {
+            const message = formatSummary(day, await deps.readSummary(day));
+            send(
+              message.severity,
+              message.title,
+              message.body,
+              `summary:${day}`,
+            );
+          }
         }
       } catch (error) {
         deps.onError(error, { where: "notifications.daily", day });

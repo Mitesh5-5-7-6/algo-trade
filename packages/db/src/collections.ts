@@ -399,6 +399,11 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.notifications)
       .createIndex({ createdAt: 1 }, { expireAfterSeconds: TTL.notifications }),
+    // Task 16.6: the recent list, and the once-only check by key.
+    db.collection(COLLECTIONS.notifications).createIndex({ ts: -1 }),
+    db
+      .collection(COLLECTIONS.notifications)
+      .createIndex({ dedupeKey: 1, outcome: 1 }, { sparse: true }),
 
     // news
     db

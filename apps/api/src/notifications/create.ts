@@ -2,6 +2,7 @@ import type { Config } from "@neelkanth/config";
 import {
   DISABLED_NOTIFIER,
   QueuedNotifier,
+  type DeliveryOutcome,
   type Notifier,
 } from "./notifier.js";
 import { TelegramTransport } from "./telegram.js";
@@ -14,6 +15,8 @@ import { TelegramTransport } from "./telegram.js";
 export function createNotifier(
   config: Pick<Config, "TELEGRAM_BOT_TOKEN" | "TELEGRAM_CHAT_ID">,
   onError: (error: unknown, context: Record<string, unknown>) => void,
+  /** Where each message's fate is kept (task 16.6). */
+  onOutcome?: (outcome: DeliveryOutcome) => void,
 ): Notifier {
   const botToken = config.TELEGRAM_BOT_TOKEN;
   const chatId = config.TELEGRAM_CHAT_ID;
@@ -21,5 +24,6 @@ export function createNotifier(
   return new QueuedNotifier({
     transport: new TelegramTransport({ botToken, chatId }),
     onError,
+    ...(onOutcome === undefined ? {} : { onOutcome }),
   });
 }

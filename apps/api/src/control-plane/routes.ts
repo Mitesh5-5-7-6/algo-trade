@@ -17,6 +17,7 @@ import {
   PnlSnapshotsRepository,
   PositionsRepository,
   RiskEventsRepository,
+  NotificationsRepository,
   RiskLogsRepository,
   SettingsRepository,
   SignalsRepository,
@@ -289,6 +290,7 @@ export function registerControlPlane(
   const positions = new PositionsRepository(deps.db);
   const signals = new SignalsRepository(deps.db);
   const riskEvents = new RiskEventsRepository(deps.db);
+  const notifications = new NotificationsRepository(deps.db);
   const riskLogs = new RiskLogsRepository(deps.db);
   const pnlSnapshots = new PnlSnapshotsRepository(deps.db);
   const settings = new SettingsRepository(deps.db);
@@ -449,6 +451,8 @@ export function registerControlPlane(
   app.get("/signals", () => signals.findRecent(LIST_LIMIT));
   app.get("/risk-events", () => riskEvents.findRecent(LIST_LIMIT));
   app.get("/risk-logs", () => riskLogs.findRecent(LIST_LIMIT));
+  // What the operator was told, and what failed to reach them (task 16.6).
+  app.get("/notifications", () => notifications.findRecent(LIST_LIMIT));
 
   // The Overview activity feed: signals + orders + blocked entries, merged and
   // time-ordered (plan/06 §4). A read-model folded from the durable records.

@@ -129,6 +129,36 @@ describe("after the close (task 16.5)", () => {
   });
 });
 
+describe("once a day across restarts (task 16.6)", () => {
+  it("carries a key on each message, by day", async () => {
+    const h = harness();
+    await h.daily.tick(ist(9, 5));
+    await h.daily.tick(ist(16, 0));
+    expect(h.sent.map((n) => n.dedupeKey)).toEqual([
+      "token:2024-01-03",
+      "summary:2024-01-03",
+    ]);
+  });
+
+  /** A restart after 15:45 used to send the summary a second time. */
+  it("does not resend what the kept record says was delivered", async () => {
+    const delivered = new Set(["summary:2024-01-03", "token:2024-01-03"]);
+    const h = harness({
+      alreadySent: (key) => Promise.resolve(delivered.has(key)),
+    });
+    await h.daily.tick(ist(9, 5));
+    await h.daily.tick(ist(16, 0));
+    expect(h.sent).toEqual([]);
+    expect(h.summaryDays).toEqual([]); // not even read
+  });
+
+  it("sends again what was only attempted, not delivered", async () => {
+    const h = harness({ alreadySent: () => Promise.resolve(false) });
+    await h.daily.tick(ist(16, 0));
+    expect(titles(h.sent)).toEqual(["INFO Day summary 2024-01-03"]);
+  });
+});
+
 describe("the daily messages respect the calendar and the switches (task 16.5)", () => {
   it("says nothing on a holiday or a weekend", async () => {
     const h = harness({ isTradingDay: () => Promise.resolve(false) });

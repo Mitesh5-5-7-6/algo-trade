@@ -26,3 +26,4 @@ export * from "./walk-forward-results-repository.js";
 export * from "./paper-broker-orders-repository.js";
 export * from "./paper-reconciliations-repository.js";
 export * from "./paper-session-reports-repository.js";
+export * from "./notifications-repository.js";
