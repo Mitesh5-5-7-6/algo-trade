@@ -775,7 +775,7 @@ Five limits are configured separately from equity: `fnoRiskPerTrade`, `fnoMaxLot
 
 Each is **optional and falls back to its equity counterpart**. An operator who has not configured derivatives separately is held to the limits already in force, never to looser ones. In particular `fnoRiskPerTrade` has no widened default: a lot of a 65-multiplier contract can easily risk more than 1% of a small account, and the honest answer is "this trade does not fit", not a budget quietly grown until it does.
 
-Global controls remain global: `maxDailyLoss`, the kill switch, and pause apply to both classes. The daily-loss gate blocks new entries and never blocks exits (§5, the entry/exit asymmetry).
+Global controls remain global: `maxDailyLoss`, the kill switch, and pause apply to both classes. The daily-loss gate blocks new entries and never blocks exits (§5, the entry/exit asymmetry). Kill and pause follow the same asymmetry: they stop every order that adds risk, and an order the Risk Engine judged to reduce the position held still reaches the broker — a halt must never strand open risk without its stop (PLAN task 14.9).
 
 **One resolution, two consumers.** `resolveFnoLimits` produces the effective budget, and both the Risk Engine and the step-up authorisation check read it:
 

@@ -105,7 +105,7 @@ describe("OrderManager happy path (plan/12 §4)", () => {
 });
 
 describe("OrderManager the kill gate (plan/12 §4.1)", () => {
-  it("refuses all orders when trading is disabled — no persist, no execute", async () => {
+  it("refuses every order that adds risk when trading is disabled — no persist, no execute", async () => {
     const h = harness({ tradingEnabled: false });
     const result = await h.manager.place(signal(), approved);
     expect(result).toEqual({
@@ -114,6 +114,50 @@ describe("OrderManager the kill gate (plan/12 §4.1)", () => {
     });
     expect(h.orders.size).toBe(0);
     expect(h.events).toHaveLength(0);
+  });
+
+  /**
+   * Task 14.9. A kill that also held back exits left stops, square-off and
+   * the emergency exit unable to reach the broker — open positions stranded
+   * unprotected at exactly the moment the operator wanted out.
+   */
+  it("still places an exit the Risk Engine judged reducing", async () => {
+    const h = harness({ tradingEnabled: false });
+    const result = await h.manager.place(
+      signal({ side: "SELL", exitReason: "STOP_LOSS", positionId: "pos_1" }),
+      { decision: "approved", reducing: true },
+    );
+    expect(result.status).toBe("filled");
+    expect(h.orders.get("ord_1")?.exitReason).toBe("STOP_LOSS");
+  });
+
+  /**
+   * "Reducing" is the Risk Engine's judgement against the position held, not
+   * the signal's label: an exit that raced a close would OPEN a position, and
+   * a kill must stop it.
+   */
+  it("does not let an exit label alone through the kill", async () => {
+    const h = harness({ tradingEnabled: false });
+    const result = await h.manager.place(
+      signal({ side: "SELL", exitReason: "STOP_LOSS", positionId: "pos_1" }),
+      approved,
+    );
+    expect(result).toEqual({
+      status: "halted",
+      reason: "trading disabled (pause/kill)",
+    });
+    expect(h.orders.size).toBe(0);
+  });
+
+  /** An exit is no exception to a broker that cannot confirm it (plan/12 §7). */
+  it("halts even a reducing exit while the broker is disconnected", async () => {
+    const h = harness({ tradingEnabled: false });
+    h.manager.setBrokerConnected(false);
+    const result = await h.manager.place(signal({ side: "SELL" }), {
+      decision: "approved",
+      reducing: true,
+    });
+    expect(result).toEqual({ status: "halted", reason: "broker disconnected" });
   });
 
   it("halts new submissions while the broker is disconnected (plan/12 §7)", async () => {

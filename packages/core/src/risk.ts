@@ -33,6 +33,13 @@ export const RiskDecisionSchema = z.discriminatedUnion("decision", [
      * mean "the engine did not size this", never "the proposal was fine".
      */
     cappedQty: QuantitySchema.optional(),
+    /**
+     * Set when the order closes or trims the position held (plan/14 §5): the
+     * engine judged it against that position, so this is a fact about the
+     * order, not the signal's stated intent. The kill switch reads it — a halt
+     * stops new risk and must never strand the risk already open.
+     */
+    reducing: z.literal(true).optional(),
   }),
   z.object({
     decision: z.literal("blocked"),

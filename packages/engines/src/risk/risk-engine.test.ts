@@ -165,6 +165,8 @@ describe("RiskEngine — approval & logging (plan/14 §7)", () => {
     const h = harness();
     const decision = await h.engine.validate(signal());
     expect(decision.decision).toBe("approved");
+    // An entry adds risk: the kill switch must still stop it (task 14.9).
+    expect(decision).not.toHaveProperty("reducing");
     expect(h.logs).toHaveLength(1);
     expect(h.logs[0]?.decision).toBe("approved");
     expect(h.logs[0]?.checks.map((c) => c.check)).toEqual([
@@ -407,6 +409,29 @@ describe("RiskEngine — check 5 risk-based sizing (plan/14 §4.4)", () => {
       signal({ side: "SELL", qtyProposal: 10 }),
     );
     expect(decision.decision).toBe("approved");
+  });
+
+  /**
+   * Task 14.9: the kill switch lets through only what this says reduces. It
+   * is judged from the position held, so an exit-labelled signal with nothing
+   * to close is not reducing — it would open a position.
+   */
+  it("marks an approval reducing only when it closes the position held", async () => {
+    const exit = harness({ position: longPosition });
+    expect(
+      await exit.engine.validate(signal({ side: "SELL", qtyProposal: 10 })),
+    ).toEqual({ decision: "approved", reducing: true });
+
+    const flat = harness();
+    const entry = await flat.engine.validate(
+      signal({ side: "SELL", exitReason: "STOP_LOSS", qtyProposal: 10 }),
+    );
+    expect(entry).not.toHaveProperty("reducing");
+
+    const adding = harness({ position: longPosition });
+    expect(
+      await adding.engine.validate(signal({ side: "BUY" })),
+    ).not.toHaveProperty("reducing");
   });
 
   it("honors a stricter per-strategy override", async () => {

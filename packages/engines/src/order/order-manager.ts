@@ -49,8 +49,8 @@ export interface OrderManagerDeps {
  * owns the order's lifecycle and persistence, and emits the events that start
  * the projection chain.
  *
- * Because there is exactly one road to the broker: one switch stops everything
- * (the kill gate), one audit stream (`orders`), one place broker edge-cases are
+ * Because there is exactly one road to the broker: one switch stops every new
+ * risk (the kill gate; exits still pass), one audit stream (`orders`), one place broker edge-cases are
  * handled (plan/12 §2). Called synchronously with a risk-approved signal
  * (Regime A) and emits asynchronously afterward (Regime B) — this is where
  * Regime A ends and Regime B begins (plan/12 §3).
@@ -86,8 +86,15 @@ export class OrderManager {
    */
   async place(signal: Signal, decision: RiskDecision): Promise<OrderResult> {
     try {
-      // 1. The kill gate — absolute, one flag, before anything (plan/12 §4.1).
-      if (!(await this.ports.readTradingEnabled())) {
+      // 1. The kill gate — one flag, before anything (plan/12 §4.1). It stops
+      // every order that adds risk and none that removes it: a halt that also
+      // held back stops, square-off and the emergency exit would leave open
+      // positions unprotected at exactly the moment the operator wanted out.
+      // "Removes" is the Risk Engine's judgement against the position held,
+      // never the signal's own word for what it is.
+      const reducing =
+        decision.decision === "approved" && decision.reducing === true;
+      if (!reducing && !(await this.ports.readTradingEnabled())) {
         return { status: "halted", reason: "trading disabled (pause/kill)" };
       }
       // Halt on broker disconnect — never fire against an unconfirmable broker.

@@ -174,7 +174,10 @@ export class RiskEngine {
           passed: true,
           detail: "risk-reducing — exempt (plan/14 §5)",
         });
-        return await this.finish(signal, checks, { decision: "approved" });
+        return await this.finish(signal, checks, {
+          decision: "approved",
+          reducing: true,
+        });
       }
 
       const sizing = await this.evaluateSize(signal, position, limits);
