@@ -138,6 +138,8 @@ export function deriveWorkingSet(
 }
 
 export interface EngineRuntime extends RuntimeControls {
+  /** The risk limits in force now — read by the notifier for daily-loss warnings (task 16.4). */
+  riskLimits(): RiskLimits;
   readonly bus: EventBus;
   readonly positionEngine: PositionEngine;
   /** Publish a fresh option-chain snapshot for the underlying, so chain-dependent strategies can read it synchronously. */
@@ -1180,6 +1182,9 @@ export async function startEngineRuntime(deps: {
     },
     session() {
       return state.session;
+    },
+    riskLimits() {
+      return state.limits;
     },
     equityCurve() {
       return equityTracker.points();

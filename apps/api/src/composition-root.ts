@@ -50,6 +50,7 @@ import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 import { modeDatabaseProblem } from "./environment.js";
 import { createNotifier } from "./notifications/create.js";
+import { subscribeCatalogue } from "./notifications/catalogue.js";
 import { BrokerTokenWatch } from "./engines/token-watch.js";
 import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
 
@@ -322,7 +323,23 @@ export async function bootstrap(
     liveState,
   });
 
-  // Token events need the bus; a missing token already seen is announced now.
+  // The operator is told what the catalogue says, from events alone (16.4).
+  // Subscribed before the token watch attaches and the feed connects, so
+  // their first events are not missed.
+  if (notifier.enabled) {
+    await subscribeCatalogue({
+      bus: runtime.bus,
+      notifier,
+      mode: config.BROKER_MODE,
+      // Provisional until task 16.1 records the answer (design §5.3 Q2).
+      includeInfo: true,
+      dailyLossLimit: () => runtime.riskLimits().maxDailyLoss,
+      marketOpen: () => runtime.session().phase === "open",
+    });
+  }
+
+  // Token events need the bus; a missing token already seen is announced now,
+  // after the catalogue is listening, so a stale token at boot is told.
   tokenWatch.attach((name, payload) => runtime.bus.publish(name, payload));
 
   // Establish the broker data feed (plan/19 §4).
