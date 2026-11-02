@@ -218,7 +218,7 @@ const StepUpBody = z.object({ stepUpPassword: z.string().optional() });
  * simply any field increasing. Tightening stays friction-free: cutting risk in
  * a hurry must never be gated behind a password prompt.
  */
-function loosensLimits(current: RiskLimits, next: RiskLimits): boolean {
+export function loosensLimits(current: RiskLimits, next: RiskLimits): boolean {
   if (
     next.maxDailyLoss > current.maxDailyLoss ||
     next.maxPositionSize > current.maxPositionSize ||

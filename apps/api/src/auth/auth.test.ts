@@ -353,6 +353,64 @@ describe("step-up re-auth (plan/21 §5)", () => {
   });
 
   /**
+   * Task 14.10: through the real route. Adding an F&O lot ceiling tightens and
+   * needs no password; removing it is the loosest change there is — no number
+   * rises, yet the cap is gone — and is refused without one.
+   */
+  it("requires step-up to remove an F&O lot ceiling, but not to add one", async () => {
+    const cookie = sessionCookie(await login());
+    const current = (
+      await app.inject({ method: "GET", url: "/settings", headers: { cookie } })
+    ).json<{ globalRiskLimits: RiskLimits }>();
+    const uncapped: RiskLimits = { ...current.globalRiskLimits };
+    delete uncapped.fnoMaxLotsPerTrade;
+    const capped: RiskLimits = { ...uncapped, fnoMaxLotsPerTrade: 1 };
+
+    // Start uncapped (with the password, whatever the current state is).
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/settings",
+          headers: { cookie },
+          payload: { globalRiskLimits: uncapped, stepUpPassword: PASSWORD },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/settings",
+          headers: { cookie },
+          payload: { globalRiskLimits: capped },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    const removed = await app.inject({
+      method: "PATCH",
+      url: "/settings",
+      headers: { cookie },
+      payload: { globalRiskLimits: uncapped },
+    });
+    expect(removed.statusCode).toBe(403);
+    expect(removed.json<{ error: { code: string } }>().error.code).toBe(
+      "STEP_UP_REQUIRED",
+    );
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: "/settings",
+          headers: { cookie },
+          payload: { globalRiskLimits: uncapped, stepUpPassword: PASSWORD },
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+
+  /**
    * Phase 3 D6: holding overnight is a loosening — a position may carry gap
    * risk — so opting a strategy out of square-off is refused without a
    * password, by the real verifier. A time exit only adds a way out.

@@ -558,3 +558,72 @@ describe("regression: the reported 'one lot of 60 does not fit in 44' block", ()
     }
   });
 });
+
+describe("regression: the reported BANKNIFTY 'one lot of 30 does not fit in 20' block", () => {
+  /**
+   * Task 14.10. The second reported case of the same failure: a ₹1,000
+   * budget over a ₹50 stop distance gave the old share path a capacity of
+   * 20 "units", and a 30-unit lot was refused against it.
+   *
+   * 20 and 30 are this regression's inputs, never a statement of today's
+   * BANKNIFTY lot size — that comes from the instrument master. Premium ₹300,
+   * stop ₹250 (a long option's stop sits below the premium).
+   */
+  const BANKNIFTY: Instrument = {
+    symbol: "NSE:BANKNIFTY25SEP55000CE",
+    kind: "OPTION",
+    lotSize: 30,
+    tickSize: 0.05,
+    underlying: "BANKNIFTY",
+    strike: 55_000,
+    optionType: "CE",
+  };
+
+  const banknifty = (fnoRiskPerTrade: number) =>
+    sizeFno({
+      symbol: BANKNIFTY.symbol,
+      instrument: BANKNIFTY,
+      entryPrice: 300,
+      stopPrice: 250,
+      portfolio: PORTFOLIO,
+      limits: resolveFnoLimits({ ...LIMITS, fnoRiskPerTrade }),
+      openPositionCount: 0,
+      opensNewPosition: true,
+    });
+
+  it("blocks at ₹1,000, naming the budget and the lot's risk — not 20 against 30", () => {
+    const result = banknifty(0.01);
+
+    // One lot risks ₹50 × 30 = ₹1,500 against ₹1,000.
+    expect(result.riskPerLot).toBe(1_500);
+    expect(result.riskBudget).toBe(1_000);
+    expect(result.allowedLots).toBe(0);
+    expect(result.quantity).toBe(0);
+    const reason = result.blockedReason ?? "";
+    expect(reason).toContain("one lot risks ₹1500");
+    expect(reason).toContain("risk budget is ₹1000");
+    expect(reason).not.toContain("does not fit in");
+    expect(reason).not.toMatch(/\b20\b/); // the old share capacity never surfaces
+  });
+
+  it("trades one whole lot at ₹2,000 — 1.33 lots' budget, floored", () => {
+    const result = banknifty(0.02);
+
+    expect(result.lotsByRisk).toBe(1);
+    expect(result.allowedLots).toBe(1);
+    expect(result.quantity).toBe(30);
+    expect(result.blockedReason).toBeNull();
+  });
+
+  /** Risk is the binding constraint here, never the capital check. */
+  it("sizes several lots when the budget allows, risk and capital judged apart", () => {
+    const result = banknifty(0.05); // ₹5,000 → 3.33 lots by risk
+
+    expect(result.lotsByRisk).toBe(3);
+    // ₹300 × 30 = ₹9,000 a lot: 5 lots of capital, so capital does not bind.
+    expect(result.capitalPerLot).toBe(9_000);
+    expect(result.lotsByCapital).toBe(5);
+    expect(result.allowedLots).toBe(3);
+    expect(result.quantity).toBe(90);
+  });
+});
