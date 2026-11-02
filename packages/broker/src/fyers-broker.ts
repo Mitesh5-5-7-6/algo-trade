@@ -381,18 +381,29 @@ function round2(value: number): number {
 }
 
 /**
- * FYERS order status code → ours. 1 Cancelled, 2 Traded, 3 Transit,
- * 4 Rejected, 5 Pending, 6 Expired.
+ * FYERS order status code → ours, as FYERS documents it (API v3 appendix,
+ * "Order Status", read 2026-11-02): 1 Cancelled, 2 Traded / Filled, 3 For
+ * future use, 4 Transit, 5 Rejected, 6 Pending. The SDK's order-socket
+ * normaliser (`ordersocket/fyersSocket.js`, `ordstatobj`) folds the raw codes
+ * into the same set.
  *
- * Shared by the REST order book and the order socket deliberately: the SDK
- * normalizes the socket's raw codes into this same set, and two copies of this
- * table would eventually disagree about what "filled" means.
+ * This table once read 4 and 6 as REJECTED and 5 as PENDING: a working order
+ * was recorded as refused and its later fill dropped as arriving after a
+ * terminal state — a real position nothing knew about — while a genuine
+ * rejection stayed PENDING and blocked the symbol (task 14.11).
+ *
+ * Anything not documented as terminal stays PENDING: an order is never
+ * declared finished on a code we cannot name, and PENDING leaves it for
+ * `reconcile()` to settle against the order book.
+ *
+ * Shared by the REST order book and the order socket deliberately: two copies
+ * of this table would eventually disagree about what "filled" means.
  */
 function mapFyersStatus(code: number | undefined): OrderStatus {
   if (code === 2) return "FILLED";
-  if (code === 4 || code === 6) return "REJECTED";
+  if (code === 5) return "REJECTED";
   if (code === 1) return "CANCELLED";
-  return "PENDING";
+  return "PENDING"; // 4 Transit, 6 Pending, 3 and anything undocumented
 }
 
 /**

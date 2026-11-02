@@ -68,7 +68,8 @@ declare module "fyers-api-v3" {
    * One order-book row as the order socket delivers it, after the SDK's own
    * `ordersocket/mapper.js` renames the wire fields. `status` has already been
    * translated by the SDK into the same 1–6 codes the REST order book uses
-   * (1 Cancelled, 2 Traded, 3 Transit, 4 Rejected, 5 Pending, 6 Expired).
+   * (1 Cancelled, 2 Traded / Filled, 3 For future use, 4 Transit, 5 Rejected,
+   * 6 Pending — the FYERS API v3 appendix, "Order Status").
    */
   export interface FyersOrderUpdate {
     orderTag?: string;

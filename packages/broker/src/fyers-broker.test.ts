@@ -383,7 +383,22 @@ describe("FyersBroker.status (plan/12 §8 reconciliation)", () => {
     expect(s).toEqual({ clientOrderId: "ord_1", found: false });
   });
 
-  it("maps FYERS status codes to internal status", async () => {
+  /**
+   * Task 14.11. The table FYERS documents (API v3 appendix, "Order Status"):
+   * 1 Cancelled, 2 Traded / Filled, 3 For future use, 4 Transit, 5 Rejected,
+   * 6 Pending. It once read 4 and 6 as REJECTED and 5 as PENDING — so a
+   * working order was recorded as refused and its fill dropped, and a real
+   * rejection stayed open forever.
+   */
+  it.each([
+    [1, "CANCELLED"],
+    [2, "FILLED"],
+    [3, "PENDING"], // for future use — never terminal on an unnamed code
+    [4, "PENDING"], // transit: on its way to the exchange
+    [5, "REJECTED"],
+    [6, "PENDING"], // working at the exchange
+    [7, "PENDING"], // undocumented — left for reconcile, not guessed final
+  ] as const)("maps FYERS status %i to %s", async (code, expected) => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -391,33 +406,15 @@ describe("FyersBroker.status (plan/12 §8 reconciliation)", () => {
         json: () =>
           Promise.resolve({
             s: "ok",
-            orderBook: [
-              { orderTag: "ord_filled", id: "f1", status: 2 },
-              { orderTag: "ord_rejected", id: "f2", status: 4 },
-              { orderTag: "ord_cancelled", id: "f3", status: 1 },
-              { orderTag: "ord_pending", id: "f4", status: 5 },
-            ],
+            orderBook: [{ orderTag: "ord_1", id: "f1", status: code }],
           }),
       }),
     );
 
     const broker = new FyersBroker(deps());
-
-    expect(await broker.status("ord_filled")).toMatchObject({
+    expect(await broker.status("ord_1")).toMatchObject({
       found: true,
-      status: "FILLED",
-    });
-    expect(await broker.status("ord_rejected")).toMatchObject({
-      found: true,
-      status: "REJECTED",
-    });
-    expect(await broker.status("ord_cancelled")).toMatchObject({
-      found: true,
-      status: "CANCELLED",
-    });
-    expect(await broker.status("ord_pending")).toMatchObject({
-      found: true,
-      status: "PENDING",
+      status: expected,
     });
   });
 
