@@ -287,10 +287,11 @@ describe("required flags and the database (19.3)", () => {
   });
 
   it("makes every real database-reading command name its database", () => {
+    // An entry with no env file has no MONGO_URI: it reads no database.
     for (const [key, entry] of Object.entries(REAL_ALLOW))
       for (const [sub, cmd] of Object.entries(entry.commands))
         assert.ok(
-          cmd.required?.includes("--db"),
+          entry.env === null || cmd.required?.includes("--db") === true,
           `${key} ${sub} must require --db`,
         );
   });
@@ -300,7 +301,7 @@ describe("refusal citations (19.3)", () => {
   it("every real ALLOW entry cites a line that refuses", () => {
     assert.ok(Object.keys(REAL_ALLOW).length > 0);
     for (const [key, entry] of Object.entries(REAL_ALLOW))
-      assert.deepEqual(checkRefusal(key, entry.refusal), []);
+      assert.deepEqual(checkRefusal(key, entry.refusal, undefined, entry), []);
   });
 
   const key = "apps/api/scripts/replay.mts";
@@ -331,5 +332,86 @@ describe("refusal citations (19.3)", () => {
   it("catches a citation that is not file:line", () => {
     assert.match(checkRefusal(key, key).join(), /not file:line/);
     assert.match(checkRefusal(key, "nowhere.ts:3").join(), /not file:line/);
+  });
+});
+
+describe("the paper report and check-plan (19.2, design §8 D6)", () => {
+  const PAPER =
+    "cd apps/api && node --env-file=../../.env.paper scripts/paper.mts";
+
+  it("allows the two reads against neelkanth_paper", () => {
+    assert.deepEqual(
+      checkCommand(`${PAPER} reports --db=neelkanth_paper`, REAL_ALLOW),
+      [],
+    );
+    assert.deepEqual(
+      checkCommand(
+        `${PAPER} report --session=<session> --db=neelkanth_paper --dry-run`,
+        REAL_ALLOW,
+      ),
+      [],
+    );
+  });
+
+  it("refuses a report that would be kept", () => {
+    assert.match(
+      checkCommand(`${PAPER} report --db=neelkanth_paper`, REAL_ALLOW).join(),
+      /must be given --dry-run/,
+    );
+  });
+
+  it("refuses provision", () => {
+    assert.match(
+      checkCommand(
+        `${PAPER} provision --db=neelkanth_paper`,
+        REAL_ALLOW,
+      ).join(),
+      /"provision" is not allowed/,
+    );
+  });
+
+  it("allows neelkanth_paper for paper.mts alone", () => {
+    assert.match(
+      checkCommand(`${PAPER} reports --db=neelkanth_live`, REAL_ALLOW).join(),
+      /--db for apps\/api\/scripts\/paper\.mts/,
+    );
+    assert.match(
+      checkCommand(
+        "cd apps/api && node --env-file=../../.env.local scripts/validation.mts list --db=neelkanth_paper",
+        REAL_ALLOW,
+      ).join(),
+      /--db is neelkanth_research or a scratch/,
+    );
+  });
+
+  it("allows check-plan with nothing after it", () => {
+    assert.deepEqual(
+      checkCommand("node scripts/check-plan.mjs", REAL_ALLOW),
+      [],
+    );
+    assert.match(
+      checkCommand(
+        "node scripts/check-plan.mjs --db=neelkanth_research",
+        REAL_ALLOW,
+      ).join(),
+      /--db is not allowed/,
+    );
+  });
+
+  const key = "scripts/check-plan.mjs";
+  it("lets a CLI go uncited only when it can reach no database", () => {
+    const none = { env: null, commands: { "": { flags: [] } } };
+    assert.deepEqual(checkRefusal(key, null, undefined, none), []);
+    assert.match(
+      checkRefusal(key, null, undefined, { ...none, env: ".env.local" }).join(),
+      /can reach a database/,
+    );
+    assert.match(
+      checkRefusal(key, null, undefined, {
+        env: null,
+        commands: { "": { flags: ["--db"] } },
+      }).join(),
+      /can reach a database/,
+    );
   });
 });

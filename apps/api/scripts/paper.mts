@@ -57,6 +57,14 @@ if (resolvers.length > 0) dns.setServers(resolvers);
 const uri = process.env["MONGO_URI"];
 if (!uri) throw new Error("MONGO_URI is not set");
 const client = new MongoClient(uri);
+// A paper database or a scratch one (D2), decided from the names alone,
+// before connecting (design §8 D6). --db wins over the one MONGO_URI names.
+const db = client.db(args.get("db"));
+const problem = modeDatabaseProblem("paper", db.databaseName);
+if (problem !== null) {
+  console.error(`refused: ${problem}`);
+  process.exit(1);
+}
 await client.connect();
 
 const money = (x: number | null) => (x === null ? "—" : x.toFixed(2));
@@ -110,10 +118,6 @@ function show(r: PaperSessionReport): void {
 }
 
 try {
-  const db = client.db(args.get("db"));
-  const problem = modeDatabaseProblem("paper", db.databaseName);
-  if (problem !== null) throw new Error(problem);
-
   if (command === "provision") {
     const symbols = list("symbols");
     const { created, existing } = await provisionSubject(db, {

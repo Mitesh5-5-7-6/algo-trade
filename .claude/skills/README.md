@@ -50,14 +50,17 @@ A command line has this shape and no other:
 - One command per line: no `;`, `|`, `>`, `<`, backticks, `$(`, or a second `&&`.
 - `<cli>`, its directory, its env file, its subcommands and each subcommand's
   flags must match an entry in `ALLOW` in `scripts/check-skills.mjs`.
-- A `--db=` value is `neelkanth_research` or a scratch `neelkanth_it_*` /
-  `neelkanth_ci_*` database, and nothing else.
+- A `--db=` value is written out, never a placeholder. It is
+  `neelkanth_research` or a scratch `neelkanth_it_*` / `neelkanth_ci_*`
+  database, and nothing else — except `neelkanth_paper` for `paper.mts`
+  alone (design §8 D6).
 - `--env-file=` hands the file to Node. Claude never opens, prints or quotes it.
 
 An `ALLOW` entry is added by the task that adds its skill. That entry cites the
 line where its CLI refuses a database it must not touch, so that a skill only
 ever invokes CLIs that refuse (design §8 D3). A CLI with no refusal gets no
-entry.
+entry — unless it can reach no database at all: no env file and no `--db`,
+such as `check-plan.mjs`.
 
 ## Never
 
@@ -72,8 +75,9 @@ own file is the only one loaded with it.
 - Take an act a CLI reserves for the operator, such as declaring a candidate.
 - Open, print or quote a `.env*` file, a token or a key.
 - Call the control-plane API, or connect to MongoDB or Redis directly.
-- Run against a paper or Live trading database, or retry a refused command
-  with different arguments to get past the refusal.
+- Run against a Live trading database, or a paper one except through
+  `paper-report`'s two reads; or retry a refused command with different
+  arguments to get past the refusal.
 
 <!-- never-list:end -->
 

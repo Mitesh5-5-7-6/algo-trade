@@ -117,7 +117,8 @@ line only:
 - Take an act a CLI reserves for the operator, such as declaring a candidate.
 - Open, print or quote a `.env*` file, a token or a key.
 - Call the control-plane API, or connect to MongoDB or Redis directly.
-- Run against a paper or Live trading database, or retry a refused command
-  with different arguments to get past the refusal.
+- Run against a Live trading database, or a paper one except through
+  `paper-report`'s two reads; or retry a refused command with different
+  arguments to get past the refusal.
 
 <!-- never-list:end -->

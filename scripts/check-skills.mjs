@@ -28,16 +28,18 @@ const README = `${SKILLS}/README.md`;
 /**
  * What a skill may run. Each entry arrives with the task that adds its skill,
  * and cites where its CLI refuses a database it must not touch (design §8
- * D3): a CLI with no refusal gets no entry.
+ * D3): a CLI with no refusal gets no entry — unless it can reach no database
+ * at all (no env file, no --db), when its refusal is null.
  *
  *   key        `<dir>/scripts/<cli>` — the dir is "." for the repo root
  *   env        the one env file it may be given, or null for none
- *   refusal    file:line of the refusal
+ *   refusal    file:line of the refusal, or null (above)
+ *   databases  the --db values it may take, when not research or scratch
  *   commands   subcommand ("" for none) → the flags it may take, and those
  *              it must (a --db, so the database is never left to MONGO_URI;
  *              a --dry-run, so asking keeps nothing)
  *
- * @type {Record<string, { env: string | null; refusal: string; commands: Record<string, { flags: readonly string[]; required?: readonly string[] }> }>}
+ * @type {Record<string, { env: string | null; refusal: string | null; databases?: RegExp; commands: Record<string, { flags: readonly string[]; required?: readonly string[] }> }>}
  */
 export const ALLOW = {
   // Task 19.3: what a strategy would have done over stored candles.
@@ -76,6 +78,26 @@ export const ALLOW = {
         flags: ["--candidate", "--walk-forward", "--db", "--dns"],
         required: ["--candidate", "--db"],
       },
+    },
+  },
+  // Task 19.2: the board, verified. Reads docs/PLAN.md and git; no database.
+  "./scripts/check-plan.mjs": {
+    env: null,
+    refusal: null,
+    commands: { "": { flags: [] } },
+  },
+  // Task 19.2, design §8 D6: a paper session's report, read and never kept.
+  // provision and a kept report stay the operator's.
+  "apps/api/scripts/paper.mts": {
+    env: ".env.paper",
+    refusal: "apps/api/scripts/paper.mts:64",
+    databases: /^neelkanth_(paper|it_.+|ci_.+)$/,
+    commands: {
+      report: {
+        flags: ["--session", "--db", "--dns", "--dry-run"],
+        required: ["--db", "--dry-run"],
+      },
+      reports: { flags: ["--limit", "--db", "--dns"], required: ["--db"] },
     },
   },
 };
@@ -174,9 +196,14 @@ export function checkCommand(line, allow = ALLOW) {
         `"${line}": ${name} is not allowed for ${key} ${sub}`.trimEnd(),
       );
     // Written out, never a placeholder: the database is not Claude's choice.
-    if (name === "--db" && !SCRATCH_OR_RESEARCH.test(value ?? ""))
+    if (
+      name === "--db" &&
+      !(entry.databases ?? SCRATCH_OR_RESEARCH).test(value ?? "")
+    )
       problems.push(
-        `"${line}": --db is neelkanth_research or a scratch neelkanth_it_*/ci_* database`,
+        entry.databases === undefined
+          ? `"${line}": --db is neelkanth_research or a scratch neelkanth_it_*/ci_* database`
+          : `"${line}": --db for ${key} is one of ${String(entry.databases)}`,
       );
   }
   for (const name of allowed.required ?? [])
@@ -196,17 +223,27 @@ export function checkRefusal(
   key,
   refusal,
   read = (file) => readFileSync(file, "utf8"),
+  entry = undefined,
 ) {
+  if (!existsSync(key)) return [`ALLOW ${key}: no such CLI`];
+  if (refusal === null) {
+    const reaches =
+      entry === undefined ||
+      entry.env !== null ||
+      Object.values(entry.commands).some((c) => c.flags.includes("--db"));
+    return reaches
+      ? [`ALLOW ${key}: no refusal, yet it can reach a database`]
+      : [];
+  }
   const [file = "", at = ""] = refusal.split(":");
   const lineNo = Number(at);
-  if (!existsSync(key)) return [`ALLOW ${key}: no such CLI`];
   if (!existsSync(file) || !Number.isInteger(lineNo) || lineNo < 1)
     return [`ALLOW ${key}: its refusal ${refusal} is not file:line`];
   const near = read(file)
     .split("\n")
     .slice(lineNo - 1, lineNo + 3)
     .join("\n");
-  return /refusing/.test(near)
+  return /refus/.test(near)
     ? []
     : [`ALLOW ${key}: ${refusal} does not refuse — has the line moved?`];
 }
@@ -279,7 +316,7 @@ function main() {
   }
   const problems = [];
   for (const [key, entry] of Object.entries(ALLOW))
-    problems.push(...checkRefusal(key, entry.refusal));
+    problems.push(...checkRefusal(key, entry.refusal, undefined, entry));
   const dirs = readdirSync(SKILLS, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)
