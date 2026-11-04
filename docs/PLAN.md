@@ -1260,7 +1260,8 @@ A track (§4). **Depends on:** the CLI each skill wraps; 19.4 waits for Phases
 
 Code decides, Claude explains: each skill wraps an existing CLI and adds no
 logic. A skill never places or cancels an order, toggles trading, changes a
-limit or setting, reads `.env*`, or touches a paper or Live database. Decisions
+limit or setting, reads `.env*`, or touches a Live database — nor a paper one,
+except the paper report's two reads (design §8 D6). Decisions
 in [LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md)
 §8.
 

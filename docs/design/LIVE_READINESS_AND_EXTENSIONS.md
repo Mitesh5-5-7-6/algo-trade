@@ -351,9 +351,9 @@ The reference's central idea: **code decides, Claude explains.**
   - a research question (`agent.mts`)
 - **D3 — What a skill never does.** Place or cancel an order; kill, pause or
   resume; change a limit, a setting or a strategy; read `.env*`; run against
-  a Live or paper trading database. The CLIs already refuse production
-  databases (`apps/api/src/agent/guard.ts`, the research and scratch checks);
-  a skill only invokes CLIs that refuse.
+  a Live trading database, or a paper one except as D6 allows. The CLIs
+  already refuse production databases (`apps/api/src/agent/guard.ts`, the
+  research and scratch checks); a skill only invokes CLIs that refuse.
 - **D4.** Each `SKILL.md` names the exact command, its inputs, what each
   output field means, and what the skill must not claim — the reference's
   "a scan is not a buy list" discipline.
@@ -366,10 +366,19 @@ The reference's central idea: **code decides, Claude explains.**
   its skill, and it cites the line where its CLI refuses, so D3's "only CLIs
   that refuse" is checked rather than asserted. A skill has no
   `allowed-tools`: the operator approves each command at the prompt.
+- **D6 — The paper report reads, and only reads (Q1, decided 2026-11-04).**
+  The operator wants a paper-trading skill, so reading (b) below holds: the
+  `paper-report` skill runs `paper.mts` against `neelkanth_paper` with
+  `reports`, and with `report --dry-run` only. Neither keeps anything.
+  `provision` (it writes `strategies`) and a `report` without `--dry-run`
+  (it writes `paper_session_reports`) stay the operator's. `check-skills`
+  allows `neelkanth_paper` for that one entry and no other, and requires
+  `--dry-run` on `report`. `paper.mts` still refuses any database but a
+  paper or scratch one, so a skill never reaches Live.
 
 ### 8.2 Open questions
 
-- **Q1 — The paper report and D3 conflict.** D2 lists the paper session
+- **Q1 — The paper report and D3 conflict. Decided: (b), see D6.** D2 lists the paper session
   report (`paper.mts`), and D3 (with PLAN §33) says a skill never runs
   against a paper trading database. `paper.mts` runs only against the paper
   database: `provision` writes `strategies`, and `report` writes
@@ -379,8 +388,8 @@ The reference's central idea: **code decides, Claude explains.**
   - **(b)** A read-only exception: `report --dry-run` and `reports` only,
     which change nothing.
 
-  Until it is decided, the stricter reading (a) holds, because `ALLOW` has no
-  `paper.mts` entry. The decision is needed before 19.2's paper report.
+  Until it was decided, the stricter reading (a) held, because `ALLOW` had no
+  `paper.mts` entry.
 
 ---
 
