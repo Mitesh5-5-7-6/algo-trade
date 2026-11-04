@@ -33,11 +33,52 @@ const README = `${SKILLS}/README.md`;
  *   key        `<dir>/scripts/<cli>` — the dir is "." for the repo root
  *   env        the one env file it may be given, or null for none
  *   refusal    file:line of the refusal
- *   commands   subcommand ("" for none) → the flags it may take
+ *   commands   subcommand ("" for none) → the flags it may take, and those
+ *              it must (a --db, so the database is never left to MONGO_URI;
+ *              a --dry-run, so asking keeps nothing)
  *
- * @type {Record<string, { env: string | null; refusal: string; commands: Record<string, readonly string[]> }>}
+ * @type {Record<string, { env: string | null; refusal: string; commands: Record<string, { flags: readonly string[]; required?: readonly string[] }> }>}
  */
-export const ALLOW = {};
+export const ALLOW = {
+  // Task 19.3: what a strategy would have done over stored candles.
+  "apps/api/scripts/replay.mts": {
+    env: ".env.local",
+    refusal: "apps/api/scripts/replay.mts:54",
+    commands: {
+      "": {
+        flags: [
+          "--strategy-type",
+          "--params",
+          "--symbols",
+          "--index-symbols",
+          "--from",
+          "--to",
+          "--capital",
+          "--seed",
+          "--exit-rules",
+          "--db",
+          "--dns",
+          "--dry-run",
+        ],
+        required: ["--db", "--dry-run"],
+      },
+    },
+  },
+  // Task 19.3: the candidates and their verdicts — the two reads only.
+  // declare is the operator's act; walk-forward and backtest --save keep
+  // results, and a new walk-forward changes what verdict judges by default.
+  "apps/api/scripts/validation.mts": {
+    env: ".env.local",
+    refusal: "apps/api/scripts/validation.mts:74",
+    commands: {
+      list: { flags: ["--db", "--dns"], required: ["--db"] },
+      verdict: {
+        flags: ["--candidate", "--walk-forward", "--db", "--dns"],
+        required: ["--candidate", "--db"],
+      },
+    },
+  },
+};
 
 export const REQUIRED_SECTIONS = [
   "## When to use",
@@ -111,12 +152,13 @@ export function checkCommand(line, allow = ALLOW) {
   const sub =
     tokens[i] !== undefined && !tokens[i].startsWith("--") ? tokens[i] : "";
   if (sub !== "") i += 1;
-  const flags = entry.commands[sub];
-  if (flags === undefined)
+  const allowed = entry.commands[sub];
+  if (allowed === undefined)
     return [
       ...problems,
       `"${line}": ${key} ${sub === "" ? "with no subcommand" : `"${sub}"`} is not allowed`,
     ];
+  const given = new Set();
   for (const token of tokens.slice(i)) {
     if (!token.startsWith("--")) {
       if (!POSITIONAL.test(token))
@@ -126,20 +168,47 @@ export function checkCommand(line, allow = ALLOW) {
       continue;
     }
     const [name, value] = token.split(/=(.*)/s);
-    if (!flags.includes(name))
+    given.add(name);
+    if (!allowed.flags.includes(name))
       problems.push(
         `"${line}": ${name} is not allowed for ${key} ${sub}`.trimEnd(),
       );
-    if (
-      name === "--db" &&
-      !(value?.startsWith("<") === true) &&
-      !SCRATCH_OR_RESEARCH.test(value ?? "")
-    )
+    // Written out, never a placeholder: the database is not Claude's choice.
+    if (name === "--db" && !SCRATCH_OR_RESEARCH.test(value ?? ""))
       problems.push(
         `"${line}": --db is neelkanth_research or a scratch neelkanth_it_*/ci_* database`,
       );
   }
+  for (const name of allowed.required ?? [])
+    if (!given.has(name))
+      problems.push(
+        `"${line}": ${key}${sub === "" ? "" : ` ${sub}`} must be given ${name}`,
+      );
   return problems;
+}
+
+/**
+ * Problems with an ALLOW entry's citation, or [] when the cited line — or
+ * one of the three after it — refuses. A citation that has drifted off its
+ * refusal is caught, not trusted.
+ */
+export function checkRefusal(
+  key,
+  refusal,
+  read = (file) => readFileSync(file, "utf8"),
+) {
+  const [file = "", at = ""] = refusal.split(":");
+  const lineNo = Number(at);
+  if (!existsSync(key)) return [`ALLOW ${key}: no such CLI`];
+  if (!existsSync(file) || !Number.isInteger(lineNo) || lineNo < 1)
+    return [`ALLOW ${key}: its refusal ${refusal} is not file:line`];
+  const near = read(file)
+    .split("\n")
+    .slice(lineNo - 1, lineNo + 3)
+    .join("\n");
+  return /refusing/.test(near)
+    ? []
+    : [`ALLOW ${key}: ${refusal} does not refuse — has the line moved?`];
 }
 
 /** Problems with one SKILL.md, or [] when it keeps the conventions. */
@@ -209,12 +278,8 @@ function main() {
     process.exit(1);
   }
   const problems = [];
-  for (const [key, entry] of Object.entries(ALLOW)) {
-    const [file] = entry.refusal.split(":");
-    if (!existsSync(key)) problems.push(`ALLOW ${key}: no such CLI`);
-    if (!existsSync(file ?? ""))
-      problems.push(`ALLOW ${key}: its refusal ${entry.refusal} names no file`);
-  }
+  for (const [key, entry] of Object.entries(ALLOW))
+    problems.push(...checkRefusal(key, entry.refusal));
   const dirs = readdirSync(SKILLS, { withFileTypes: true })
     .filter((d) => d.isDirectory())
     .map((d) => d.name)

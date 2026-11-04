@@ -4,7 +4,13 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { checkCommand, checkSkill, neverListOf } from "./check-skills.mjs";
+import {
+  ALLOW as REAL_ALLOW,
+  checkCommand,
+  checkRefusal,
+  checkSkill,
+  neverListOf,
+} from "./check-skills.mjs";
 
 const NEVER = neverListOf(readFileSync(".claude/skills/README.md", "utf8"));
 const NEVER_BLOCK =
@@ -18,18 +24,24 @@ const ALLOW = {
     env: ".env.local",
     refusal: "apps/api/scripts/replay.mts:1",
     commands: {
-      "": ["--strategy-type", "--from", "--to", "--dry-run", "--db"],
+      "": {
+        flags: ["--strategy-type", "--from", "--to", "--dry-run", "--db"],
+        required: ["--dry-run"],
+      },
     },
   },
   "apps/api/scripts/agent.mts": {
     env: ".env.agent.local",
     refusal: "apps/api/src/agent/guard.ts:1",
-    commands: { ask: ["--as-of", "--no-keep"], audit: ["--limit"] },
+    commands: {
+      ask: { flags: ["--as-of", "--no-keep"] },
+      audit: { flags: ["--limit"] },
+    },
   },
   "./scripts/check-plan.mjs": {
     env: null,
     refusal: "scripts/check-plan.mjs:1",
-    commands: { "": [] },
+    commands: { "": { flags: [] } },
   },
 };
 
@@ -255,5 +267,69 @@ describe("commands (design §8 D3)", () => {
       checkSkill("replay", text, NEVER, ALLOW).join(),
       /starts with node/,
     );
+  });
+});
+
+describe("required flags and the database (19.3)", () => {
+  it("refuses a command missing a flag it must be given", () => {
+    assert.match(
+      checkCommand(REPLAY.replace(" --dry-run", ""), ALLOW).join(),
+      /must be given --dry-run/,
+    );
+  });
+
+  /** A placeholder would leave the database to whoever fills it in. */
+  it("refuses a --db left as a placeholder", () => {
+    assert.match(
+      checkCommand(`${REPLAY} --db=<db>`, ALLOW).join(),
+      /--db is neelkanth_research or a scratch/,
+    );
+  });
+
+  it("makes every real database-reading command name its database", () => {
+    for (const [key, entry] of Object.entries(REAL_ALLOW))
+      for (const [sub, cmd] of Object.entries(entry.commands))
+        assert.ok(
+          cmd.required?.includes("--db"),
+          `${key} ${sub} must require --db`,
+        );
+  });
+});
+
+describe("refusal citations (19.3)", () => {
+  it("every real ALLOW entry cites a line that refuses", () => {
+    assert.ok(Object.keys(REAL_ALLOW).length > 0);
+    for (const [key, entry] of Object.entries(REAL_ALLOW))
+      assert.deepEqual(checkRefusal(key, entry.refusal), []);
+  });
+
+  const key = "apps/api/scripts/replay.mts";
+  const file = (lines) => () => lines.join("\n");
+
+  it("catches a citation that has drifted off its refusal", () => {
+    assert.match(
+      checkRefusal(
+        key,
+        `${key}:1`,
+        file(["import x;", "a", "b", "c", "refusing"]),
+      ).join(),
+      /does not refuse/,
+    );
+  });
+
+  it("accepts a refusal within three lines of the cited one", () => {
+    assert.deepEqual(
+      checkRefusal(
+        key,
+        `${key}:2`,
+        file(["x", "if (bad)", "throw new Error(", "  'refusing'"]),
+      ),
+      [],
+    );
+  });
+
+  it("catches a citation that is not file:line", () => {
+    assert.match(checkRefusal(key, key).join(), /not file:line/);
+    assert.match(checkRefusal(key, "nowhere.ts:3").join(), /not file:line/);
   });
 });

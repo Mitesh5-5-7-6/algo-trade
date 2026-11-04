@@ -22,6 +22,8 @@
  * backtests and walk_forward_results only — in the research database or a
  * scratch one. Nothing here enables, changes or promotes a strategy: PASS
  * makes a candidate eligible for paper validation (Phase 14), no more.
+ * Every command — `list` and `verdict` too — refuses any other database
+ * before connecting (task 19.3).
  *
  * Runs the BUILT code: `pnpm build` first.
  */
@@ -32,11 +34,6 @@ import {
   StrategyCandidatesRepository,
   WalkForwardResultsRepository,
 } from "@neelkanth/db";
-import { DEFAULT_REGIME_MODEL } from "../dist/counterfactual/regime.js";
-import { declareCandidate } from "../dist/backtest/candidates.js";
-import { backtestFromStore } from "../dist/backtest/store.js";
-import { walkForwardFromStore } from "../dist/backtest/walk-forward-store.js";
-import { judge } from "../dist/backtest/gate.js";
 import type { BacktestMetrics } from "../dist/backtest/metrics.js";
 import type { WalkForwardResult } from "../dist/backtest/walk-forward.js";
 
@@ -64,12 +61,29 @@ const COMMANDS = ["declare", "list", "backtest", "walk-forward", "verdict"];
 if (!COMMANDS.includes(command ?? ""))
   throw new Error(`usage: validation.mts ${COMMANDS.join(" | ")} …`);
 
-const WRITABLE = /^(neelkanth_research|neelkanth_(it|ci)_.+)$/;
+const RESEARCH = /^(neelkanth_research|neelkanth_(it|ci)_.+)$/;
 const resolvers = list("dns");
 if (resolvers.length > 0) dns.setServers(resolvers);
 const uri = process.env["MONGO_URI"];
 if (!uri) throw new Error("MONGO_URI is not set");
 const client = new MongoClient(uri);
+// Decided from the names alone, before connecting or loading the research
+// code (design §8 D3, task 19.3) — the reads as well as the writes. Naming a
+// database does not connect; --db wins over the one MONGO_URI names.
+const db = client.db(args.get("db"));
+if (!RESEARCH.test(db.databaseName)) {
+  console.error(
+    `refused: refusing "${db.databaseName}": only neelkanth_research or a scratch neelkanth_it_*/neelkanth_ci_* database`,
+  );
+  process.exit(1);
+}
+const { DEFAULT_REGIME_MODEL } =
+  await import("../dist/counterfactual/regime.js");
+const { declareCandidate } = await import("../dist/backtest/candidates.js");
+const { backtestFromStore } = await import("../dist/backtest/store.js");
+const { walkForwardFromStore } =
+  await import("../dist/backtest/walk-forward-store.js");
+const { judge } = await import("../dist/backtest/gate.js");
 await client.connect();
 
 const regime = {
@@ -101,16 +115,6 @@ const showVerdict = (wf: WalkForwardResult) => {
 };
 
 try {
-  const db = client.db(args.get("db"));
-  if (
-    command !== "list" &&
-    command !== "verdict" &&
-    !WRITABLE.test(db.databaseName)
-  )
-    throw new Error(
-      `refusing to write to "${db.databaseName}": only neelkanth_research or a scratch neelkanth_it_*/neelkanth_ci_* database`,
-    );
-
   if (command === "declare") {
     const c = await declareCandidate(
       db,

@@ -12,13 +12,15 @@
  * reach orders, positions, trades or signals (design D3); `--dry-run` keeps
  * nothing at all. The same arguments give the same fingerprint, every time.
  *
+ * Any other database is refused before anything connects or the replay code
+ * loads (task 19.3): `refusing "<name>": …`.
+ *
  * Runs the BUILT replay code: `pnpm build` first, as for backfill-candles.
  */
 import dns from "node:dns";
 import { MongoClient } from "mongodb";
 import { DEFAULT_GLOBAL_SETTINGS } from "@neelkanth/db";
 import type { CandleInterval, StrategyConfig } from "@neelkanth/core";
-import { replayFromStore } from "../dist/replay/store.js";
 
 const args = new Map(
   process.argv
@@ -40,6 +42,20 @@ function required(name: string): string {
 }
 const list = (name: string): string[] =>
   (args.get(name) ?? "").split(",").filter(Boolean);
+
+// The research database or a scratch one, nothing else — decided from the
+// names alone, before connecting (design §8 D3, task 19.3). Naming a database
+// does not connect; --db wins over the one MONGO_URI names.
+const RESEARCH = /^(neelkanth_research|neelkanth_(it|ci)_.+)$/;
+const uri = process.env["MONGO_URI"];
+if (!uri) throw new Error("MONGO_URI is not set");
+const client = new MongoClient(uri);
+const db = client.db(args.get("db"));
+if (!RESEARCH.test(db.databaseName))
+  throw new Error(
+    `refusing "${db.databaseName}": replay reads and writes only neelkanth_research or a scratch neelkanth_it_*/neelkanth_ci_* database`,
+  );
+const { replayFromStore } = await import("../dist/replay/store.js");
 
 const type = required("strategy-type");
 const symbols = list("symbols");
@@ -67,13 +83,8 @@ const strategy: StrategyConfig = {
 const resolvers = list("dns");
 if (resolvers.length > 0) dns.setServers(resolvers);
 
-const uri = process.env["MONGO_URI"];
-if (!uri) throw new Error("MONGO_URI is not set");
-const client = new MongoClient(uri);
 await client.connect();
 try {
-  // --db names the research database when MONGO_URI points elsewhere.
-  const db = client.db(args.get("db"));
   const dryRun = args.get("dry-run") === "true";
   const createdAt = Date.now();
   const { run, saved } = await replayFromStore(db, {
