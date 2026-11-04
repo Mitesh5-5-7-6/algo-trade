@@ -60,14 +60,16 @@ check-plan — docs/PLAN.md does not match reality:
 The values in these samples are only there to show the format. Never quote
 them as a result.
 
-| What           | Meaning                                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------------------------- |
-| `verified`     | Every `COMPLETE` row names evidence that exists and commits that resolve; every phase status matches its rows |
-| `✗` lines      | Where the board and the repository disagree. Quote each one                                                   |
-| Task `STATUS`  | `COMPLETE`, `IN PROGRESS`, `READY` or `BLOCKED`, as the row says                                              |
-| Phase `STATUS` | Derived from its task rows (§4), never typed                                                                  |
+| Field      | Meaning                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------- |
+| `verified` | Every `COMPLETE` row names evidence that exists and commits that resolve; every phase status matches its rows |
+| `✗`        | Only when the board does not hold: where it and the repository disagree. Quote each line                      |
 
-In the answer, quote statuses and task IDs as the board writes them.
+### Reading the board
+
+A task row's `STATUS` is `COMPLETE`, `IN PROGRESS`, `READY` or `BLOCKED`, as
+the row says. A phase's `STATUS` is derived from its task rows (§4), never
+typed. In the answer, quote statuses and task IDs as the board writes them.
 
 ## Must not claim
 

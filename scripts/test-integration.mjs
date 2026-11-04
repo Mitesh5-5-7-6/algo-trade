@@ -109,9 +109,20 @@ process.stderr.write(
     `  REDIS_URL : ${redact(process.env.REDIS_URL) ?? "unset (defaults to localhost)"}\n\n`,
 );
 
+// Anything after the command goes to turbo, to narrow a run while working:
+// `pnpm test:integration --filter=@neelkanth/api -- src/x.integration.test.ts`.
+// A phase is signed off on the whole run, never a narrowed one.
 const result = spawnSync(
   "pnpm",
-  ["exec", "turbo", "run", "test", "--force", "--concurrency=1"],
+  [
+    "exec",
+    "turbo",
+    "run",
+    "test",
+    "--force",
+    "--concurrency=1",
+    ...process.argv.slice(2),
+  ],
   {
     stdio: "inherit",
     shell: process.platform === "win32",
