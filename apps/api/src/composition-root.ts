@@ -17,14 +17,10 @@ import {
   UsersRepository,
   BrokerTokensRepository,
   PaperBrokerOrdersRepository,
-  TradesRepository,
-  OrdersRepository,
-  RiskLogsRepository,
-  PaperReconciliationsRepository,
   NotificationsRepository,
   type MongoConnection,
 } from "@neelkanth/db";
-import { istDayStart, isTradingDayIST } from "@neelkanth/core";
+import { isTradingDayIST } from "@neelkanth/core";
 import cors from "@fastify/cors";
 import { buildServer, type ApiServer } from "./server.js";
 import type { DependencyCheck } from "./health.js";
@@ -57,6 +53,7 @@ import { createRealtimeBridge } from "./realtime/index.js";
 import { modeDatabaseProblem } from "./environment.js";
 import { createNotifier } from "./notifications/create.js";
 import { recordOf } from "./notifications/record.js";
+import { readDaySummary } from "./notifications/day-summary.js";
 import { subscribeCatalogue } from "./notifications/catalogue.js";
 import { createDailyMessages } from "./notifications/daily.js";
 import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
@@ -387,10 +384,6 @@ export async function bootstrap(
   let dailyTimer: ReturnType<typeof setInterval> | undefined;
   if (notifier.enabled) {
     const settingsRepo = new SettingsRepository(mongo.db);
-    const trades = new TradesRepository(mongo.db);
-    const orders = new OrdersRepository(mongo.db);
-    const riskLogs = new RiskLogsRepository(mongo.db);
-    const reconciliations = new PaperReconciliationsRepository(mongo.db);
     const daily = createDailyMessages({
       notifier,
       mode: config.BROKER_MODE,
@@ -404,38 +397,7 @@ export async function bootstrap(
       ...(fyersBroker === null
         ? {}
         : { tokenStatus: async () => (await lookupFyersToken()).status }),
-      readSummary: async (day) => {
-        const from = istDayStart(day);
-        const to = from + 86_400_000;
-        const dayTrades = await trades.findRange(from, to);
-        const closed = dayTrades.filter((t) => t.status === "CLOSED");
-        const runs =
-          config.BROKER_MODE === "paper"
-            ? await reconciliations.forSession(day)
-            : [];
-        const close = runs.find((run) => run.at === "CLOSE");
-        return {
-          trades: dayTrades.length,
-          closed: closed.length,
-          wins: closed.filter((t) => (t.netPnl ?? 0) > 0).length,
-          losses: closed.filter((t) => (t.netPnl ?? 0) < 0).length,
-          netPnl: closed.reduce((sum, t) => sum + (t.netPnl ?? 0), 0),
-          rejections: (await orders.findAllByDateRange(from, to)).filter(
-            (o) => o.status === "REJECTED",
-          ).length,
-          riskBlocks: (await riskLogs.findRange(from, to)).filter(
-            (log) => log.decision === "blocked",
-          ).length,
-          reconciliation:
-            config.BROKER_MODE !== "paper"
-              ? "not applicable"
-              : close === undefined
-                ? "not run"
-                : close.clean
-                  ? "clean"
-                  : "mismatch",
-        };
-      },
+      readSummary: (day) => readDaySummary(mongo.db, config.BROKER_MODE, day),
       alreadySent: (key) => notificationsRepo.wasSent(key),
       onError: (error, context) => {
         notifyLog.warn({ err: error, ...context }, "daily message failed");
