@@ -15,7 +15,8 @@ export const NotificationRecordSchema = z.object({
   notificationId: z.string().min(1),
   ts: z.number().int().nonnegative(),
   severity: z.enum(["CRITICAL", "WARNING", "INFO"]),
-  mode: z.enum(["paper", "live"]),
+  /** `research` from a research CLI (design §5.1 D10, task 16.9). */
+  mode: z.enum(["paper", "live", "research"]),
   title: z.string().min(1),
   body: z.string().optional(),
   outcome: z.enum(["sent", "failed", "dropped"]),

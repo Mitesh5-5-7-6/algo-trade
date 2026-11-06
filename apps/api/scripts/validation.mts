@@ -84,6 +84,9 @@ const { backtestFromStore } = await import("../dist/backtest/store.js");
 const { walkForwardFromStore } =
   await import("../dist/backtest/walk-forward-store.js");
 const { judge } = await import("../dist/backtest/gate.js");
+const { notifyFromCli } = await import("../dist/notifications/cli.js");
+const { candidateDeclared, walkForwardJudged } =
+  await import("../dist/notifications/research.js");
 await client.connect();
 
 const regime = {
@@ -135,6 +138,10 @@ try {
     );
     c.grid.forEach((g, i) =>
       console.log(`  variant ${String(i + 1)}  ${JSON.stringify(g)}`),
+    );
+    // Design §5.1 D10: told once it is kept, never before.
+    console.log(
+      `notified     ${await notifyFromCli([candidateDeclared(c)], { db, env: process.env })}`,
     );
   } else if (command === "list") {
     const wfs = new WalkForwardResultsRepository(db);
@@ -212,6 +219,25 @@ try {
     console.log(
       `kept         ${saved ? walkForwardId : dry ? "no (dry run)" : "no"}; ${String(Date.now() - startedAt)} ms`,
     );
+    if (saved) {
+      const v = judge(result);
+      console.log(
+        `notified     ${await notifyFromCli(
+          [
+            walkForwardJudged({
+              candidateId: required("candidate"),
+              walkForwardId,
+              folds: result.folds.length,
+              verdict: v.verdict,
+              failed: v.failed,
+              trades: result.outOfSample.normal.trades,
+              expectancy: result.outOfSample.normal.expectancy,
+            }),
+          ],
+          { db, env: process.env },
+        )}`,
+      );
+    }
   } else {
     const candidateId = required("candidate");
     const wfs = await new WalkForwardResultsRepository(db).forCandidate(

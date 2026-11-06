@@ -232,6 +232,23 @@ Promotes ADR §21 from `PROPOSED` to `DECIDED` with these decisions.
   weekly report — is notified too, under the same D1–D7. Those events happen
   in the research CLIs and the R&D process, not on the trading bus, so where
   each is raised and which chat it goes to is Q3, answered in task 16.9.
+- **D11 — Each CLI tells what it kept (Q3, decided 2026-11-06).** The CLI
+  that keeps the result notifies, from its own process, after the keep and
+  never for a dry run, with the API's notifier and its own env file's
+  Telegram settings (`apps/api/src/notifications/cli.ts`). It never reaches
+  the trading process or its bus, so D2 holds by construction. INFO, in the
+  operations chat, led by `[RESEARCH]` — or `[PAPER]` from `paper.mts` (D4).
+  Each outcome is kept in the CLI's own database, so `GET /notifications`,
+  which reads the trading one, does not list them. A CLI waits for delivery
+  up to 20 s and never fails because of it. Rejected: Redis into the trading
+  process (couples R&D to it, ADR rule 4, and loses messages while it is
+  down); an outbox the API polls (the trading process would read the research
+  database, against D3's events-not-polling). Wired now: a candidate
+  declared, a walk-forward kept with its verdict, a paper session report
+  kept, the weekly reports. Deferred: promotion candidate created and Live
+  promotion approved, with Phase 15; a new R&D finding and a strategy
+  improvement discovered, until either is defined — nothing in the code is
+  either today.
 
 ### 5.2 The event catalogue
 
@@ -254,7 +271,7 @@ Two scheduled messages, in IST from the session calendar:
 - **Q2.** Does INFO default on or off? **Decided: on, silent, D9.**
 - **Q3.** For D10's events: where each is raised — the research process has
   no trading bus — how it reaches the notifier without putting research on
-  the order path, and which of D8's chats it goes to. Answered in 16.9.
+  the order path, and which of D8's chats it goes to. **Decided: D11.**
 
 ---
 

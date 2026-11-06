@@ -56,6 +56,7 @@ import { startTokenLifecycleJobs } from "./jobs/token-lifecycle.js";
 import { createRealtimeBridge } from "./realtime/index.js";
 import { modeDatabaseProblem } from "./environment.js";
 import { createNotifier } from "./notifications/create.js";
+import { recordOf } from "./notifications/record.js";
 import { subscribeCatalogue } from "./notifications/catalogue.js";
 import { createDailyMessages } from "./notifications/daily.js";
 import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
@@ -122,23 +123,7 @@ export async function bootstrap(
     },
     (outcome) => {
       notificationsRepo
-        .record({
-          notificationId: `ntf_${randomUUID()}`,
-          ts: Date.now(),
-          severity: outcome.notification.severity,
-          mode: outcome.notification.mode,
-          title: outcome.notification.title,
-          ...(outcome.notification.body === undefined
-            ? {}
-            : { body: outcome.notification.body }),
-          outcome: outcome.outcome,
-          attempts: outcome.attempts,
-          ...(outcome.reason === undefined ? {} : { reason: outcome.reason }),
-          ...(outcome.notification.dedupeKey === undefined
-            ? {}
-            : { dedupeKey: outcome.notification.dedupeKey }),
-          chat: outcome.notification.chat ?? "operations",
-        })
+        .record(recordOf(outcome, `ntf_${randomUUID()}`, Date.now()))
         .catch((error: unknown) => {
           notifyLog.warn({ err: error }, "notification record not kept");
         });

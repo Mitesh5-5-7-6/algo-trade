@@ -29,6 +29,8 @@ import { istDateKey } from "@neelkanth/core";
 import { PaperSessionReportsRepository } from "@neelkanth/db";
 import { modeDatabaseProblem } from "../dist/environment.js";
 import { provisionSubject } from "../dist/paper/subject.js";
+import { notifyFromCli } from "../dist/notifications/cli.js";
+import { paperSessionReported } from "../dist/notifications/research.js";
 import {
   reportSessionFromStore,
   type PaperSessionReport,
@@ -146,6 +148,23 @@ try {
     console.log(
       `\nkept         ${saved ? reportId : dry ? "no (dry run)" : "no"}`,
     );
+    // Design §5.1 D10: a kept report is told; a dry run is not.
+    if (saved)
+      console.log(
+        `notified     ${await notifyFromCli(
+          [
+            paperSessionReported({
+              session: report.session,
+              reportId,
+              clean: report.clean,
+              closedTrades: report.record.pnl.closedTrades,
+              net: report.record.pnl.net,
+              differences: report.parity.differences.length,
+            }),
+          ],
+          { db, env: process.env },
+        )}`,
+      );
   } else {
     const limit = Number(args.get("limit") ?? "10");
     for (const doc of await new PaperSessionReportsRepository(

@@ -36,6 +36,11 @@ export function createNotifier(
   onError: (error: unknown, context: Record<string, unknown>) => void,
   /** Where each message's fate is kept (task 16.6), naming the chat it went to. */
   onOutcome?: (outcome: DeliveryOutcome) => void,
+  /** Test seams: Telegram's fetch, and the queue's pacing. */
+  seams: {
+    readonly fetch?: typeof fetch;
+    readonly sleep?: (ms: number) => Promise<void>;
+  } = {},
 ): Notifier {
   const botToken = config.TELEGRAM_BOT_TOKEN;
   const chatId = config.TELEGRAM_CHAT_ID;
@@ -45,7 +50,9 @@ export function createNotifier(
     transport: new TelegramTransport({
       botToken,
       chatIds: { operations: chatId, trades: tradesChatId ?? chatId },
+      ...(seams.fetch === undefined ? {} : { fetch: seams.fetch }),
     }),
+    ...(seams.sleep === undefined ? {} : { sleep: seams.sleep }),
     onError,
     ...(onOutcome === undefined
       ? {}

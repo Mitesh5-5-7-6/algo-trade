@@ -90,7 +90,7 @@ export const ALLOW = {
   // provision and a kept report stay the operator's.
   "apps/api/scripts/paper.mts": {
     env: ".env.paper",
-    refusal: "apps/api/scripts/paper.mts:64",
+    refusal: "apps/api/scripts/paper.mts:66",
     databases: /^neelkanth_(paper|it_.+|ci_.+)$/,
     commands: {
       report: {

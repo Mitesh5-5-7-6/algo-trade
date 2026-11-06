@@ -18,14 +18,20 @@ export type Severity = "CRITICAL" | "WARNING" | "INFO";
  */
 export type Chat = "operations" | "trades";
 
+/**
+ * What a message speaks for (D4): a trading mode, or research — the research
+ * CLIs, which are neither paper nor Live (D10, task 16.9).
+ */
+export type NotificationMode = TradeMode | "research";
+
 export interface Notification {
   readonly severity: Severity;
   /**
    * The deployment's mode (D4) — injected by the caller from the same
    * BROKER_MODE the Order Manager is given, never inferred from a broker
-   * object. Every message leads with it.
+   * object; `research` from a research CLI. Every message leads with it.
    */
-  readonly mode: TradeMode;
+  readonly mode: NotificationMode;
   /** One line: what happened. */
   readonly title: string;
   /** Detail, if any. Never a secret, a token or a broker identifier (D5). */

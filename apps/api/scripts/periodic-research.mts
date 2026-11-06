@@ -22,6 +22,8 @@ import { MongoClient } from "mongodb";
 import { DEFAULT_GLOBAL_SETTINGS } from "@neelkanth/db";
 import { istDateKey } from "@neelkanth/core";
 import { runPeriodicResearch } from "../dist/research/periodic-store.js";
+import { notifyFromCli } from "../dist/notifications/cli.js";
+import { weeklyReported } from "../dist/notifications/research.js";
 import type { Period, TradingCalendar } from "../dist/research/windows.js";
 
 const args = new Map(
@@ -115,6 +117,12 @@ try {
   console.log(`current      ${String(out.current)}`);
   console.log(`incomplete   ${out.incomplete.join(", ") || "-"}`);
   console.log(`took         ${String(Date.now() - startedAt)} ms`);
+  // Design §5.1 D10: the weeks reported for the first time, in one message.
+  const weekly = weeklyReported(out.reported);
+  if (weekly !== null)
+    console.log(
+      `notified     ${await notifyFromCli([weekly], { db, env: process.env })}`,
+    );
 } finally {
   await client.close();
 }
