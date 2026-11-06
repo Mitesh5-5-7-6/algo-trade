@@ -32,8 +32,8 @@ export interface CatalogueDeps {
   readonly notifier: Notifier;
   readonly mode: TradeMode;
   /**
-   * Whether INFO messages are sent. Provisionally true — they arrive without
-   * sound — until task 16.1 records the operator's answer (design §5.3 Q2).
+   * Whether INFO messages are sent. True, and they arrive without sound
+   * (design §5.1 D9, decided in 16.1).
    */
   readonly includeInfo: boolean;
   /** The daily-loss limit in force now (runtime risk limits). */

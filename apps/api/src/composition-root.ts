@@ -370,7 +370,7 @@ export async function bootstrap(
       bus: runtime.bus,
       notifier,
       mode: config.BROKER_MODE,
-      // Provisional until task 16.1 records the answer (design §5.3 Q2).
+      // On, and silent (design §5.1 D9, decided in 16.1).
       includeInfo: true,
       dailyLossLimit: () => runtime.riskLimits().maxDailyLoss,
       marketOpen: () => runtime.session().phase === "open",
@@ -406,7 +406,7 @@ export async function bootstrap(
     const daily = createDailyMessages({
       notifier,
       mode: config.BROKER_MODE,
-      // Provisional until task 16.1 records the answer (design §5.3 Q2).
+      // On, and silent (design §5.1 D9, decided in 16.1).
       includeInfo: true,
       isTradingDay: async (day) =>
         isTradingDayIST(

@@ -822,9 +822,18 @@ For Live, authoritative broker margin is preferred where available — see §20.
 
 ---
 
-## 21. Notifications — `PROPOSED`
+## 21. Notifications — `DECIDED`
 
-Do not notify per candle. Notify on: new R&D finding, new strategy candidate, historical validation completed, validation failed, paper validation completed, strategy improvement discovered, promotion candidate created, live promotion approved, critical risk event, broker failure, kill switch, weekly report.
+Decided by Phase 16 (task 16.1); the decisions are in [LIVE_READINESS_AND_EXTENSIONS.md](../design/LIVE_READINESS_AND_EXTENSIONS.md) §5.
+
+Telegram, outbound only: the bot sends and accepts no commands. Never on the order path, every message from a real event, every message naming its mode. Do not notify per candle.
+
+Two catalogues:
+
+- **Trading** (design §5.2): trading halted, daily loss, broker and feed and token faults, rejections, risk-block bursts, fills, closes, market open, and the two daily messages. Built.
+- **Research and lifecycle** (design §5.1 D10): new R&D finding, new strategy candidate, historical validation completed or failed, paper validation completed, strategy improvement discovered, promotion candidate created, Live promotion approved, weekly report. Task 16.9.
+
+Two chats, operations and trades (D8). INFO is on and silent (D9).
 
 ---
 

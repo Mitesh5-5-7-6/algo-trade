@@ -216,6 +216,22 @@ Promotes ADR §21 from `PROPOSED` to `DECIDED` with these decisions.
 - **D7 — A record of what was sent.** Every message, sent or failed, is kept
   in the already-registered `notifications` collection with its event, dedupe
   key and outcome, and is readable through `GET /notifications`.
+- **D8 — Two chats (Q1, decided 2026-11-06).** Operations — halts, daily
+  loss, broker, feed and token faults, rejections, risk-block bursts, market
+  open, and the two daily messages — and trades — entry fills and closed
+  positions. A second, optional `TELEGRAM_TRADES_CHAT_ID`; while it is absent,
+  trades go to the operations chat, so one configured chat keeps working.
+  Task 16.8.
+- **D9 — INFO on, silent (Q2, decided 2026-11-06).** INFO messages are sent
+  by default, without a notification sound. The provisional default becomes
+  the decided one.
+- **D10 — Research and lifecycle events (decided 2026-11-06).** ADR §21's
+  list — new R&D finding, new strategy candidate, historical validation
+  completed or failed, paper validation completed, strategy improvement
+  discovered, promotion candidate created, Live promotion approved, the
+  weekly report — is notified too, under the same D1–D7. Those events happen
+  in the research CLIs and the R&D process, not on the trading bus, so where
+  each is raised and which chat it goes to is Q3, answered in task 16.9.
 
 ### 5.2 The event catalogue
 
@@ -234,8 +250,11 @@ Two scheduled messages, in IST from the session calendar:
 
 ### 5.3 Open questions
 
-- **Q1.** One chat or two (operations and trades)?
-- **Q2.** Does INFO default on or off?
+- **Q1.** One chat or two (operations and trades)? **Decided: two, D8.**
+- **Q2.** Does INFO default on or off? **Decided: on, silent, D9.**
+- **Q3.** For D10's events: where each is raised — the research process has
+  no trading bus — how it reaches the notifier without putting research on
+  the order path, and which of D8's chats it goes to. Answered in 16.9.
 
 ---
 
