@@ -137,6 +137,7 @@ export async function bootstrap(
           ...(outcome.notification.dedupeKey === undefined
             ? {}
             : { dedupeKey: outcome.notification.dedupeKey }),
+          chat: outcome.notification.chat ?? "operations",
         })
         .catch((error: unknown) => {
           notifyLog.warn({ err: error }, "notification record not kept");
@@ -146,7 +147,9 @@ export async function bootstrap(
   log.info(
     { notifications: notifier.enabled ? "telegram" : "off" },
     notifier.enabled
-      ? "operator notifications on (Telegram)"
+      ? config.TELEGRAM_TRADES_CHAT_ID === undefined
+        ? "operator notifications on (Telegram, one chat)"
+        : "operator notifications on (Telegram, operations and trades chats)"
       : "operator notifications off — TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID unset",
   );
   log.info("connecting redis");

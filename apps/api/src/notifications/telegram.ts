@@ -1,4 +1,5 @@
 import type {
+  Chat,
   Notification,
   NotificationTransport,
   SendResult,
@@ -25,7 +26,8 @@ import type {
 export interface TelegramTransportDeps {
   /** Secret: it sits in the URL path. Never logged, never in a reason. */
   readonly botToken: string;
-  readonly chatId: string;
+  /** Each chat's id (D8). Both may be the same chat. */
+  readonly chatIds: Readonly<Record<Chat, string>>;
   /** Default 10 s. A hung request must not hold the queue forever. */
   readonly timeoutMs?: number;
   /** Test seam. */
@@ -77,7 +79,7 @@ export class TelegramTransport implements NotificationTransport {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          chat_id: this.deps.chatId,
+          chat_id: this.deps.chatIds[notification.chat ?? "operations"],
           text: formatNotification(notification),
           link_preview_options: { is_disabled: true },
           // Fills and closes arrive silently; anything needing attention rings.

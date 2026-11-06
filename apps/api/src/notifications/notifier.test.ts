@@ -8,7 +8,7 @@ import {
   type SendResult,
   type Severity,
 } from "./notifier.js";
-import { createNotifier } from "./create.js";
+import { chatOf, createNotifier } from "./create.js";
 
 /** Task 16.2 — the port and its bounded, paced queue (design §5 D2, D6). */
 
@@ -309,5 +309,26 @@ describe("createNotifier (D5)", () => {
     );
     expect(notifier).toBeInstanceOf(QueuedNotifier);
     expect(notifier.enabled).toBe(true);
+  });
+});
+
+describe("chatOf — where a message goes (16.8, D8)", () => {
+  const trade: Notification = { ...note("INFO"), chat: "trades" };
+
+  it("sends trades to the trades chat when one is configured", () => {
+    expect(chatOf(trade, "@trades")).toBe("trades");
+  });
+
+  it("sends trades to the operations chat while none is", () => {
+    expect(chatOf(trade, undefined)).toBe("operations");
+  });
+
+  it("keeps everything else in operations, whatever is configured", () => {
+    for (const trades of ["@trades", undefined]) {
+      expect(chatOf(note("CRITICAL"), trades)).toBe("operations");
+      expect(chatOf({ ...note("WARNING"), chat: "operations" }, trades)).toBe(
+        "operations",
+      );
+    }
   });
 });

@@ -149,4 +149,24 @@ describe("NotificationsRepository (task 16.6)", () => {
       repo.record({ ...record(), outcome: "maybe" as "sent" }),
     ).rejects.toThrow();
   });
+
+  /** Task 16.8 (D8): a record names its chat; one kept before 16.8 reads back without. */
+  it("keeps the chat a message went to, and reads older records without one", async () => {
+    const repo = new NotificationsRepository(connection.db);
+    // Recent times: anything 90 days old is the TTL monitor's to delete,
+    // mid-test, whenever its sweep happens to run.
+    const now = Date.now();
+    await repo.record(
+      record({ notificationId: "ntf_t", ts: now, chat: "trades" }),
+    );
+    await repo.record(record({ notificationId: "ntf_old", ts: now - 1 }));
+    const recent = await repo.findRecent(10);
+    expect(recent.map((r) => [r.notificationId, r.chat])).toEqual([
+      ["ntf_t", "trades"],
+      ["ntf_old", undefined],
+    ]);
+    await expect(
+      repo.record({ ...record(), chat: "general" as "trades" }),
+    ).rejects.toThrow();
+  });
 });

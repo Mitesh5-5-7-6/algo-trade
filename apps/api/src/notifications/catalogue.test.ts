@@ -68,6 +68,7 @@ describe("the catalogue: CRITICAL, at once (task 16.4)", () => {
         mode: "paper",
         title: "Trading halted (reconciliation)",
         body: "paper broker reconciliation mismatch at BOOT",
+        chat: "operations",
       },
     ]);
   });
@@ -264,6 +265,40 @@ describe("the catalogue: INFO (task 16.4)", () => {
     h.emit("TRADING_RESUMED", { source: "operator", mode: "paper", ts: TS });
     expect(h.sent.map(brief)).toEqual([
       "WARNING Trading resumed by the operator",
+    ]);
+  });
+
+  /** Design §5.1 D8: trades — entry fills and closes — and operations, the rest. */
+  it("puts fills and closes in the trades chat, and nothing else (16.8)", async () => {
+    const h = await harness();
+    h.emit("MARKET_OPEN", { exchange: "NSE", session: "regular", ts: TS });
+    h.emit("ORDER_FILLED", fill());
+    h.emit("ORDER_FILLED", fill({ side: "SELL", exitReason: "TAKE_PROFIT" }));
+    h.emit("POSITION_UPDATED", {
+      symbol: "NSE:NIFTY-INDEX",
+      strategyId: "str_orb",
+      side: "LONG",
+      qty: 0,
+      avgEntryPrice: 24_000,
+      status: "CLOSED",
+      realizedPnl: 120,
+      ts: TS,
+    });
+    h.emit("BROKER_CONNECTED", { broker: "fyers", mode: "paper", ts: TS });
+    h.emit("FEED_RECOVERED", { broker: "fyers", mode: "paper", ts: TS });
+    h.emit("TRADING_HALTED", {
+      source: "kill",
+      reason: "operator",
+      mode: "paper",
+      ts: TS,
+    });
+    expect(h.sent.map((n) => [n.title.split(":")[0], n.chat])).toEqual([
+      ["Market open", "operations"],
+      ["Entry filled", "trades"],
+      ["Position closed", "trades"],
+      ["Broker fyers connected", "operations"],
+      ["Market feed recovered", "operations"],
+      ["Trading halted (kill)", "operations"],
     ]);
   });
 });

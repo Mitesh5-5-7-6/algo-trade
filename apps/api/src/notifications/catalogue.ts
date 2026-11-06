@@ -1,6 +1,6 @@
 import type { EventName, EventPayload } from "@neelkanth/contracts";
 import type { TradeMode } from "@neelkanth/core";
-import type { Notifier, Severity } from "./notifier.js";
+import type { Chat, Notifier, Severity } from "./notifier.js";
 
 /**
  * The event catalogue (Phase 16, task 16.4; design §5.2): which bus events
@@ -14,6 +14,9 @@ import type { Notifier, Severity } from "./notifier.js";
  * disconnect or token loss outside the session.
  * INFO — as it happens: entry fills, positions closed with reason and P&L,
  * the market opening, recoveries.
+ *
+ * Entry fills and closed positions go to the trades chat; everything else to
+ * operations (design §5.1 D8).
  *
  * Everything here is a consumer of events that already exist. Nothing reads a
  * dashboard value, and nothing here can reach the order path (D2, D3).
@@ -67,13 +70,19 @@ export async function subscribeCatalogue(deps: CatalogueDeps): Promise<void> {
       setTimeout(fn, ms).unref();
     });
 
-  const send = (severity: Severity, title: string, body?: string): void => {
+  const send = (
+    severity: Severity,
+    title: string,
+    body?: string,
+    chat: Chat = "operations",
+  ): void => {
     if (severity === "INFO" && !deps.includeInfo) return;
     deps.notifier.notify({
       severity,
       mode: deps.mode,
       title,
       ...(body === undefined ? {} : { body }),
+      chat,
     });
   };
   const inSession = (): Severity =>
@@ -139,6 +148,7 @@ export async function subscribeCatalogue(deps: CatalogueDeps): Promise<void> {
       "INFO",
       `Entry filled: ${payload.side} ${String(payload.qty)} ${payload.symbol} @ ${String(payload.filledPrice)}`,
       `Strategy ${payload.strategyId}`,
+      "trades",
     );
   });
   await deps.bus.subscribe("POSITION_UPDATED", ({ payload }) => {
@@ -150,6 +160,7 @@ export async function subscribeCatalogue(deps: CatalogueDeps): Promise<void> {
       "INFO",
       `Position closed: ${payload.symbol} ${signedInr(payload.realizedPnl)}`,
       `Strategy ${payload.strategyId}${reason === undefined ? "" : ` — ${reason}`}`,
+      "trades",
     );
   });
 

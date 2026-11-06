@@ -170,8 +170,37 @@ describe("Telegram notifications (Phase 16)", () => {
       ...validEnv,
       TELEGRAM_BOT_TOKEN: "",
       TELEGRAM_CHAT_ID: "",
+      TELEGRAM_TRADES_CHAT_ID: "",
     });
     expect(config.TELEGRAM_BOT_TOKEN).toBeUndefined();
+    expect(config.TELEGRAM_TRADES_CHAT_ID).toBeUndefined();
+  });
+
+  it("takes an optional trades chat beside the operations chat (16.8)", () => {
+    const both = {
+      ...validEnv,
+      TELEGRAM_BOT_TOKEN: BOT,
+      TELEGRAM_CHAT_ID: "-1001234567890",
+    };
+    expect(
+      loadConfig({ ...both, TELEGRAM_TRADES_CHAT_ID: "@neelkanth_trades" })
+        .TELEGRAM_TRADES_CHAT_ID,
+    ).toBe("@neelkanth_trades");
+    expect(loadConfig(both).TELEGRAM_TRADES_CHAT_ID).toBeUndefined();
+  });
+
+  it("refuses a trades chat without an operations chat, or not a chat", () => {
+    expect(() =>
+      loadConfig({ ...validEnv, TELEGRAM_TRADES_CHAT_ID: "-100987" }),
+    ).toThrow(/TELEGRAM_TRADES_CHAT_ID/);
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        TELEGRAM_BOT_TOKEN: BOT,
+        TELEGRAM_CHAT_ID: "-100123",
+        TELEGRAM_TRADES_CHAT_ID: "trades room",
+      }),
+    ).toThrow(ConfigValidationError);
   });
 
   it("refuses values that cannot be a bot token or a chat", () => {

@@ -32,7 +32,7 @@ function bodyOf(init: RequestInit | undefined): string {
 function transport(fetchImpl: typeof fetch, timeoutMs?: number) {
   return new TelegramTransport({
     botToken: TOKEN,
-    chatId: "-1001234",
+    chatIds: { operations: "-1001234", trades: "@trades" },
     fetch: fetchImpl,
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
@@ -86,6 +86,19 @@ describe("TelegramTransport (task 16.2)", () => {
           .disable_notification,
     );
     expect(silent).toEqual([true, false]);
+  });
+
+  it("sends each message to its chat — operations unless marked trades (16.8)", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(reply(200, { ok: true }));
+    await transport(fetchImpl).send(critical);
+    await transport(fetchImpl).send({ ...critical, chat: "operations" });
+    await transport(fetchImpl).send({ ...critical, chat: "trades" });
+    const chats = fetchImpl.mock.calls.map(
+      ([, init]) => (JSON.parse(bodyOf(init)) as { chat_id: string }).chat_id,
+    );
+    expect(chats).toEqual(["-1001234", "-1001234", "@trades"]);
   });
 
   /** Bot API ResponseParameters.retry_after: seconds to wait under flood control. */

@@ -12,6 +12,12 @@ import type { TradeMode } from "@neelkanth/core";
 /** How urgent: the catalogue in design §5.2 assigns one to every event. */
 export type Severity = "CRITICAL" | "WARNING" | "INFO";
 
+/**
+ * Which chat a message belongs in (design §5.1 D8): trades — entry fills and
+ * closed positions — or operations, everything else.
+ */
+export type Chat = "operations" | "trades";
+
 export interface Notification {
   readonly severity: Severity;
   /**
@@ -26,6 +32,8 @@ export interface Notification {
   readonly body?: string;
   /** Set on a message that must go once (task 16.6), e.g. `summary:2026-11-02`. */
   readonly dedupeKey?: string;
+  /** Its chat (D8). Absent means operations. */
+  readonly chat?: Chat;
 }
 
 /** What became of one message (task 16.6, D7). */

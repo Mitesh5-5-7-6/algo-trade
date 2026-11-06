@@ -25,6 +25,11 @@ export const NotificationRecordSchema = z.object({
   reason: z.string().optional(),
   /** Set on a message that must go once — e.g. `summary:2026-11-02`. */
   dedupeKey: z.string().min(1).optional(),
+  /**
+   * The chat it went to (design §5.1 D8). Always written since task 16.8;
+   * optional only because records kept before it have none.
+   */
+  chat: z.enum(["operations", "trades"]).optional(),
 });
 export type NotificationRecord = z.infer<typeof NotificationRecordSchema>;
 

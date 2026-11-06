@@ -95,8 +95,26 @@ const EnvSchema = z
         )
         .optional(),
     ),
-    /** Where notifications go: a numeric chat id (groups are negative) or @channel. */
+    /**
+     * Where notifications go: a numeric chat id (groups are negative) or
+     * @channel. The operations chat — and every message, while
+     * TELEGRAM_TRADES_CHAT_ID is unset.
+     */
     TELEGRAM_CHAT_ID: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z
+        .string()
+        .regex(
+          /^(-?\d+|@[A-Za-z0-9_]+)$/,
+          "must be a numeric chat id or an @username",
+        )
+        .optional(),
+    ),
+    /**
+     * The trades chat (design §5.1 D8): entry fills and closed positions.
+     * Optional; unset, they go to TELEGRAM_CHAT_ID with everything else.
+     */
+    TELEGRAM_TRADES_CHAT_ID: z.preprocess(
       (value) => (value === "" ? undefined : value),
       z
         .string()
@@ -148,6 +166,18 @@ const EnvSchema = z
         path: [missing],
         message:
           "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set together or not at all",
+      });
+    }
+    // A trades chat with no operations chat would leave every alert nowhere.
+    if (
+      env.TELEGRAM_TRADES_CHAT_ID !== undefined &&
+      env.TELEGRAM_CHAT_ID === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["TELEGRAM_TRADES_CHAT_ID"],
+        message:
+          "TELEGRAM_TRADES_CHAT_ID needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID",
       });
     }
 
