@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { CandleIntervalSchema, type StrategyVerdict } from "@neelkanth/core";
+import {
+  CandleIntervalSchema,
+  intervalMs,
+  type StrategyVerdict,
+} from "@neelkanth/core";
 import type { StrategyDefinition } from "./contract.js";
 import { clamp01, hold } from "./shared.js";
 
@@ -15,29 +19,57 @@ import { clamp01, hold } from "./shared.js";
  * first `rangeMinutes` of the session. A change of that anchor marks a new
  * session, resetting the range and the per-direction one-shot flags.
  */
-export const OrbParamsSchema = z.object({
-  /** Opening-range window in minutes (plan/16 §5, default 15). */
-  rangeMinutes: z.number().int().positive().default(15),
-  interval: CandleIntervalSchema.default("5m"),
-  /** Measured-move target as a multiple of the range (plan/16 §5). */
-  targetMultiple: z.number().positive().default(1),
-  /**
-   * OPTIONAL ceiling on the entry size, in units.
-   *
-   * It used to default to 1, which the Risk Engine then read as "trade one
-   * unit" — so every position was one share regardless of capital. An unset
-   * quantity is the absence of an opinion, not an intent, so it is now left
-   * off the signal entirely and the engine sizes from the risk budget
-   * (plan/14 §4.4). Set it only to cap a strategy below what risk allows.
-   */
-  quantity: z.number().int().positive().optional(),
-  allowShort: z.boolean().default(true),
-  /** Optional volume confirmation: require V ≥ k · avgVol (plan/16 §5). */
-  volumeMultiple: z.number().positive().optional(),
-  avgVolPeriod: z.number().int().positive().default(20),
-  /** Optional minimum range floor — screens out noise-level ranges (plan/16 §5). */
-  minRange: z.number().nonnegative().optional(),
-});
+export const OrbParamsSchema = z
+  .object({
+    /** Opening-range window in minutes (plan/16 §5, default 15). */
+    rangeMinutes: z.number().int().positive().default(15),
+    interval: CandleIntervalSchema.default("5m"),
+    /** Measured-move target as a multiple of the range (plan/16 §5). */
+    targetMultiple: z.number().positive().default(1),
+    /**
+     * OPTIONAL ceiling on the entry size, in units.
+     *
+     * It used to default to 1, which the Risk Engine then read as "trade one
+     * unit" — so every position was one share regardless of capital. An unset
+     * quantity is the absence of an opinion, not an intent, so it is now left
+     * off the signal entirely and the engine sizes from the risk budget
+     * (plan/14 §4.4). Set it only to cap a strategy below what risk allows.
+     */
+    quantity: z.number().int().positive().optional(),
+    allowShort: z.boolean().default(true),
+    /** Optional volume confirmation: require V ≥ k · avgVol (plan/16 §5). */
+    volumeMultiple: z.number().positive().optional(),
+    avgVolPeriod: z.number().int().positive().default(20),
+    /** Optional minimum range floor — screens out noise-level ranges (plan/16 §5). */
+    minRange: z.number().nonnegative().optional(),
+    /**
+     * OPTIONAL entry window, in minutes after the session open, on the breakout
+     * bar's CLOSE: from `entryFromMinute` (inclusive) up to `entryUntilMinute`
+     * (exclusive). 45 and 135 are 10:00 and 11:30 on a 09:15 session.
+     *
+     * A direction's first breakout that closes outside the window is let go and
+     * that direction is done for the day — the window selects fresh breakouts,
+     * it does not turn an early one into a late entry.
+     */
+    entryFromMinute: z.number().int().nonnegative().optional(),
+    entryUntilMinute: z.number().int().positive().optional(),
+    /**
+     * OPTIONAL trend filter: a long only while the breakout bar closes above
+     * this symbol's own EMA of this period, a short only while it closes below.
+     * A breakout against the trend, or exactly on the line, is let go as above.
+     */
+    trendEmaPeriod: z.number().int().positive().optional(),
+  })
+  .refine(
+    (p) =>
+      p.entryFromMinute === undefined ||
+      p.entryUntilMinute === undefined ||
+      p.entryUntilMinute > p.entryFromMinute,
+    {
+      path: ["entryUntilMinute"],
+      message: "entryUntilMinute must be after entryFromMinute",
+    },
+  );
 
 export type OrbParams = z.infer<typeof OrbParamsSchema>;
 
@@ -54,8 +86,12 @@ export type OrbParams = z.infer<typeof OrbParamsSchema>;
  * failure mode is a missed entry rather than a duplicate one. That is the
  * right direction to fail in: a trade not taken costs an opportunity, a trade
  * taken twice costs money.
+ *
+ * `skipped` is a breakout the entry window or the trend filter let go: the
+ * direction is done for the session, as after an entry, but nothing was
+ * proposed and no outcome can release it.
  */
-export type OrbEntryLatch = "none" | "proposed" | "entered";
+export type OrbEntryLatch = "none" | "proposed" | "entered" | "skipped";
 
 export interface OrbState {
   params: OrbParams;
@@ -78,19 +114,27 @@ const OrbSnapshotSchema = z.object({
   sessionMarker: z.number().nullable(),
   orHigh: z.number().nullable(),
   orLow: z.number().nullable(),
-  upEntry: z.enum(["none", "proposed", "entered"]),
-  downEntry: z.enum(["none", "proposed", "entered"]),
+  upEntry: z.enum(["none", "proposed", "entered", "skipped"]),
+  downEntry: z.enum(["none", "proposed", "entered", "skipped"]),
 });
 
 export const orb: StrategyDefinition<OrbParams, OrbState> = {
   type: "ORB",
   paramsSchema: OrbParamsSchema,
   interval: (p) => p.interval,
-  requiredIndicators: (p) =>
-    p.volumeMultiple === undefined
+  requiredIndicators: (p) => [
+    ...(p.volumeMultiple === undefined
       ? []
-      : [{ kind: "avgVolume", period: p.avgVolPeriod }],
-  warmupBars: (p) => (p.volumeMultiple === undefined ? 0 : p.avgVolPeriod),
+      : [{ kind: "avgVolume" as const, period: p.avgVolPeriod }]),
+    ...(p.trendEmaPeriod === undefined
+      ? []
+      : [{ kind: "ema" as const, period: p.trendEmaPeriod }]),
+  ],
+  warmupBars: (p) =>
+    Math.max(
+      p.volumeMultiple === undefined ? 0 : p.avgVolPeriod,
+      p.trendEmaPeriod ?? 0,
+    ),
   init: (params) => ({
     params,
     sessionMarker: null,
@@ -159,7 +203,37 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
 
     const midpoint = (state.orHigh + state.orLow) / 2; // default stop (plan/16 §5)
 
-    if (state.upEntry === "none" && candle.close > state.orHigh) {
+    const up = state.upEntry === "none" && candle.close > state.orHigh;
+    const down =
+      p.allowShort && state.downEntry === "none" && candle.close < state.orLow;
+
+    // The optional entry window and trend filter judge a breakout once: one
+    // they turn away is let go, and its direction is done for the session.
+    if (up || down) {
+      const latch = up ? "upEntry" : "downEntry";
+      // The bar's own close against the session anchor — not the engine's
+      // clock, which a restart or a late start would shift.
+      const closedAt =
+        (candle.ts + intervalMs(p.interval) - sessionOpenTs) / 60_000;
+      if (
+        (p.entryFromMinute !== undefined && closedAt < p.entryFromMinute) ||
+        (p.entryUntilMinute !== undefined && closedAt >= p.entryUntilMinute)
+      ) {
+        state[latch] = "skipped";
+        return hold("breakout outside the entry window");
+      }
+      if (p.trendEmaPeriod !== undefined) {
+        const trend = context.indicators[`ema${p.trendEmaPeriod}`];
+        // Not ready is not a verdict on the breakout: wait, spend nothing.
+        if (trend === undefined) return hold("trend not ready");
+        if (up ? candle.close <= trend : candle.close >= trend) {
+          state[latch] = "skipped";
+          return hold("breakout against the trend");
+        }
+      }
+    }
+
+    if (up) {
       // Proposed, not taken. What it becomes is decided by onSignalOutcome.
       state.upEntry = "proposed";
       const margin = (candle.close - state.orHigh) / range;
@@ -173,11 +247,7 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
       };
     }
 
-    if (
-      p.allowShort &&
-      state.downEntry === "none" &&
-      candle.close < state.orLow
-    ) {
+    if (down) {
       state.downEntry = "proposed";
       const margin = (state.orLow - candle.close) / range;
       return {
