@@ -21,6 +21,7 @@ import {
   type MongoProbe,
 } from "./test-support/infra.js";
 import { seedCandles } from "./test-support/candles.js";
+import { orbDay, ORB_DAY_SYMBOL } from "./odds/test-support.js";
 import {
   emaStrategy,
   goldenBudget,
@@ -74,7 +75,31 @@ const VALUES: Record<string, string> = {
   candidate: "SC-0001",
   "walk-forward": "wf_1",
   session: SESSION,
+  // setup-odds (19.4): a long from 09:40 on the Monday after ODDS_SESSIONS.
+  symbol: ORB_DAY_SYMBOL,
+  side: "LONG",
+  entry: "20080",
+  stop: "20000",
+  target: "20180",
+  date: "2026-03-16",
+  time: "09:40",
+  "rule-type": "ORB",
 };
+
+/**
+ * Full 75-bar sessions for setup-odds, which draws only from those — the
+ * golden day stops at 15:08, so it holds none.
+ */
+const ODDS_SESSIONS = [
+  ...orbDay("2026-03-02", "TARGET"),
+  ...orbDay("2026-03-03", "STOP"),
+  ...orbDay("2026-03-04", "NEITHER"),
+  ...orbDay("2026-03-05", "QUIET"),
+  ...orbDay("2026-03-06", "TARGET"),
+  ...orbDay("2026-03-09", "STOP"),
+  ...orbDay("2026-03-10", "TARGET"),
+  ...orbDay("2026-03-11", "QUIET"),
+];
 
 interface Command {
   line: string;
@@ -195,6 +220,8 @@ async function seedResearch(c: MongoConnection): Promise<void> {
     db,
     await historicalBars(offsets, (d) => 1 + (d % 7) * 0.03 + (d % 11) * 0.01),
   );
+  // Another symbol, so the two seeds cannot collide on a bar.
+  await seedCandles(db, ODDS_SESSIONS);
   await new StrategyCandidatesRepository(db).save({
     candidateId: "SC-0001",
     createdAt: 1,
@@ -290,13 +317,14 @@ const reachable = () =>
   research?.reachable === true && paper?.reachable === true;
 
 describe("the skills found (19.5)", () => {
-  it("are the four 19.1–19.3 added, at least", () => {
+  it("are the four 19.1–19.3 added and 19.4's setup-odds, at least", () => {
     expect(skills.map((s) => s.name)).toEqual(
       expect.arrayContaining([
         "board-status",
         "candidate-verdicts",
         "paper-report",
         "replay",
+        "setup-odds",
       ]),
     );
     for (const s of skills) {

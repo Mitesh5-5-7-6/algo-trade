@@ -987,3 +987,36 @@ table.data th.num {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Time Machine (setup odds) */
+.odds-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.odds-form .filter-field span {
+  text-transform: uppercase;
+}
+.odds-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 14px;
+}
+.odds-verdict {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+}
+table.data.odds-table {
+  min-width: 0;
+  width: 100%;
+}
+.odds-notes {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}

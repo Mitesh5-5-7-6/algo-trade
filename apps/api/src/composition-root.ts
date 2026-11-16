@@ -32,6 +32,7 @@ import {
   startRedisMeterReport,
 } from "./engines/redis-meter.js";
 import { registerControlPlane } from "./control-plane/index.js";
+import { registerResearchRelay } from "./control-plane/research-relay.js";
 import {
   createStepUpVerifier,
   LoginRateLimiter,
@@ -553,6 +554,17 @@ export async function bootstrap(
     // that has not set it has no history capability, deliberately.
     historyProvider:
       fyersBroker !== null && fyersBroker.supportsHistory ? fyersBroker : null,
+  });
+
+  // The operator's way to the separate research service (design §6.1 D16).
+  // A relay only: no research code and no research database in this process.
+  // Unconfigured, its routes answer 503 and nothing else changes.
+  registerResearchRelay(server, {
+    research:
+      config.RESEARCH_API_URL !== undefined &&
+      config.RESEARCH_API_TOKEN !== undefined
+        ? { url: config.RESEARCH_API_URL, token: config.RESEARCH_API_TOKEN }
+        : null,
   });
 
   // --- Realtime bridge (plan/10): push live state to the dashboard ---

@@ -125,6 +125,25 @@ const EnvSchema = z
         .optional(),
     ),
 
+    // --- Research service (LIVE_READINESS_AND_EXTENSIONS §6.1 D16) ---
+    /**
+     * Where the separate research service answers. Optional: unset, the
+     * research routes say the service is not configured and nothing else
+     * changes — trading never depends on it (ADR §5.6).
+     */
+    RESEARCH_API_URL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().url().optional(),
+    ),
+    /**
+     * The shared secret presented to it as a bearer token. A credential: it
+     * is sent only to RESEARCH_API_URL and never logged.
+     */
+    RESEARCH_API_TOKEN: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().min(32).optional(),
+    ),
+
     // --- Telemetry ---
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace"])
@@ -166,6 +185,23 @@ const EnvSchema = z
         path: [missing],
         message:
           "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are set together or not at all",
+      });
+    }
+    // An address without the secret would relay requests the research
+    // service refuses; a secret without an address has nowhere to go.
+    if (
+      (env.RESEARCH_API_URL === undefined) !==
+      (env.RESEARCH_API_TOKEN === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [
+          env.RESEARCH_API_URL === undefined
+            ? "RESEARCH_API_URL"
+            : "RESEARCH_API_TOKEN",
+        ],
+        message:
+          "RESEARCH_API_URL and RESEARCH_API_TOKEN are set together or not at all",
       });
     }
     // A trades chat with no operations chat would leave every alert nowhere.

@@ -234,4 +234,50 @@ describe("FYERS_WEBHOOK_SECRET", () => {
       loadConfig({ ...validEnv, FYERS_WEBHOOK_SECRET: "short" }),
     ).toThrow(ConfigValidationError);
   });
+
+  describe("the research service (design §6.1 D16)", () => {
+    const URL = "https://research.example.com";
+    const TOKEN = "r".repeat(32);
+
+    it("is optional: unset, the API boots without it", () => {
+      const config = loadConfig({ ...validEnv });
+      expect(config.RESEARCH_API_URL).toBeUndefined();
+      expect(config.RESEARCH_API_TOKEN).toBeUndefined();
+    });
+
+    it("takes an address and a long secret together", () => {
+      const config = loadConfig({
+        ...validEnv,
+        RESEARCH_API_URL: URL,
+        RESEARCH_API_TOKEN: TOKEN,
+      });
+      expect(config.RESEARCH_API_URL).toBe(URL);
+      expect(config.RESEARCH_API_TOKEN).toBe(TOKEN);
+    });
+
+    it("refuses one without the other, naming the missing one", () => {
+      expect(() => loadConfig({ ...validEnv, RESEARCH_API_URL: URL })).toThrow(
+        /RESEARCH_API_TOKEN/,
+      );
+      expect(() =>
+        loadConfig({ ...validEnv, RESEARCH_API_TOKEN: TOKEN }),
+      ).toThrow(/RESEARCH_API_URL/);
+    });
+
+    it("refuses a short secret, and reads empty as unset", () => {
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          RESEARCH_API_URL: URL,
+          RESEARCH_API_TOKEN: "short",
+        }),
+      ).toThrow(/RESEARCH_API_TOKEN/);
+      const config = loadConfig({
+        ...validEnv,
+        RESEARCH_API_URL: "",
+        RESEARCH_API_TOKEN: "",
+      });
+      expect(config.RESEARCH_API_URL).toBeUndefined();
+    });
+  });
 });

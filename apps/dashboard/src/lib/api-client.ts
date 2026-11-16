@@ -1,6 +1,7 @@
 import type { Order, Position, StrategyConfig } from "@neelkanth/core";
 import { API_BASE } from "./config";
 import type { ActivityEntry } from "./data";
+import type { OddsCoverage, OddsRequest, OddsResponse } from "./odds";
 
 /**
  * The REST half of the two data channels (plan/06 §5): request/response for
@@ -266,5 +267,15 @@ export const api = {
     apiFetch<{ ok: boolean }>("/auth/totp/disable", {
       method: "POST",
       body: JSON.stringify({ token }),
+    }),
+
+  // --- Research, relayed by the API to the separate research service ---
+  /** What the research data holds: symbols and the dates they span. */
+  oddsCoverage: () => apiFetch<OddsCoverage[]>("/research/odds/coverage"),
+  /** One plan's odds (the Time Machine). Seconds, not milliseconds. */
+  runOdds: (plan: OddsRequest) =>
+    apiFetch<OddsResponse>("/research/odds", {
+      method: "POST",
+      body: JSON.stringify(plan),
     }),
 };

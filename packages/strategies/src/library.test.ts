@@ -324,6 +324,226 @@ describe("ORB (plan/16 §5)", () => {
     expect(verdicts[4]?.side).toBe("BUY");
   });
 
+  describe("the entry window", () => {
+    // The breakout bar must CLOSE from 45 up to, not including, 135 minutes
+    // after the open: 10:00 to 11:30 on a 09:15 session.
+    const windowed = {
+      allowShort: false,
+      entryFromMinute: 45,
+      entryUntilMinute: 135,
+    };
+
+    it("takes a first breakout that closes inside the window, at either edge", () => {
+      for (const minutesSinceOpen of [45, 130]) {
+        const verdicts = run(
+          orb,
+          windowed,
+          series([
+            ...build,
+            { close: 100, minutesSinceOpen: 20 }, // inside the range
+            { close: 107, minutesSinceOpen },
+          ]),
+        );
+        expect(verdicts[4]?.side).toBe("BUY");
+        expect(verdicts[4]?.stopLoss).toBe(100);
+        expect(verdicts[4]?.target).toBe(119);
+      }
+    });
+
+    it("lets a breakout before the window go, and does not chase it later", () => {
+      const verdicts = run(
+        orb,
+        windowed,
+        series([
+          ...build,
+          { close: 107, minutesSinceOpen: 40 }, // five minutes early
+          { close: 109, minutesSinceOpen: 45 }, // still above, now inside
+          { close: 111, minutesSinceOpen: 60 },
+        ]),
+      );
+      expect(verdicts[3]).toMatchObject({
+        side: "HOLD",
+        reason: "breakout outside the entry window",
+      });
+      // The day's breakout already happened; a later bar is not a fresh one.
+      expect(verdicts[4]?.side).toBe("HOLD");
+      expect(verdicts[5]?.side).toBe("HOLD");
+    });
+
+    it("lets a breakout at or after the window's end go", () => {
+      const verdicts = run(
+        orb,
+        windowed,
+        series([...build, { close: 107, minutesSinceOpen: 135 }]),
+      );
+      expect(verdicts[3]).toMatchObject({
+        side: "HOLD",
+        reason: "breakout outside the entry window",
+      });
+    });
+
+    it("spends one direction only: a late upside breakout leaves the downside armed", () => {
+      const verdicts = run(
+        orb,
+        { ...windowed, allowShort: true },
+        series([
+          ...build,
+          { close: 107, minutesSinceOpen: 20 }, // up, too early: let go
+          { close: 93, minutesSinceOpen: 60 }, // down, inside the window
+        ]),
+      );
+      expect(verdicts[3]?.side).toBe("HOLD");
+      expect(verdicts[4]?.side).toBe("SELL");
+    });
+
+    it("reads the time from the bar, not from how long the engine has been up", () => {
+      // A restarted engine may report any minutesSinceOpen; the bar's own
+      // timestamp against the session anchor is what places it in the window.
+      const contexts = series([...build, { close: 107, minutesSinceOpen: 60 }]);
+      const last = contexts[3] as MarketContext;
+      const lying = {
+        ...last,
+        session: { ...last.session, minutesSinceOpen: 300 },
+      };
+      const verdicts = run(orb, windowed, [...contexts.slice(0, 3), lying]);
+      expect(verdicts[3]?.side).toBe("BUY");
+    });
+
+    it("re-arms the next session after letting a breakout go", () => {
+      const day2 = DAY1_OPEN + 86_400_000;
+      const verdicts = run(
+        orb,
+        windowed,
+        series([
+          ...build,
+          { close: 107, minutesSinceOpen: 20 }, // day 1: too early
+          {
+            close: 100,
+            high: 103,
+            low: 97,
+            minutesSinceOpen: 15,
+            sessionOpenTs: day2,
+          },
+          { close: 104, minutesSinceOpen: 60, sessionOpenTs: day2 },
+        ]),
+      );
+      expect(verdicts[3]?.side).toBe("HOLD");
+      expect(verdicts[5]?.side).toBe("BUY");
+    });
+
+    it("refuses a window that ends at or before it starts", () => {
+      expect(() =>
+        orb.paramsSchema.parse({ entryFromMinute: 135, entryUntilMinute: 45 }),
+      ).toThrow(/entryUntilMinute/);
+      expect(() =>
+        orb.paramsSchema.parse({ entryFromMinute: 45, entryUntilMinute: 45 }),
+      ).toThrow(/entryUntilMinute/);
+    });
+  });
+
+  describe("the trend filter", () => {
+    const trending = { trendEmaPeriod: 21 };
+
+    it("takes a long above the trend line and a short below it", () => {
+      const long = run(
+        orb,
+        trending,
+        series([
+          ...build,
+          { close: 107, minutesSinceOpen: 20, indicators: { ema21: 103 } },
+        ]),
+      );
+      expect(long[3]?.side).toBe("BUY");
+      const short = run(
+        orb,
+        trending,
+        series([
+          ...build,
+          { close: 93, minutesSinceOpen: 20, indicators: { ema21: 97 } },
+        ]),
+      );
+      expect(short[3]?.side).toBe("SELL");
+    });
+
+    it("lets a breakout against the trend go, and does not take it when the trend turns", () => {
+      const verdicts = run(
+        orb,
+        trending,
+        series([
+          ...build,
+          // Above the range but below the trend line: against the trend.
+          { close: 107, minutesSinceOpen: 20, indicators: { ema21: 110 } },
+          { close: 112, minutesSinceOpen: 25, indicators: { ema21: 110 } },
+        ]),
+      );
+      expect(verdicts[3]).toMatchObject({
+        side: "HOLD",
+        reason: "breakout against the trend",
+      });
+      expect(verdicts[4]?.side).toBe("HOLD");
+    });
+
+    it("treats a close exactly on the trend line as no trend", () => {
+      const verdicts = run(
+        orb,
+        trending,
+        series([
+          ...build,
+          { close: 107, minutesSinceOpen: 20, indicators: { ema21: 107 } },
+        ]),
+      );
+      expect(verdicts[3]?.reason).toBe("breakout against the trend");
+    });
+
+    it("waits, without spending the day's entry, while the trend line is not ready", () => {
+      const verdicts = run(
+        orb,
+        trending,
+        series([
+          ...build,
+          { close: 107, minutesSinceOpen: 20 }, // no ema21 yet
+          { close: 108, minutesSinceOpen: 25, indicators: { ema21: 103 } },
+        ]),
+      );
+      expect(verdicts[3]).toMatchObject({
+        side: "HOLD",
+        reason: "trend not ready",
+      });
+      expect(verdicts[4]?.side).toBe("BUY");
+    });
+
+    it("declares the trend EMA and its warm-up only when the filter is on", () => {
+      const on = orb.paramsSchema.parse(trending);
+      expect(orb.requiredIndicators(on)).toEqual([{ kind: "ema", period: 21 }]);
+      expect(orb.warmupBars(on)).toBe(21);
+      const both = orb.paramsSchema.parse({ ...trending, volumeMultiple: 2 });
+      expect(orb.requiredIndicators(both)).toEqual([
+        { kind: "avgVolume", period: 20 },
+        { kind: "ema", period: 21 },
+      ]);
+      expect(orb.warmupBars(both)).toBe(21);
+      expect(orb.warmupBars(orb.paramsSchema.parse({}))).toBe(0);
+    });
+  });
+
+  it("survives a restart knowing which breakout it let go", () => {
+    const params = orb.paramsSchema.parse({
+      allowShort: false,
+      entryFromMinute: 45,
+      entryUntilMinute: 135,
+    });
+    const contexts = series([
+      ...build,
+      { close: 107, minutesSinceOpen: 20 }, // too early: let go
+      { close: 109, minutesSinceOpen: 60 },
+    ]);
+    const before = orb.init(params, SYM);
+    for (const c of contexts.slice(0, 4)) orb.analyze(c, before);
+    const after = orb.init(params, SYM);
+    orb.restore?.(after, JSON.parse(JSON.stringify(orb.snapshot?.(before))));
+    expect(orb.analyze(contexts[4] as MarketContext, after).side).toBe("HOLD");
+  });
+
   it("declares avgVolume required only when the volume gate is on", () => {
     expect(orb.requiredIndicators(orb.paramsSchema.parse({}))).toEqual([]);
     expect(

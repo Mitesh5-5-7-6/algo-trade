@@ -18,6 +18,8 @@ export const qk = {
   // on its own interval instead of riding that cascade.
   pnlCurve: ["pnlCurve"] as const,
   controlStatus: ["control", "status"] as const,
+  // Research data, not trading state: no socket event invalidates it.
+  oddsCoverage: ["research", "odds", "coverage"] as const,
 };
 
 export type QueryKey = Exclude<

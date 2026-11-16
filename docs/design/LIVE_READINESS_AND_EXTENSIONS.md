@@ -318,6 +318,39 @@ history half.
   plan's date; a mutation that admits the plan's own day must fail a test.
 - **D9 — The stated limitation.** Drawing each bar independently breaks the
   momentum and volatility clustering inside a real day. Every report says so.
+- **D10 — Per-bar draws, history beside them (Q2, decided 2026-11-16).** Each
+  bar is drawn on its own from the same time of day, as D3 describes; no
+  block bootstrap in version 1. D9's limitation therefore stands and is
+  printed, and the history method — real days, in their real order — is shown
+  beside the resampled odds, never blended with them (D3).
+- **D11 — Gross R, in index points (Q3, decided 2026-11-16).** Odds and R are
+  reported without charges or slippage: an index is not a tradable contract,
+  and the charges model applies to one. The report says so beside D1's line.
+- **D12 — The operator types the plan (Q4, decided 2026-11-16).** Version 1
+  takes side, entry, stop, target, date and time from the operator CLI. A
+  plan taken from a live signal comes later, as its own task.
+- **D13 — Expiry days are not separated in version 1 (Q1, decided
+  2026-11-16).** No verified source of historical index expiry dates is held,
+  so expiry sessions stay in the pool with the rest and the report says so.
+  The fact itself stays in §11 to be verified.
+- **D14 — The history is judged on every trade's R (found 2026-11-16).** D5's
+  share of decided outcomes fits the resampled odds, where a replay ends only
+  at the stop, the target or the close. A rule's own history is different: a
+  rule may leave a trade before either level, and then the decided trades are
+  the few that ran far enough to be decided. On the stored year EMA_CROSSOVER
+  went long 357 times on NIFTY 50; 50 were decided, 56 % of them at the
+  target against a 33 % break-even, while the average of all 357 was 0.02R.
+  So the history's verdict is the average R of every time the rule fired,
+  with Phase 7's interval of a mean: FAVOURABLE or UNFAVOURABLE once that
+  interval clears zero, INCONCLUSIVE until it does, INSUFFICIENT_SAMPLE below
+  Phase 7's minimum of times fired. The share of decided outcomes is still
+  reported, with its Wilson interval, against the break-even of the rule's
+  own targets — a rule's stop and target move with each day, so its trades
+  do not pay the plan's R.
+- **D15 — Kept with the other experiments (D7).** A run is one
+  `strategy_experiments` document, `kind: "SETUP_ODDS"`, in the research
+  database: the same collection, indexes and never-overwrite rule as the
+  counterfactual runs, not a new collection for the same concept.
 
 ### 6.2 Open questions
 
@@ -325,13 +358,14 @@ history half.
   separately. The instrument master holds only live contracts, and NSE has
   changed index expiry weekdays before. Source to be found and verified;
   until then expiry days are not separated, and the report says so.
+  **Decided: not separated in version 1, D13.**
 - **Q2.** Per-bar resampling, or a block bootstrap that keeps runs of
-  consecutive bars together?
+  consecutive bars together? **Decided: per-bar, D10.**
 - **Q3.** Cost basis. Index points carry no charges; the charges model applies
   to a priced, tradable instrument. Report gross R only until a plan names
-  one?
+  one? **Decided: gross R only, D11.**
 - **Q4.** Where a plan comes from: an operator CLI input, a live signal, or
-  both.
+  both. **Decided: the operator CLI first, D12.**
 
 ---
 
@@ -480,3 +514,11 @@ with the source recorded beside the answer.
 | Historical NSE index expiry dates                                   | 17.x (Q1)   |
 | Telegram Bot API message rate limits                                | 16.2        |
 | NSE / BSE / SEBI announcement access and terms                      | 20.1        |
+
+### 11.1 Answers so far
+
+| Fact                            | Answer                                                                                                                                                                                                                                                                                                                                                                                                                         | Source, read                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| FYERS: history rate limits      | The documented limit, not yet measured. Data APIs on the Standard plan: 5 requests a second, 50 a minute, 5,000 a day (Prime: 10, 500, 5,00,000). Past a limit the API answers -429, and "if the per-minute rate limit is exceeded more than 3 times in a day, the user is blocked for the rest of the day". Which plan this account is on is not yet confirmed                                                                | <https://fyers.in/api-docs/v3/getting-started/plans-and-limits/>, 2026-11-16                   |
+| FYERS: websocket symbol limits  | Data socket: 100 symbols for a user on Standard, 5,000 on Prime, across all connections; a subscription past the limit is not established                                                                                                                                                                                                                                                                                      | the same page, 2026-11-16                                                                      |
+| NSE's daily F&O ban publication | **Still open.** NSE's file-structure document names the file `fo_secban_DDMMYYYY.csv`, and its risk-management page links the next trade date's list; the page did not answer an automated read on 2026-11-16 (timeout), so its exact address, publication time and terms of automated access are unverified. The ban itself: open interest past 95 % of the market-wide position limit; only position-reducing trades allowed | <https://www.nseindia.com/static/products-services/equity-derivatives-risk-management-sec-ban> |

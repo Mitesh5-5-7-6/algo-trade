@@ -8,7 +8,14 @@
  *
  *   cd apps/api
  *   node --env-file=../../.env.local scripts/backfill-candles.mts \
- *     --from=2025-09-28 --to=2026-09-27 --max-days=<measured>
+ *     --from=2025-09-28 --to=2026-09-27 --max-days=<measured> \
+ *     --db=neelkanth_research [--dns=1.1.1.1]
+ *
+ * It writes the research dataset, so it writes only to `neelkanth_research`
+ * or a scratch `neelkanth_it_*` / `neelkanth_ci_*` database — `--db`, or
+ * else the one MONGO_URI names. Any other is refused before anything
+ * connects: `refusing "<name>": …`. An env file that names a trading
+ * database (the paper one, today) therefore needs `--db`.
  *
  * `--max-days` is REQUIRED and has no default. It is §3.1 question 1, and it
  * is measured by `probe-fyers-history.mts` (task 1.8), not guessed: FYERS may
@@ -25,6 +32,8 @@
  *                                 (Budget 1 Feb, Diwali Muhurat)
  *   --days-per-range=N            days per fetched range (default: --max-days)
  *   --delay-ms=N                  gap between calls (default 250)
+ *   --dns=A,B                     resolvers, when the local one refuses the
+ *                                 SRV lookup a mongodb+srv:// URI needs
  *   --dry-run                     fetch and report, write nothing
  *
  * Exits non-zero when any range failed OR any symbol came back
@@ -37,6 +46,7 @@
  * Writes to Mongo. Re-running a completed range is a no-op that rewrites
  * identical values (D3, D6).
  */
+import dns from "node:dns";
 import { MongoClient } from "mongodb";
 import { FyersHistoryProvider, RateLimiter } from "@neelkanth/broker";
 import {
@@ -66,6 +76,21 @@ function required(name: string): string {
     throw new Error(`--${name}=<value> is required`);
   return value;
 }
+
+// The research database or a scratch one, nothing else — decided from the
+// names alone, before connecting, as the replay does. Naming a database does
+// not connect; --db wins over the one MONGO_URI names.
+const RESEARCH = /^(neelkanth_research|neelkanth_(it|ci)_.+)$/;
+const uri = process.env["MONGO_URI"];
+if (!uri) throw new Error("MONGO_URI is not set");
+const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10_000 });
+const db = client.db(args.get("db"));
+if (!RESEARCH.test(db.databaseName))
+  throw new Error(
+    `refusing "${db.databaseName}": the backfill writes only neelkanth_research or a scratch neelkanth_it_*/neelkanth_ci_* database`,
+  );
+const resolvers = args.get("dns")?.split(",").filter(Boolean) ?? [];
+if (resolvers.length > 0) dns.setServers(resolvers);
 
 const FROM = required("from");
 const TO = required("to");
@@ -101,14 +126,10 @@ if (!Number.isInteger(MAX_DAYS) || MAX_DAYS < 1)
 async function main(): Promise<void> {
   const appId = process.env["FYERS_APP_ID"];
   if (!appId) throw new Error("FYERS_APP_ID is not set");
-  const uri = process.env["MONGO_URI"];
-  if (!uri) throw new Error("MONGO_URI is not set");
 
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10_000 });
   await client.connect();
 
   try {
-    const db = client.db();
     const settings = await db
       .collection("settings")
       .findOne({ scope: "global" });
