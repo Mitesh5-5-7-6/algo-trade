@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_GLOBAL_SETTINGS } from "@neelkanth/db";
+import { OddsRefusal } from "./refusal.js";
 import { runSetupOdds, type SetupOddsRequest } from "./run.js";
 import { orbDay, ORB_DAY_SYMBOL, type OrbDayKind } from "./test-support.js";
 
@@ -124,6 +125,31 @@ describe("one setup-odds run (17.6)", () => {
       runSetupOdds(request({ plan: { ...request().plan, time } }));
     await expect(at("09:19")).rejects.toThrow(/before the first bar/);
     await expect(at("15:30")).rejects.toThrow(/nothing left to replay/);
+  });
+
+  it("refuses, as the plan's fault, what it cannot compute odds for", async () => {
+    const refused = async (over: Partial<SetupOddsRequest>) =>
+      runSetupOdds(request(over)).catch((error: unknown) => error);
+    const plan = request().plan;
+
+    for (const [over, words] of [
+      [{ plan: { ...plan, stop: 20_100 } }, /stop must be below/],
+      [{ plan: { ...plan, time: "09:19" } }, /before the first bar/],
+      [{ plan: { ...plan, date: "2026-03-02" } }, /no full session/],
+      [{ rule: { type: "NO_SUCH_RULE", params: {} } }, /NO_SUCH_RULE/],
+      [
+        { rule: { type: "ORB", params: { rangeMinutes: -5 } } },
+        /the rule ORB cannot be used/,
+      ],
+      [
+        { rule: { type: "ORB", params: { interval: "15m" } } },
+        /decides on 15m bars, but the dataset is 5m/,
+      ],
+    ] as const) {
+      const error = await refused(over);
+      expect(error).toBeInstanceOf(OddsRefusal);
+      expect((error as Error).message).toMatch(words);
+    }
   });
 
   it("draws from the most recent sessions only, when told how many", async () => {

@@ -11,7 +11,7 @@ import {
   type SessionConfig,
   type StrategyConfig,
 } from "@neelkanth/core";
-import { REPLAY_VERSION } from "../replay/run.js";
+import { replayExclusion, REPLAY_VERSION } from "../replay/run.js";
 import type { MarketHours } from "../replay/sessions.js";
 import {
   historyOf,
@@ -19,6 +19,7 @@ import {
   type HistoryResult,
 } from "./history.js";
 import { buildPool, ODDS_POOL_VERSION, type PoolExclusion } from "./pool.js";
+import { OddsRefusal } from "./refusal.js";
 import {
   ODDS_RESAMPLING_VERSION,
   resample,
@@ -151,7 +152,7 @@ export async function runSetupOdds(
   const own = past.filter((c) => c.symbol === plan.symbol);
   const interval = own[0]?.interval;
   if (interval === undefined || own.some((c) => c.interval !== interval))
-    throw new Error(noSession(plan));
+    throw new OddsRefusal(noSession(plan));
   const intervalMinutes = intervalMs(interval) / 60_000;
 
   const full = buildPool(own, {
@@ -164,7 +165,7 @@ export async function runSetupOdds(
       ? full.sessions
       : full.sessions.slice(-request.lookbackSessions);
   const since = sessions[0]?.date;
-  if (since === undefined) throw new Error(noSession(plan));
+  if (since === undefined) throw new OddsRefusal(noSession(plan));
   const pool = {
     barsPerSession: full.barsPerSession,
     sessions,
@@ -176,11 +177,11 @@ export async function runSetupOdds(
   const sinceOpen = parseHHMM(plan.time) - parseHHMM(session.open);
   const entryBar = Math.floor(sinceOpen / intervalMinutes) - 1;
   if (entryBar < 0)
-    throw new Error(
+    throw new OddsRefusal(
       `${plan.time} is before the first bar of the session has closed`,
     );
   if (entryBar > pool.barsPerSession - 2)
-    throw new Error(
+    throw new OddsRefusal(
       `${plan.time} is at or after the session's last bar: nothing left to replay`,
     );
 
@@ -199,6 +200,24 @@ export async function runSetupOdds(
   let history: HistoryResult | null = null;
   let historyManifest: SetupOddsManifest["history"] = null;
   if (request.rule !== undefined) {
+    // Said before anything runs, in the rule's own words: an unknown type,
+    // parameters its schema rejects, or a rule this dataset cannot replay.
+    let exclusion: ReturnType<typeof replayExclusion>;
+    try {
+      exclusion = replayExclusion(
+        request.rule.type,
+        request.rule.params,
+        plan.symbol,
+        interval,
+        new Set(past.map((c) => c.symbol)),
+      );
+    } catch (error) {
+      throw new OddsRefusal(
+        `the rule ${request.rule.type} cannot be used: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (exclusion !== null) throw new OddsRefusal(exclusion.reason);
+
     const rule: StrategyConfig = {
       strategyId: `odds_${request.rule.type}`,
       ownerId: "odds",

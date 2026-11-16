@@ -7,6 +7,7 @@ import {
 import type { ChargeConfig } from "@neelkanth/broker";
 import { runHistoricalReplay } from "../replay/run.js";
 import type { MarketHours } from "../replay/sessions.js";
+import { OddsRefusal } from "./refusal.js";
 
 /** Bumped whenever the same rule over the same bars would count differently. */
 export const ODDS_HISTORY_VERSION = "1";
@@ -85,7 +86,7 @@ export async function historyOf(
     (candle) => istDateKey(candle.ts) < request.planDate,
   );
   if (candles.length === 0)
-    throw new Error(
+    throw new OddsRefusal(
       `no session before ${request.planDate}: the rule has no history to run over`,
     );
 

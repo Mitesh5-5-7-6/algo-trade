@@ -1,7 +1,13 @@
 import type { Db } from "mongodb";
-import { istDayStart, type Candle, type CandleInterval } from "@neelkanth/core";
+import {
+  istDateKey,
+  istDayStart,
+  type Candle,
+  type CandleInterval,
+} from "@neelkanth/core";
 import {
   CandlesRepository,
+  COLLECTIONS,
   StrategyExperimentsRepository,
 } from "@neelkanth/db";
 import {
@@ -77,4 +83,41 @@ export async function loadCandlesBefore(
     ),
   );
   return perSymbol.flat();
+}
+
+/** What the store holds for one symbol: enough to say what a plan can use. */
+export interface StoredCoverage {
+  symbol: string;
+  bars: number;
+  /** IST dates of the first and last stored bar. */
+  firstDate: string;
+  lastDate: string;
+}
+
+/** The symbols with stored bars at this interval, and their span — read only. */
+export async function storedCoverage(
+  db: Db,
+  interval: CandleInterval,
+): Promise<StoredCoverage[]> {
+  const rows = await db
+    .collection(COLLECTIONS.candles)
+    .aggregate<{ _id: string; bars: number; first: number; last: number }>([
+      { $match: { interval } },
+      {
+        $group: {
+          _id: "$symbol",
+          bars: { $sum: 1 },
+          first: { $min: "$ts" },
+          last: { $max: "$ts" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ])
+    .toArray();
+  return rows.map((row) => ({
+    symbol: row._id,
+    bars: row.bars,
+    firstDate: istDateKey(row.first),
+    lastDate: istDateKey(row.last),
+  }));
 }

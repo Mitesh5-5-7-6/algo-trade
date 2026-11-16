@@ -1,4 +1,5 @@
 import type { SessionPool } from "./pool.js";
+import { OddsRefusal } from "./refusal.js";
 
 /**
  * Bumped whenever the same plan, pool, seed and window would give different
@@ -78,22 +79,22 @@ export function resample(
 ): ResampleResult {
   const long = plan.side === "LONG";
   if (long ? plan.stop >= plan.entry : plan.stop <= plan.entry)
-    throw new Error(
+    throw new OddsRefusal(
       `a ${long ? "long" : "short"}'s stop must be ${long ? "below" : "above"} its entry`,
     );
   if (long ? plan.target <= plan.entry : plan.target >= plan.entry)
-    throw new Error(
+    throw new OddsRefusal(
       `a ${long ? "long" : "short"}'s target must be ${long ? "above" : "below"} its entry`,
     );
   if (pool.sessions.length === 0)
-    throw new Error("no sessions in the pool: nothing to draw from");
+    throw new OddsRefusal("no sessions in the pool: nothing to draw from");
   const lastBar = pool.barsPerSession - 1;
   if (
     !Number.isInteger(plan.entryBar) ||
     plan.entryBar < 0 ||
     plan.entryBar > lastBar
   )
-    throw new Error(
+    throw new OddsRefusal(
       `entryBar ${String(plan.entryBar)} is not a bar of a ${String(pool.barsPerSession)}-bar session`,
     );
 
