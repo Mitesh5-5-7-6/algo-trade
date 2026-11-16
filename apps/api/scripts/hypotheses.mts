@@ -9,7 +9,9 @@
  *       --metric=expectancy --direction=less --threshold=0 [--alpha=0.05] [--min-sample=30] \
  *       --in-sample=2025-09-29:2026-03-27 --out-of-sample=2026-03-30:2026-09-28 \
  *       --symbols=NSE:NIFTY50-INDEX,NSE:NIFTYBANK-INDEX --index-symbols=... --capital=1000000 \
- *       [--seed=0] [--window=0] [--regime-index=NSE:NIFTY50-INDEX]
+ *       [--seed=0] [--window=0] [--regime-index=NSE:NIFTY50-INDEX]  *       [--strategy-params='{"ORB":{"trendEmaPeriod":21}}']
+ *     --strategy-params pins a parameter variant per strategy type: the claim
+ *     is then about that variant, in sample and out.
  *
  *   register-proposals — register the research agent's proposals (Phase 12):
  *     ... scripts/hypotheses.mts register-proposals --answer=ans_… \
@@ -153,6 +155,14 @@ try {
         allocatedCapital: Number(required("capital")),
         limits: DEFAULT_GLOBAL_SETTINGS.globalRiskLimits,
         seed: Number(args.get("seed") ?? "0"),
+        ...(args.get("strategy-params") === undefined
+          ? {}
+          : {
+              strategyParams: JSON.parse(required("strategy-params")) as Record<
+                string,
+                Record<string, unknown>
+              >,
+            }),
       };
       const inSample = window("in-sample");
       const regime = {
