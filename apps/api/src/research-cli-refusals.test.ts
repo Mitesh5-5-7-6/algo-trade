@@ -136,3 +136,42 @@ describe("validation.mts refuses on every command, reads too (19.3)", () => {
     expect(r.stderr).not.toMatch(/refusing/);
   });
 });
+
+/**
+ * Task 17.6 (design §6.1 D7): setup odds reads the research dataset and
+ * keeps its runs beside the other experiments — never in a trading database.
+ */
+describe("odds.mts refuses a database it must not touch (17.6)", () => {
+  const SETUP_REFUSED = (db: string) =>
+    new RegExp(
+      `refusing "${db}": setup odds reads and writes only neelkanth_research or a scratch neelkanth_it_\\*/neelkanth_ci_\\* database`,
+    );
+
+  it("refuses one named by --db, before connecting", () => {
+    const r = run(
+      "odds.mts",
+      ["--db=neelkanth_paper"],
+      NOWHERE("neelkanth_research"),
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(SETUP_REFUSED("neelkanth_paper"));
+  });
+
+  it("refuses the one MONGO_URI names when --db is absent, dry run or not", () => {
+    for (const db of ["neelkanth", "neelkanth_live", "neelkanth_paper"]) {
+      const r = run("odds.mts", ["--dry-run"], NOWHERE(db));
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(SETUP_REFUSED(db));
+    }
+  });
+
+  it("lets the research and scratch databases through", () => {
+    for (const db of ["neelkanth_research", "neelkanth_it_odds"]) {
+      const r = run("odds.mts", [`--db=${db}`], NOWHERE("neelkanth"));
+      // Past the guard: it fails later, on a missing argument or the
+      // connection, but never with a refusal.
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).not.toMatch(/refusing/);
+    }
+  });
+});
