@@ -66,6 +66,46 @@ describe("replay.mts refuses a database it must not touch (19.3)", () => {
   });
 });
 
+/**
+ * The historical backfill writes the research dataset, so it takes the same
+ * rule. Before it had one, it wrote to whichever database MONGO_URI named —
+ * and the operator's env file names the paper database, where a year of
+ * broker history would have landed beside the paper session's own bars.
+ */
+describe("backfill-candles.mts writes history only to research", () => {
+  it("refuses a trading database named by --db, before connecting", () => {
+    const r = run(
+      "backfill-candles.mts",
+      ["--db=neelkanth_paper"],
+      NOWHERE("neelkanth_research"),
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(REFUSED("neelkanth_paper"));
+  });
+
+  it("refuses the one MONGO_URI names when --db is absent", () => {
+    for (const db of ["neelkanth_paper", "neelkanth", "neelkanth_live"]) {
+      const r = run("backfill-candles.mts", [], NOWHERE(db));
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(REFUSED(db));
+    }
+  });
+
+  it("lets --db choose research or scratch over the one MONGO_URI names", () => {
+    for (const db of ["neelkanth_research", "neelkanth_it_backfill"]) {
+      const r = run(
+        "backfill-candles.mts",
+        [`--db=${db}`],
+        NOWHERE("neelkanth_paper"),
+      );
+      // Past the guard: it stops on the first missing argument instead.
+      expect(r.status).toBe(1);
+      expect(r.stderr).not.toMatch(/refusing/);
+      expect(r.stderr).toMatch(/--from=<value> is required/);
+    }
+  });
+});
+
 describe("validation.mts refuses on every command, reads too (19.3)", () => {
   for (const command of ["list", "verdict", "declare", "walk-forward"])
     it(`refuses ${command} against a trading database, in one line`, () => {
