@@ -66,6 +66,37 @@ export const ALLOW = {
       },
     },
   },
+  // Task 19.4: one plan's odds, by resampling and by its rule's history.
+  // Always a dry run: a kept run is the operator's.
+  "apps/api/scripts/odds.mts": {
+    env: ".env.local",
+    refusal: "apps/api/scripts/odds.mts:69",
+    commands: {
+      "": {
+        flags: [
+          "--symbol",
+          "--side",
+          "--entry",
+          "--stop",
+          "--target",
+          "--date",
+          "--time",
+          "--rule-type",
+          "--rule-params",
+          "--index-symbols",
+          "--replays",
+          "--seed",
+          "--window",
+          "--pool-sessions",
+          "--capital",
+          "--db",
+          "--dns",
+          "--dry-run",
+        ],
+        required: ["--db", "--dry-run"],
+      },
+    },
+  },
   // Task 19.3: the candidates and their verdicts — the two reads only.
   // declare is the operator's act; walk-forward and backtest --save keep
   // results, and a new walk-forward changes what verdict judges by default.
