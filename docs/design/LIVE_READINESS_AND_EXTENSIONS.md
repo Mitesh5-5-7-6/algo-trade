@@ -479,6 +479,40 @@ Adopted from the reference's scanner.
   figure — 50 data requests a minute — because finding the limit by exceeding
   it costs the account its market data for the rest of the day after the
   third time, and that is the paper session's feed.
+- **D11 — Daily bars are a candle interval, and only research reads them
+  (Q3, decided by the operator 2026-11-17: option (a)).** `CandleInterval`
+  gains `1d`. Two guards keep it out of trading: the strategy registry
+  refuses to instantiate a strategy on it — the one door live, paper, replay
+  and backtest all go through — and the live aggregator refuses to be built
+  with it. A daily bar is stamped 00:00 UTC of its IST trading date, 05:30
+  IST: that is FYERS's own stamp for resolution `D` (measured 2026-11-17 —
+  RELIANCE's bar of 2026-11-16 arrived as `1794787200`) and it is what
+  `floor(ts / day) * day` gives, so alignment needs no special case;
+  validation drops only the session-hours check for it. One request covered
+  366 days at `D` (measured: 249 bars of RELIANCE for a year), against 100
+  for the intraday resolutions. Fetched by
+  `backfill-candles.mts --interval=1d --max-days=366`, with `--real-volume`
+  for the cash equities, whose volume is real; an index's stays SUSPECT.
+- **D12 — The conditions (18.3).** Three Phase 5 detectors at their default
+  parameters: `EMA_CROSS`, `HIGH_VOLUME_BREAKOUT`, `RSI_REVERSION`.
+  `ORB_BREAKOUT` and `VWAP_RECLAIM` are left out — both are anchored to an
+  intraday session, and a daily bar has neither. On the daily interval the
+  sweep's detector window spans sessions, since each bar is one; otherwise a
+  "20-bar high" could never be seen. A member is a candidate when at least
+  one condition held on the data day's bar — the last trading day before the
+  scan day — and otherwise rejected as `NO_CONDITION`, `NOT_JUDGEABLE`
+  (every condition warming up or declining untrusted volume), `STALE_DATA`
+  or `NO_BARS`, each with every condition's verdict and the bar's time. A
+  bar on or after the scan day is refused, not filtered: it is a broken
+  caller. An index cannot be judged by `HIGH_VOLUME_BREAKOUT` while its
+  volume is SUSPECT; the other two still judge it.
+- **D13 — Served like the odds (D16).** `POST /scan` and
+  `GET /scan/coverage` on the research service, relayed by the trading API
+  as `/research/scan` and `/research/scan/coverage`. The service fetches
+  the two public symbol files at most once per IST day (about 19 MB), and
+  reads the trading calendar from `apps/api/scripts/calendars/nse-2025-26.json`
+  — the backfill's. A dashboard scan keeps nothing by default; a kept one is
+  a `SCAN` experiment with the files' sha256 in its manifest.
 
 ### 7.2 Open questions
 
@@ -488,8 +522,8 @@ Adopted from the reference's scanner.
   those answers.
 - **Q2.** Where scan runs are kept: the research database, or the trading
   deployment's read-only side. **Decided: the research database, D8.**
-- **Q3 — Daily bars have no interval to be stored under (open, found
-  2026-11-17).** `CandleInterval` is `1m` to `60m`; D8's daily bars and D4's
+- **Q3 — Daily bars have no interval to be stored under (found
+  2026-11-17; decided: (a), D11).** `CandleInterval` is `1m` to `60m`; D8's daily bars and D4's
   detectors, which take candles, need a daily one. Two ways:
   - **(a)** Add `1d` to the candle interval, with two guards so trading can
     never decide on it — the strategy registry refuses a daily strategy, the
@@ -500,7 +534,7 @@ Adopted from the reference's scanner.
     are not used, and 18.3 says they are.
 
   Recommended: (a). It is a change to a core type, so it is the operator's to
-  approve before it is made.
+  approve before it is made. **The operator chose (a) on 2026-11-17 — D11.**
 
 ---
 
