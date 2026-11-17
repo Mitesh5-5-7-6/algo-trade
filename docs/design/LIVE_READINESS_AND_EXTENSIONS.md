@@ -351,6 +351,63 @@ history half.
   `strategy_experiments` document, `kind: "SETUP_ODDS"`, in the research
   database: the same collection, indexes and never-overwrite rule as the
   counterfactual runs, not a new collection for the same concept.
+- **D16 — Served by a separate research service (decided by the operator
+  2026-11-16).** The operator wants the odds in the dashboard. They are not
+  computed in the trading process: a rule's history replays a year of
+  sessions on one thread — seven seconds on the stored year — and that work
+  must not share an event loop with live ticks and exits; and the trading
+  deployment holds the paper database, not the research one (ADR §8.1).
+  So:
+  - **The research service** is its own process on the research database:
+    `apps/api/src/research-api/`, started with
+    `node dist/research-api/main.js`. It refuses, by name and before it
+    connects, any database but `neelkanth_research` or a scratch one. It
+    holds no broker, no Redis and no trading repository. Every route but the
+    health probes needs a shared secret as a bearer token.
+  - **The trading API relays.** The dashboard is a static site whose one
+    credential is the session cookie for the trading API, and that cookie is
+    never sent to another origin. So the dashboard asks the trading API
+    (`/research/odds`, `/research/odds/coverage`, behind the same session
+    guard as every other route) and `apps/api/src/control-plane/research-relay.ts`
+    passes the request on with the secret. It runs no research code and opens
+    no research database. Unconfigured or unanswered, it says so with a 503
+    and nothing else in the trading process changes (ADR §5.6).
+  - **Placement — reported, not silently chosen.** ADR §6 names
+    `apps/research-api` (with `packages/research`) for the day a research
+    API lands. The service is instead a second entry point inside `apps/api`:
+    the replay, the validation statistics and the odds code it calls all live
+    in `apps/api/src`, and a separate workspace could reach them only after
+    they moved to a shared package — a refactor of some hundred files that
+    this task does not justify. The process, the deployment and the database
+    are separate, which is what ADR §5.6 and §8.1 ask for; the workspace is
+    not, yet. Moving it is the ADR's own later step.
+  - **A dashboard run keeps nothing by default** (`save: false`); a kept run
+    is still a `SETUP_ODDS` experiment (D15).
+
+### 6.3 Deploying the research service
+
+One more web service on the same host as the API, from the same repository
+and the same build.
+
+| Setting              | Value                                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Build command        | the API service's own (it builds `apps/api/dist`)                                                                 |
+| Start command        | `node apps/api/dist/research-api/main.js`                                                                         |
+| `MONGO_URI`          | the same cluster, with the database `neelkanth_research`. Any other name is refused at start                      |
+| `RESEARCH_API_TOKEN` | a new random secret of 32 characters or more                                                                      |
+| `PORT`               | set by the platform; the service then binds every interface. Locally it is `127.0.0.1:4100` (`RESEARCH_API_PORT`) |
+| Health check path    | `/health/ready`                                                                                                   |
+
+Then, on the **API** service, set `RESEARCH_API_URL` to the research
+service's address and `RESEARCH_API_TOKEN` to the same secret — both or
+neither — and redeploy the API and the dashboard. The dashboard needs no new
+setting: it reaches research through the API.
+
+To check it: the dashboard's **Time Machine** tab shows the stored dates under
+the form. "Research data unavailable: the research service is not configured
+for this deployment" means the API's two settings are missing; "did not
+answer" means the service is down or its address is wrong; "refused this
+deployment's credentials" means the two secrets differ.
 
 ### 6.2 Open questions
 
