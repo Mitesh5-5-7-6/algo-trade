@@ -103,4 +103,15 @@ export function registerResearchRelay(
     const { status, payload } = await relay("POST", "/odds", request.body);
     return reply.status(status).send(payload);
   });
+
+  // The pre-open scan (design §7.1 D8): the same relay, the same guard.
+  app.get("/research/scan/coverage", async (_request, reply) => {
+    const { status, payload } = await relay("GET", "/scan/coverage", undefined);
+    return reply.status(status).send(payload);
+  });
+
+  app.post("/research/scan", async (request, reply) => {
+    const { status, payload } = await relay("POST", "/scan", request.body);
+    return reply.status(status).send(payload);
+  });
 }

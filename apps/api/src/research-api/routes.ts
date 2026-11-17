@@ -1,10 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Db } from "mongodb";
 import { z } from "zod";
+import { istDateKey, isTradingDayIST } from "@neelkanth/core";
 import { DEFAULT_GLOBAL_SETTINGS } from "@neelkanth/db";
 import { UnauthorizedError, ValidationError } from "../errors.js";
 import { OddsRefusal } from "../odds/refusal.js";
 import { setupOddsFromStore, storedCoverage } from "../odds/store.js";
+import {
+  loadTradingCalendar,
+  type TradingCalendar,
+} from "../scanner/calendar.js";
+import { fetchSymbolFiles, scanFromStore } from "../scanner/store.js";
 import type { ApiServer } from "../server.js";
 
 export interface ResearchRoutesDeps {
@@ -13,6 +19,13 @@ export interface ResearchRoutesDeps {
   /** The shared secret a caller must present as a bearer token. */
   token: string;
   now: () => number;
+  /**
+   * The broker's public symbol files, for the scan's universe. Fetched from
+   * the broker when omitted; injected for tests.
+   */
+  symbolFiles?: () => Promise<{ fo: string; cm: string }>;
+  /** Defaults to the shared NSE calendar file. */
+  calendar?: TradingCalendar;
 }
 
 /**
@@ -42,6 +55,16 @@ const OddsBody = z
     window: z.number().int().min(0).max(12).default(1),
     poolSessions: z.number().int().min(1).optional(),
     capital: z.number().positive().default(1_000_000),
+    /** Keep the run beside the other experiments. Default: keep nothing. */
+    save: z.boolean().default(false),
+  })
+  .strict();
+
+/** A pre-open scan, as the dashboard asks for it (design §7.1 D8). */
+const ScanBody = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "an IST date, YYYY-MM-DD"),
+    minDaysToExpiry: z.number().int().min(0).max(30).default(2),
     /** Keep the run beside the other experiments. Default: keep nothing. */
     save: z.boolean().default(false),
   })
@@ -144,4 +167,65 @@ export function registerResearchRoutes(
       throw error;
     }
   });
+
+  const calendar = deps.calendar ?? loadTradingCalendar();
+  const symbolFiles = deps.symbolFiles ?? cachedSymbolFiles(deps.now);
+
+  /** The daily bars the scan can judge on, per symbol. */
+  app.get("/scan/coverage", () => storedCoverage(deps.db, "1d"));
+
+  app.post("/scan", async (request) => {
+    const body = parse(ScanBody, request.body);
+    if (
+      !isTradingDayIST(body.date, calendar.holidays, calendar.specialSessions)
+    )
+      throw new ValidationError(
+        `${body.date} is not a trading day: a pre-open scan is for a day the exchange opens`,
+      );
+    const createdAt = deps.now();
+    const experimentId = `scan_${String(createdAt)}`;
+    const { run, manifest, saved } = await scanFromStore(deps.db, {
+      scanDate: body.date,
+      files: await symbolFiles(),
+      minDaysToExpiry: body.minDaysToExpiry,
+      holidays: calendar.holidays,
+      specialSessions: calendar.specialSessions,
+      experimentId,
+      createdAt,
+      save: body.save,
+    });
+    return {
+      experimentId: saved ? experimentId : null,
+      saved,
+      fingerprint: run.fingerprint,
+      manifest,
+      result: run.result,
+    };
+  });
+}
+
+/**
+ * The symbol files, fetched once per IST day. They are some 19 MB together
+ * and the broker republishes them daily, so a second scan the same day reuses
+ * the first one's copy rather than downloading them again.
+ */
+function cachedSymbolFiles(
+  now: () => number,
+): () => Promise<{ fo: string; cm: string }> {
+  let cached: {
+    day: string;
+    files: Promise<{ fo: string; cm: string }>;
+  } | null = null;
+  return () => {
+    const day = istDateKey(now());
+    if (cached?.day !== day) {
+      const files = fetchSymbolFiles();
+      // A failed fetch is not kept: the next scan tries again.
+      files.catch(() => {
+        cached = null;
+      });
+      cached = { day, files };
+    }
+    return cached.files;
+  };
 }

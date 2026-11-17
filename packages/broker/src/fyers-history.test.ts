@@ -248,6 +248,30 @@ describe("getHistory — normalization", () => {
     expect(url.searchParams.get("range_to")).toBe("2026-01-05");
     expect(calls[0]?.headers["Authorization"]).toBe("APP-100:tok");
   });
+
+  /**
+   * Research only (§7.2 Q3). The row's stamp is FYERS's own for "D":
+   * 00:00 UTC of the IST date — 05:30 IST, outside the session hours an
+   * intraday bar is held to — and it is kept, not rejected.
+   */
+  it("asks for resolution D for daily bars and keeps the bar FYERS stamps 05:30 IST", async () => {
+    const day = Date.UTC(2026, 0, 5);
+    const { fetchImpl, calls } = scriptedFetch([
+      { body: { s: "ok", candles: [row(day)] } },
+    ]);
+    const result = await provider({ fetch: fetchImpl }).getHistory({
+      symbol: "NSE:RELIANCE-EQ",
+      interval: "1d",
+      fromTs: day - IST_OFFSET_MS,
+      toTs: day - IST_OFFSET_MS + 86_400_000,
+    });
+    expect(new URL(calls[0]?.url ?? "").searchParams.get("resolution")).toBe(
+      "D",
+    );
+    expect(result.rejected).toEqual([]);
+    expect(result.candles).toMatchObject([{ interval: "1d", ts: day }]);
+    expect(result.coverage.missingDays).toEqual([]);
+  });
 });
 
 describe("getHistory — the requested window", () => {

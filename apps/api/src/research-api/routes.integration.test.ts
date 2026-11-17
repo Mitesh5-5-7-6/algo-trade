@@ -15,6 +15,14 @@ import {
   probeMongo,
   type MongoProbe,
 } from "../test-support/infra.js";
+import { runScan } from "../scanner/scan.js";
+import {
+  cashRow,
+  dailyBreakout,
+  dailySeries,
+  futureRow,
+} from "../scanner/test-support.js";
+import { buildUniverse } from "../scanner/universe.js";
 import { registerResearchRoutes } from "./routes.js";
 
 /**
@@ -81,6 +89,34 @@ const BODY = {
   window: 0,
 };
 
+/**
+ * The scan's world (18.5): two stock underlyings, RELIANCE breaking out on
+ * Monday 2026-11-16 and INFY flat, plus a RELIANCE bar of the scan day
+ * itself — which a pre-open scan for 2026-11-17 must never see.
+ */
+const DATA_DAY = Date.UTC(2026, 10, 16);
+const SCAN_BARS = [
+  ...dailyBreakout("NSE:RELIANCE-EQ", DATA_DAY),
+  ...dailySeries("NSE:INFY-EQ", 40, DATA_DAY),
+  ...dailySeries("NSE:RELIANCE-EQ", 1, Date.UTC(2026, 10, 17), {
+    close: 50,
+    low: 49,
+    open: 50,
+    high: 51,
+  }),
+];
+const EXPIRY = Date.UTC(2026, 10, 24, 10);
+const SYMBOL_FILES = {
+  fo: [
+    futureRow("RELIANCE", EXPIRY, 500, "10100000002885"),
+    futureRow("INFY", EXPIRY, 400, "10100000001594"),
+  ].join("\n"),
+  cm: [
+    cashRow("10100000002885", "RELIANCE", "NSE:RELIANCE-EQ"),
+    cashRow("10100000001594", "INFY", "NSE:INFY-EQ"),
+  ].join("\n"),
+};
+
 const post = (payload: unknown, headers: Record<string, string> = AUTH) =>
   app.inject({
     method: "POST",
@@ -102,6 +138,7 @@ beforeAll(async () => {
   await seedCandles(connection.db, [
     ...BEFORE,
     ...orbDay("2026-03-06", "STOP"), // the plan's own day
+    ...SCAN_BARS,
   ]);
   app = buildServer({
     logger: createLogger({
@@ -119,6 +156,12 @@ beforeAll(async () => {
     db: connection.db,
     token: TOKEN,
     now: () => 5_000,
+    symbolFiles: () => Promise.resolve(SYMBOL_FILES),
+    calendar: {
+      source: "test",
+      holidays: new Set(),
+      specialSessions: new Set(),
+    },
   });
   await app.ready();
 }, 120_000);
@@ -246,6 +289,129 @@ describe("the research service's routes (17.8)", () => {
         bars: 375,
         firstDate: "2026-03-02",
         lastDate: "2026-03-06",
+      },
+    ]);
+  }, 60_000);
+});
+
+describe("the research service's scan (18.5)", () => {
+  const scan = (payload: unknown, headers: Record<string, string> = AUTH) =>
+    app.inject({
+      method: "POST",
+      url: "/scan",
+      headers,
+      payload: payload as object,
+    });
+
+  it("answers no one without the shared secret", async () => {
+    expect((await scan({ date: "2026-11-17" }, {})).statusCode).toBe(401);
+    const coverage = await app.inject({ method: "GET", url: "/scan/coverage" });
+    expect(coverage.statusCode).toBe(401);
+  }, 60_000);
+
+  it("gives the scan the pure run gives, blind to the scan day, and keeps nothing unless asked", async () => {
+    const before = await snapshot();
+    const response = await scan({ date: "2026-11-17" });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<{
+      saved: boolean;
+      fingerprint: string;
+      result: {
+        dataDate: string;
+        status: string;
+        candidates: { underlying: string; close: number; dataTime: number }[];
+        rejected: { underlying: string; reason: string }[];
+      };
+    }>();
+
+    // The pure scan over only the bars before the scan day.
+    const universe = buildUniverse(SYMBOL_FILES, {
+      asOf: Date.UTC(2026, 10, 17, 3, 30),
+      minDaysToExpiry: 2,
+    });
+    const before17 = SCAN_BARS.filter(
+      (c) => c.ts < Date.UTC(2026, 10, 16, 18, 30),
+    );
+    const pure = runScan({
+      scanDate: "2026-11-17",
+      members: universe.members,
+      universeRejected: universe.rejected,
+      barsBySymbol: new Map(
+        ["NSE:RELIANCE-EQ", "NSE:INFY-EQ"].map((s) => [
+          s,
+          before17.filter((c) => c.symbol === s),
+        ]),
+      ),
+    });
+    expect(body.fingerprint).toBe(pure.fingerprint);
+    expect(body.saved).toBe(false);
+    expect(body.result.dataDate).toBe("2026-11-16");
+    expect(body.result.status).toBe("PARTIAL");
+    // Judged on Monday's breakout close, not the scan day's 50.
+    expect(body.result.candidates).toMatchObject([
+      { underlying: "RELIANCE", close: 110, dataTime: DATA_DAY },
+    ]);
+    expect(body.result.rejected).toMatchObject([
+      { underlying: "INFY", reason: "NO_CONDITION" },
+    ]);
+    expect(await kept()).toHaveLength(0);
+    expect(await snapshot()).toEqual(before);
+
+    // Twice, identical (18.6).
+    expect((await scan({ date: "2026-11-17" })).json()).toEqual(body);
+  }, 60_000);
+
+  it("keeps the run when asked, as a SCAN experiment and nowhere else", async () => {
+    const before = await snapshot();
+    const response = await scan({ date: "2026-11-17", save: true });
+    expect(response.json()).toMatchObject({
+      experimentId: "scan_5000",
+      saved: true,
+    });
+    const docs = await kept();
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatchObject({
+      experimentId: "scan_5000",
+      kind: "SCAN",
+      manifest: { minDaysToExpiry: 2, universeVersion: "1" },
+    });
+    expect(await snapshot()).toEqual(before);
+  }, 60_000);
+
+  it("refuses a day the exchange is shut, and a request it does not know", async () => {
+    for (const [payload, words] of [
+      [{ date: "2026-11-15" }, /not a trading day/],
+      [{ date: "17-11-2026" }, /YYYY-MM-DD/],
+      [{ date: "2026-11-17", minDaysToExpiry: 99 }, /minDaysToExpiry/],
+      [{ date: "2026-11-17", surprise: true }, /surprise/],
+    ] as const) {
+      const response = await scan(payload);
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(
+        response.json<{ error: { message: string } }>().error.message,
+      ).toMatch(words);
+    }
+  }, 60_000);
+
+  it("says which daily bars the store holds", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/scan/coverage",
+      headers: AUTH,
+    });
+    // 40 weekdays back from Monday 2026-11-16 starts on Tuesday 2026-09-22.
+    expect(response.json()).toEqual([
+      {
+        symbol: "NSE:INFY-EQ",
+        bars: 40,
+        firstDate: "2026-09-22",
+        lastDate: "2026-11-16",
+      },
+      {
+        symbol: "NSE:RELIANCE-EQ",
+        bars: 41,
+        firstDate: "2026-09-22",
+        lastDate: "2026-11-17",
       },
     ]);
   }, 60_000);

@@ -177,6 +177,60 @@ describe("sweepPatterns — special sessions", () => {
  * the volume-based detectors could not look, and the sweep says so per
  * detector, as it does for warm-up — while price-only detectors still judge.
  */
+describe("sweepPatterns — the daily interval (§7.2 Q3)", () => {
+  // Four trading days, each one daily bar stamped 00:00 UTC (05:30 IST).
+  const days = [5, 6, 7, 8].map((d) => Date.UTC(2026, 0, d));
+  const daily = (i: number, fields: Partial<Candle> = {}): Candle => ({
+    ...bar(0, 0),
+    interval: "1d",
+    volumeQuality: "REAL",
+    ts: days[i] ?? 0,
+    ...fields,
+  });
+
+  it("sees across days, because each daily bar is a session of its own", () => {
+    const candles = [
+      daily(0, { high: 104 }),
+      daily(1, { high: 105 }),
+      daily(2, { high: 103 }),
+      daily(3, { close: 106, high: 107, volume: 5_000 }),
+    ];
+    const result = sweepPatterns({
+      symbol: "NSE:SWEEP-EQ",
+      interval: "1d",
+      candles,
+      detectors: [detector("HIGH_VOLUME_BREAKOUT", { lookback: 3 })],
+    });
+    expect(result.sessions).toHaveLength(4);
+    expect(result.occurrences).toMatchObject([
+      {
+        patternId: "HIGH_VOLUME_BREAKOUT",
+        direction: "BULLISH",
+        ts: days[3],
+        evidence: { priorHigh: 105, volume: 5_000 },
+      },
+    ]);
+  });
+
+  it("still keeps an intraday window to its own session", () => {
+    // The same four bars as the 5m opening bar of four days: no prior bars
+    // in any session, so no break of a prior high.
+    const candles = [0, 1, 2, 3].map((i) =>
+      bar(DAY_1_OPEN + i * 86_400_000, 0, {
+        volumeQuality: "REAL",
+        ...(i === 3 ? { close: 106, high: 107, volume: 5_000 } : {}),
+      }),
+    );
+    const result = sweepPatterns({
+      symbol: "NSE:SWEEP-EQ",
+      interval: "5m",
+      candles,
+      detectors: [detector("HIGH_VOLUME_BREAKOUT", { lookback: 3 })],
+    });
+    expect(result.occurrences).toEqual([]);
+  });
+});
+
 describe("sweepPatterns — volume quality (D3)", () => {
   it("counts the bars each volume-based detector declined, and still runs the rest", () => {
     const suspect = {

@@ -44,6 +44,14 @@ describe("StrategyRegistry (plan/15 §4)", () => {
     ).toThrow();
   });
 
+  it("refuses a strategy on daily bars, which are research data only (§7.2 Q3)", () => {
+    const registry = new StrategyRegistry();
+    registry.register({ ...fakeDef, type: "DAILY", interval: () => "1d" });
+    expect(() =>
+      registry.instantiate("DAILY", { threshold: 5 }, "NSE:X-EQ"),
+    ).toThrow(/refuses the 1d interval/);
+  });
+
   it("fails loudly on an unknown type", () => {
     const registry = new StrategyRegistry();
     expect(() => registry.instantiate("GHOST", {}, "NSE:X-EQ")).toThrow(

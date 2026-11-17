@@ -78,7 +78,22 @@ const INTERVAL_MS: Record<CandleInterval, number> = {
   "15m": 900_000,
   "30m": 1_800_000,
   "60m": 3_600_000,
+  // A daily bar's bucket is 00:00 UTC of its IST trading date — 05:30 IST,
+  // before the open. That is FYERS's own stamp for resolution "D" (measured
+  // 2026-11-17: RELIANCE's 2026-11-16 bar arrived as 1794787200), and it is
+  // what `floor(ts / day) * day` gives, so alignment needs no special case.
+  "1d": 86_400_000,
 };
+
+/**
+ * True for the daily interval, which is research-only (§7.2 Q3): bars of it
+ * come from the broker's history and are read by the scanner. The trading
+ * path refuses it in two places — a strategy cannot be instantiated on it,
+ * and the live aggregator cannot be built with it.
+ */
+export function isDailyInterval(interval: CandleInterval): boolean {
+  return interval === "1d";
+}
 
 /**
  * Bucket width for an interval.

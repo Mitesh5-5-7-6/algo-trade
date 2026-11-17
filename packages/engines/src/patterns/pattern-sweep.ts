@@ -1,5 +1,6 @@
 import {
   intervalMs,
+  isDailyInterval,
   istDateKey,
   sessionOpenTsFor,
   type Candle,
@@ -175,6 +176,11 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
   }
 
   const barMs = intervalMs(interval);
+  // A daily bar is a whole session, so a session-scoped window would hold one
+  // bar and a "20-bar high" could never be seen. On the daily interval the
+  // window is the series itself — the daily-interval sweep the note above
+  // leaves structures that span days to (design §7.2 Q3).
+  const windowSpansSessions = isDailyInterval(interval);
   let sessionDate: string | null = null;
   let sessionOpenTs = 0;
   let sessionBars: Candle[] = [];
@@ -188,7 +194,7 @@ export function sweepPatterns(request: SweepRequest): SweepResult {
       sessionDate = dateKey;
       sessions.push(dateKey);
       sessionOpenTs = sessionOpenTsFor(candle.ts, request.session);
-      sessionBars = [];
+      if (!windowSpansSessions) sessionBars = [];
       for (const fold of folds.values()) {
         if (fold.sessionAnchored) fold.reset();
       }

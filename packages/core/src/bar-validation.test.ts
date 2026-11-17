@@ -219,6 +219,35 @@ describe("validateBar — timestamps that could not have been a session", () => 
   });
 });
 
+describe("validateBar — a daily bar (research only, §7.2 Q3)", () => {
+  const daily: BarValidationOptions = { interval: "1d" };
+  // FYERS stamps resolution "D" at 00:00 UTC of the IST date — 05:30 IST.
+  const MONDAY = Date.UTC(2026, 0, 5);
+
+  it("accepts the bar stamped 05:30 IST on a trading day, before the open", () => {
+    expect(validateBar(bar({ ts: MONDAY }), daily)).toBeNull();
+    expect(ist(2026, 0, 5, 5, 30)).toBe(MONDAY);
+  });
+
+  it("rejects a daily bar stamped at any other hour", () => {
+    // The intraday open is a sound 5m bar and a misplaced daily one.
+    expect(validateBar(bar({ ts: OPEN }), daily)?.code).toBe("ts-not-aligned");
+  });
+
+  it("still rejects a daily bar on a weekend or a holiday", () => {
+    const saturday = Date.UTC(2026, 0, 3);
+    expect(validateBar(bar({ ts: saturday }), daily)?.code).toBe(
+      "ts-non-trading-day",
+    );
+    expect(
+      validateBar(bar({ ts: MONDAY }), {
+        ...daily,
+        holidays: new Set(["2026-01-05"]),
+      })?.code,
+    ).toBe("ts-non-trading-day");
+  });
+});
+
 describe("validateBar — reporting the most fundamental failure", () => {
   /**
    * A bar can fail several checks at once. Reporting all of them turns one

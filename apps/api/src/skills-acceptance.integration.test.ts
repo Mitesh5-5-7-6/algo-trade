@@ -84,6 +84,9 @@ const VALUES: Record<string, string> = {
   date: "2026-03-16",
   time: "09:40",
   "rule-type": "ORB",
+  // fo-scan (19.4): a weekday the calendar opens; the scratch store holds no
+  // daily bars, so every underlying is reported as having none.
+  "scan-date": "2026-11-17",
 };
 
 /**
@@ -179,6 +182,12 @@ function run(c: Command, args: string[], mongoUri: string) {
     env: {
       PATH: process.env["PATH"] ?? "",
       SystemRoot: process.env["SystemRoot"] ?? "",
+      // The machine's trust store, not a credential: a CLI that reaches the
+      // broker's public files (fo-scan) fails TLS without it on a network
+      // that inspects HTTPS, exactly as it would in the operator's shell.
+      ...(process.env["NODE_EXTRA_CA_CERTS"] === undefined
+        ? {}
+        : { NODE_EXTRA_CA_CERTS: process.env["NODE_EXTRA_CA_CERTS"] }),
       ...(c.envFile ? { MONGO_URI: mongoUri } : {}),
     },
     encoding: "utf8",
@@ -317,7 +326,7 @@ const reachable = () =>
   research?.reachable === true && paper?.reachable === true;
 
 describe("the skills found (19.5)", () => {
-  it("are the four 19.1–19.3 added and 19.4's setup-odds, at least", () => {
+  it("are the four 19.1–19.3 added and 19.4's setup-odds and fo-scan, at least", () => {
     expect(skills.map((s) => s.name)).toEqual(
       expect.arrayContaining([
         "board-status",
@@ -325,6 +334,7 @@ describe("the skills found (19.5)", () => {
         "paper-report",
         "replay",
         "setup-odds",
+        "fo-scan",
       ]),
     );
     for (const s of skills) {

@@ -17,8 +17,23 @@ export type InstrumentSymbol = z.infer<typeof SymbolSchema>;
 export const TradeModeSchema = z.enum(["paper", "live"]);
 export type TradeMode = z.infer<typeof TradeModeSchema>;
 
-/** Candle interval. 5m/15m are composed from 1m bars (plan/17 §5). */
-export const CandleIntervalSchema = z.enum(["1m", "5m", "15m", "30m", "60m"]);
+/**
+ * Candle interval. 5m/15m are composed from 1m bars (plan/17 §5).
+ *
+ * `1d` is a research interval only (design LIVE_READINESS_AND_EXTENSIONS
+ * §7.2 Q3, decided 2026-11-17): the scanner's daily bars, fetched from the
+ * broker's history. Nothing trades on it — the strategy registry refuses a
+ * daily strategy and the live aggregator refuses a daily bucket — see
+ * `isDailyInterval`.
+ */
+export const CandleIntervalSchema = z.enum([
+  "1m",
+  "5m",
+  "15m",
+  "30m",
+  "60m",
+  "1d",
+]);
 export type CandleInterval = z.infer<typeof CandleIntervalSchema>;
 
 /** Confidence is the bounded channel the AI may modulate (plan/15 §6, plan/20 §2). */

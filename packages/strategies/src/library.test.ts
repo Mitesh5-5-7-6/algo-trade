@@ -27,6 +27,7 @@ const INTERVAL_MINUTES: Record<CandleInterval, number> = {
   "15m": 15,
   "30m": 30,
   "60m": 60,
+  "1d": 1440,
 };
 
 interface BarOpts {

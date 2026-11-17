@@ -20,6 +20,7 @@ export const qk = {
   controlStatus: ["control", "status"] as const,
   // Research data, not trading state: no socket event invalidates it.
   oddsCoverage: ["research", "odds", "coverage"] as const,
+  scanCoverage: ["research", "scan", "coverage"] as const,
 };
 
 export type QueryKey = Exclude<

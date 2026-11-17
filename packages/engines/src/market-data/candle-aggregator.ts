@@ -1,5 +1,6 @@
 import {
   intervalMs,
+  isDailyInterval,
   type Candle,
   type CandleInterval,
   type Tick,
@@ -36,6 +37,15 @@ export class CandleAggregator {
   constructor(intervals: readonly CandleInterval[]) {
     if (intervals.length === 0) {
       throw new Error("CandleAggregator requires at least one interval");
+    }
+    // A daily bar is research data from the broker's history (§7.2 Q3). Built
+    // from live ticks it would be bucketed from 05:30 IST and closed only by
+    // the next day's first tick — a bar no strategy may ever decide on.
+    const daily = intervals.find(isDailyInterval);
+    if (daily !== undefined) {
+      throw new Error(
+        `CandleAggregator refuses the ${daily} interval: daily bars are research data, never built from live ticks`,
+      );
     }
     this.intervals = intervals;
   }
