@@ -447,6 +447,38 @@ Adopted from the reference's scanner.
   volume, and price band, each only from a verified source.
 - **D6 — Partial results say so.** A scan that stops short of its universe
   (rate limits, missing bars) is labelled PARTIAL with what was skipped.
+- **D7 — Built ahead of 15.2, 15.6 and 15.12 (decided by the operator
+  2026-11-16).** §2.2 placed the scanner after three Live-readiness tasks;
+  the operator asked for it now. What each was for, and what stands in for it:
+  - _15.6, the instrument master refreshed daily:_ the scan reads the
+    broker's public symbol files itself, at scan time (D9). It does not need
+    the trading process's copy.
+  - _15.12, the ban list:_ not available. Until its source is verified (§11),
+    no scan checks it, and **every scan is PARTIAL** and says "the F&O ban
+    list was not checked" (D5, D6). A candidate may be a banned security.
+  - _15.2, the broker ports:_ a scan on stored bars reads no positions, order
+    book or funds.
+- **D8 — A pre-open scan on daily bars, in research (Q1, Q2, decided
+  2026-11-16).** The scan is research: it reads bars already stored, keeps its
+  runs in the research database, and is served by the research service (§6.1
+  D16). Fetching the bars is the backfill's job, with the broker's token; the
+  scan never calls the broker. Intraday scanning waits, as Q1 says: the data
+  socket carries 100 symbols on the Standard plan (§11.1), fewer than the
+  universe.
+- **D9 — The universe is joined by token, not by name (found 2026-11-17).**
+  A derivative's row in the F&O file carries the fyToken of what it derives
+  from, and that token is the first column of the underlying's own row in the
+  cash file. So `BANKNIFTY` becomes `NSE:NIFTYBANK-INDEX` from the files
+  themselves, with no table of index names to go stale — on the files of
+  2026-11-17 the join found six index underlyings, one more than anyone would
+  have typed from memory (`NIFTYFPI`). An underlying whose token is missing
+  is rejected with that reason, not guessed.
+- **D10 — The published rate limit is honoured, not probed.** Phase 1 Q3
+  asked for the history rate limit to be measured. It is read from FYERS's
+  own page instead (§11.1) and the backfill is held under the lower plan's
+  figure — 50 data requests a minute — because finding the limit by exceeding
+  it costs the account its market data for the rest of the day after the
+  third time, and that is the paper session's feed.
 
 ### 7.2 Open questions
 
@@ -455,7 +487,20 @@ Adopted from the reference's scanner.
   Version 1 is a pre-open scan on daily bars; intraday scanning waits for
   those answers.
 - **Q2.** Where scan runs are kept: the research database, or the trading
-  deployment's read-only side.
+  deployment's read-only side. **Decided: the research database, D8.**
+- **Q3 — Daily bars have no interval to be stored under (open, found
+  2026-11-17).** `CandleInterval` is `1m` to `60m`; D8's daily bars and D4's
+  detectors, which take candles, need a daily one. Two ways:
+  - **(a)** Add `1d` to the candle interval, with two guards so trading can
+    never decide on it — the strategy registry refuses a daily strategy, the
+    live aggregator refuses a daily bucket — and an IST-day alignment rule for
+    stored daily bars. The detectors then run on daily bars unchanged.
+  - **(b)** A scanner-only daily bar outside the candle type, and conditions
+    written from the indicator folds alone. No core change, but D4's detectors
+    are not used, and 18.3 says they are.
+
+  Recommended: (a). It is a change to a core type, so it is the operator's to
+  approve before it is made.
 
 ---
 

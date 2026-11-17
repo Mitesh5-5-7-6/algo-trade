@@ -135,7 +135,7 @@ phase may only start when its dependency is complete.
 | 15    | Promotion                          | READY       |
 | 16    | Operator notifications (Telegram)  | IN PROGRESS |
 | 17    | Setup odds (the "Time Machine")    | IN PROGRESS |
-| 18    | NSE F&O scanner                    | READY       |
+| 18    | NSE F&O scanner                    | IN PROGRESS |
 | 19    | Operator skills (Claude Code)      | IN PROGRESS |
 | 20    | Corporate announcements (News)     | READY       |
 
@@ -1237,23 +1237,26 @@ process nor a database with trading.
 
 ## 32. Phase 18 — NSE F&O scanner
 
-**STATUS: READY**
+**STATUS: IN PROGRESS**
 
 A track (§4). **Depends on:** 15.2 (broker ports), 15.6 (instrument master
 refresh), 15.12 (the F&O ban list).
+
+**Taken up ahead of those three by the operator's decision of 2026-11-16**
+(design §7.1 D7): until 15.12 lands, every scan is labelled PARTIAL.
 
 Candidates, never signals. Every instrument selected or rejected with its
 reason and the timestamp of its data. Decisions in
 [LIVE_READINESS_AND_EXTENSIONS.md](design/LIVE_READINESS_AND_EXTENSIONS.md) §7.
 
-| ID   | Task                                                                                                                     | STATUS | Commit | Evidence |
-| ---- | ------------------------------------------------------------------------------------------------------------------------ | ------ | ------ | -------- |
-| 18.1 | Answer design Q1–Q2; measure the FYERS history rate limit (Phase 1 Q3)                                                   | READY  | —      | —        |
-| 18.2 | The universe from the instrument master: active F&O underlyings and the indices                                          | READY  | —      | —        |
-| 18.3 | Conditions from the Phase 5 detectors; each instrument selected or rejected with its reason and data time                | READY  | —      | —        |
-| 18.4 | Indian filters from verified sources: the ban list, OI and volume liquidity, price band; a partial scan labelled PARTIAL | READY  | —      | —        |
-| 18.5 | Scan runs kept; operator CLI                                                                                             | READY  | —      | —        |
-| 18.6 | Acceptance: a pre-open scan run twice, identical; nothing the scanner writes is read by the order path                   | READY  | —      | —        |
+| ID   | Task                                                                                                                     | STATUS   | Commit    | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------ | -------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 18.1 | Answer design Q1–Q2; measure the FYERS history rate limit (Phase 1 Q3)                                                   | COMPLETE | `be48fda` | Decided by the operator 2026-11-16 and recorded in `docs/design/LIVE_READINESS_AND_EXTENSIONS.md` §7.1: D7 built ahead of 15.2, 15.6 and 15.12, every scan PARTIAL until the ban list is verified; D8 a pre-open scan on daily bars, kept in the research database and served by the research service (Q1, Q2). The FYERS limit is the published one, read 2026-11-17 and recorded in §11.1 — Data APIs 5 a second, 50 a minute, 5,000 a day on Standard — and deliberately not probed (D10): past the per-minute limit more than three times, the account is blocked for the day                                                                                |
+| 18.2 | The universe from the instrument master: active F&O underlyings and the indices                                          | COMPLETE | `be48fda` | `apps/api/src/scanner/universe.ts` `buildUniverse`: every F&O underlying from the broker's public symbol files, each with the nearest future outside the minimum time to expiry and the symbol whose bars are scanned — joined by the underlying's token, not by a table of names (D9); every underlying a member or a rejection with its reason, unreadable rows counted. `apps/api/src/scanner/universe.test.ts` 6/6; 4 mutants killed (the minimum time ignored, an expired contract kept, options taken as futures, a missing cash symbol let through). On the real files of 2026-11-17: 224 members — 6 indices, 218 stocks — 0 rejected, 0 unreadable rows |
+| 18.3 | Conditions from the Phase 5 detectors; each instrument selected or rejected with its reason and data time                | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 18.4 | Indian filters from verified sources: the ban list, OI and volume liquidity, price band; a partial scan labelled PARTIAL | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 18.5 | Scan runs kept; operator CLI                                                                                             | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 18.6 | Acceptance: a pre-open scan run twice, identical; nothing the scanner writes is read by the order path                   | READY    | —         | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ### Done when
 
