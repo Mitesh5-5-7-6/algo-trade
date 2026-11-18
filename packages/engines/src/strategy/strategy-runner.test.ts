@@ -324,13 +324,17 @@ describe("StrategyRunner decision path (plan/15 §4, §6)", () => {
 });
 
 describe("StrategyRunner gating (plan/15 §4, plan/18 §4)", () => {
-  it("does not analyze until required indicators are ready", async () => {
+  it("does not analyze until required indicators are ready — and says so (2026-11-18)", async () => {
     const h = harness();
     await h.runner.enable(config("NEEDS_EMA"));
-    await fireBar(h, 150, {}); // ema5 absent → skipped
-    expect(h.signals).toHaveLength(0);
+    await fireBar(h, 150, {}); // ema5 absent → a HOLD naming it, no analysis
+    expect(h.signals).toMatchObject([
+      { side: "HOLD", reason: "indicators not ready: ema5" },
+    ]);
+    expect(h.handoffs).toHaveLength(0);
     await fireBar(h, 150, { ema5: 148 }, 2000); // ready
-    expect(h.signals).toHaveLength(1);
+    expect(h.signals).toHaveLength(2);
+    expect(h.signals[1]?.reason).not.toMatch(/not ready/);
   });
 
   it("does not decide when the market is not open", async () => {
