@@ -11,7 +11,10 @@ import {
 import {
   atr,
   avgVolume,
+  bollinger,
   ema,
+  macd,
+  supertrend,
   indicatorKey,
   rsi,
   sma,
@@ -120,6 +123,12 @@ function foldFor(spec: IndicatorSpec): RunningIndicator {
       return box(sma(spec.period));
     case "avgVolume":
       return box(avgVolume(spec.period));
+    case "supertrend":
+      return box(supertrend(spec.period, spec.multiplier));
+    case "macd":
+      return box(macd(spec.fast, spec.slow, spec.signal));
+    case "bollinger":
+      return box(bollinger(spec.period, spec.stdDev));
   }
 }
 
