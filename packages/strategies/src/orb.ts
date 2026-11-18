@@ -172,19 +172,39 @@ export const orb: StrategyDefinition<OrbParams, OrbState> = {
     // bar, held null, and returned "no opening range" for the rest of the day.
     // Reading it out of the candle window instead makes the range a property
     // of the session, identical however long the process has been up.
+    //
+    // Only a COMPLETE range is a range. On 2026-11-18 the feed came up at
+    // 09:29 and the window held one bar of the three — built from 09:29's
+    // ticks alone — and a "range" read from it was traded as if it were the
+    // opening fifteen minutes. So every bucket of the window must be present
+    // before the range is fixed; until then this holds and looks again on the
+    // next bar, which is how bars caught up from the broker's history after
+    // a late start (task 15.3) are taken in.
     if (state.orHigh === null || state.orLow === null) {
+      const buckets = new Set<number>();
+      let high: number | null = null;
+      let low: number | null = null;
       for (const bar of context.candles) {
         if (bar.ts < sessionOpenTs || bar.ts >= rangeEndTs) continue;
-        state.orHigh =
-          state.orHigh === null ? bar.high : Math.max(state.orHigh, bar.high);
-        state.orLow =
-          state.orLow === null ? bar.low : Math.min(state.orLow, bar.low);
+        buckets.add(bar.ts);
+        high = high === null ? bar.high : Math.max(high, bar.high);
+        low = low === null ? bar.low : Math.min(low, bar.low);
       }
-    }
-    if (state.orHigh === null || state.orLow === null) {
-      // Cold start so late that the opening bars have scrolled out of the
-      // window — genuinely unknowable here, and not guessed at.
-      return hold("no opening range for this session");
+      const expected = Math.ceil(
+        (p.rangeMinutes * 60_000) / intervalMs(p.interval),
+      );
+      if (buckets.size === 0 || high === null || low === null) {
+        // Cold start so late that the opening bars have scrolled out of the
+        // window — genuinely unknowable here, and not guessed at.
+        return hold("no opening range for this session");
+      }
+      if (buckets.size < expected) {
+        return hold(
+          `opening range incomplete: ${String(buckets.size)} of ${String(expected)} bars`,
+        );
+      }
+      state.orHigh = high;
+      state.orLow = low;
     }
 
     const range = state.orHigh - state.orLow;

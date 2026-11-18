@@ -37,7 +37,7 @@ import {
   StrategyStateRepository,
   type MongoConnection,
 } from "@neelkanth/db";
-import type { Broker } from "@neelkanth/broker";
+import type { Broker, HistoryProvider } from "@neelkanth/broker";
 import { fyersNormalizer } from "./fyers-normalizer.js";
 import {
   computePortfolio,
@@ -71,6 +71,7 @@ import type { LiveMarketState } from "./live-market-state.js";
 import { reconcilePaperBook } from "./paper-reconciliation.js";
 import { instrumentLookup } from "./synthetic-index.js";
 import { FEED_SILENCE_MS, feedSilentSeconds } from "./feed-health.js";
+import { catchUpSession } from "./session-catch-up.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -194,6 +195,11 @@ export async function startEngineRuntime(deps: {
    * The runtime writes it; the Paper Broker reads it.
    */
   liveState: LiveMarketState;
+  /**
+   * The broker's history, for the bars a late feed missed (task 15.3). Absent,
+   * a feed that connects after the open trades on what it saw.
+   */
+  history?: Pick<HistoryProvider, "getHistory">;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -1098,6 +1104,78 @@ export async function startEngineRuntime(deps: {
       note: "starting with cold windows; the feed still subscribes",
     });
   }
+
+  // Task 15.3: a feed that connects after the open has missed bars — on
+  // 2026-11-18 it connected at 09:29, when the operator logged in, and the
+  // opening range was one partial bar of three. The broker's history still
+  // holds them. Fetched, stored at their higher rank and reloaded into the
+  // windows — never published, so no strategy trades a bar that is gone. Run
+  // on connect, and once more just after the next 5-minute bar closes, which
+  // replaces the bar the live feed built from its first ticks alone.
+  // Indicators are left as they are: re-folding bars into a warm fold would
+  // count them twice, and a few early bars move a slow average very little.
+  let catchUpRunning = false;
+  let catchUpFollowUp: ReturnType<typeof setTimeout> | null = null;
+  const runCatchUp = async (reason: string): Promise<void> => {
+    const history = deps.history;
+    const now = Date.now();
+    if (history === undefined || catchUpRunning) return;
+    if (sessionManager.phase(now) !== "open") return;
+    catchUpRunning = true;
+    try {
+      const symbols = [
+        ...new Set([
+          ...deriveWorkingSet(enabledConfigs.values()),
+          ...settings.indexSymbols,
+        ]),
+      ];
+      const items = await catchUpSession(
+        {
+          now,
+          sessionOpenTs: istMinuteTs(now, openMinute),
+          symbols,
+          intervals: MARKET_INTERVALS,
+        },
+        { history, save: (candle) => candles.upsert(candle) },
+      );
+      for (const item of items) {
+        if (item.stored === 0) continue;
+        candleWindows.set(
+          `${item.symbol}|${item.interval}`,
+          await candles.loadRecent(item.symbol, item.interval, CANDLE_WINDOW),
+        );
+      }
+      log.info(
+        {
+          reason,
+          stored: items.reduce((n, i) => n + i.stored, 0),
+          failed: items
+            .filter((i) => i.error !== undefined)
+            .map((i) => `${i.symbol} ${i.interval}: ${i.error ?? ""}`),
+        },
+        "session catch-up: missed bars fetched from the broker's history",
+      );
+    } catch (error) {
+      onError(error, { where: "sessionCatchUp", reason });
+    } finally {
+      catchUpRunning = false;
+    }
+  };
+  deps.broker.onConnectionChange((next) => {
+    if (next !== "connected" || deps.history === undefined) return;
+    void runCatchUp("feed connected");
+    if (catchUpFollowUp !== null) clearTimeout(catchUpFollowUp);
+    const now = Date.now();
+    const nextFiveMinute = (Math.floor(now / 300_000) + 1) * 300_000;
+    catchUpFollowUp = setTimeout(
+      () => {
+        catchUpFollowUp = null;
+        void runCatchUp("the first live bar after connecting closed");
+      },
+      nextFiveMinute + 60_000 - now,
+    );
+    catchUpFollowUp.unref();
+  });
 
   // Without this the feed connects and subscribes to nothing: the socket is
   // up, the chip reads healthy, and not one tick ever arrives.
