@@ -27,6 +27,10 @@
  * Optional:
  *   --max-calls=N                 hard ceiling on vendor calls this run
  *   --zero-volume-unavailable     once Q4 confirms index volume is filler
+ *   --real-volume                 every symbol is a cash equity, whose volume
+ *                                 is real (never with an index in the list)
+ *   --interval=1d                 daily bars, research only (§7.2 Q3); FYERS
+ *                                 answers 366 days a request, so --max-days=366
  *   --holidays=A,B                override the settings holiday list
  *   --special-sessions=A,B        weekend dates the exchange traded anyway
  *                                 (Budget 1 Feb, Diwali Muhurat)
@@ -104,6 +108,12 @@ const SYMBOLS = args.get("symbols")?.split(",").filter(Boolean);
 const MAX_CALLS = args.get("max-calls");
 /** Set once §3.1 Q4 confirms index volume is meaningless. */
 const ZERO_VOLUME_UNAVAILABLE = args.get("zero-volume-unavailable") === "true";
+/**
+ * Every symbol in this run trades with volume of its own — cash equities, not
+ * indices — so a bar's volume is REAL rather than SUSPECT. Run indices and
+ * stocks separately; this says nothing a mixed list could honour.
+ */
+const REAL_VOLUME = args.get("real-volume") === "true";
 /** Weekend dates the exchange traded anyway (Budget, Muhurat). */
 const SPECIAL_SESSIONS = new Set(
   args.get("special-sessions")?.split(",").filter(Boolean) ?? [],
@@ -169,6 +179,7 @@ async function main(): Promise<void> {
       holidays,
       specialSessions: SPECIAL_SESSIONS,
       zeroVolumeIsUnavailable: ZERO_VOLUME_UNAVAILABLE,
+      ...(REAL_VOLUME ? { symbolHasRealVolume: true } : {}),
       ingestionVersion: Math.floor(Date.now() / 1000),
     });
 

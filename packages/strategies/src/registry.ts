@@ -1,8 +1,9 @@
-import type {
-  CandleInterval,
-  DerivativeTarget,
-  MarketContext,
-  StrategyVerdict,
+import {
+  isDailyInterval,
+  type CandleInterval,
+  type DerivativeTarget,
+  type MarketContext,
+  type StrategyVerdict,
 } from "@neelkanth/core";
 import type { IndicatorSpec } from "@neelkanth/indicators";
 import type { SignalResolution, StrategyDefinition } from "./contract.js";
@@ -51,10 +52,19 @@ function instantiate<P, S>(
 ): RunnableStrategy {
   // Validate operator config at the boundary (plan/15 §4, plan/04 §4).
   const params = def.paramsSchema.parse(rawParams);
+  // Daily bars are research data only (design LIVE_READINESS_AND_EXTENSIONS
+  // §7.2 Q3). Refused here, at the one door every strategy goes through —
+  // live, paper, replay and backtest alike — rather than in each schema.
+  const interval = def.interval(params);
+  if (isDailyInterval(interval)) {
+    throw new Error(
+      `strategy ${def.type} refuses the ${interval} interval: daily bars are for research and the scanner, never for trading`,
+    );
+  }
   const state = def.init(params, symbol);
   return {
     type: def.type,
-    interval: def.interval(params),
+    interval,
     requiredIndicators: () => def.requiredIndicators(params),
     requiresOptionChain: () => def.requiresOptionChain?.(params) ?? false,
     warmupBars: () => def.warmupBars(params),

@@ -21,6 +21,7 @@ import {
   RiskLogsRepository,
   SettingsRepository,
   SignalsRepository,
+  TradeCardsRepository,
   StrategiesRepository,
   type GlobalSettings,
 } from "@neelkanth/db";
@@ -289,6 +290,7 @@ export function registerControlPlane(
   const orders = new OrdersRepository(deps.db);
   const positions = new PositionsRepository(deps.db);
   const signals = new SignalsRepository(deps.db);
+  const tradeCards = new TradeCardsRepository(deps.db);
   const riskEvents = new RiskEventsRepository(deps.db);
   const notifications = new NotificationsRepository(deps.db);
   const riskLogs = new RiskLogsRepository(deps.db);
@@ -449,6 +451,10 @@ export function registerControlPlane(
     return orders.findRecent(LIST_LIMIT);
   });
   app.get("/signals", () => signals.findRecent(LIST_LIMIT));
+  // Today's trade cards, newest first: what to trade for each approved entry.
+  app.get("/trade-cards", () =>
+    tradeCards.findSince(startOfDayIST(Date.now()), LIST_LIMIT),
+  );
   app.get("/risk-events", () => riskEvents.findRecent(LIST_LIMIT));
   app.get("/risk-logs", () => riskLogs.findRecent(LIST_LIMIT));
   // What the operator was told, and what failed to reach them (task 16.6).

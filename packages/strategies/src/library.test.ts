@@ -27,6 +27,7 @@ const INTERVAL_MINUTES: Record<CandleInterval, number> = {
   "15m": 15,
   "30m": 30,
   "60m": 60,
+  "1d": 1440,
 };
 
 interface BarOpts {
@@ -237,6 +238,36 @@ describe("ORB (plan/16 §5)", () => {
     expect(cold[0]?.stopLoss).toBe(100);
   });
 
+  /**
+   * 2026-11-18: the feed came up at 09:29, the window held only the 09:25 bar,
+   * and a range read from that one bar was traded. A range is fixed only when
+   * every bucket of the window is there — and is taken as soon as they are,
+   * as when the missed bars are caught up from the broker's history.
+   */
+  it("refuses an incomplete opening range, then takes it once the missing bars arrive", () => {
+    const full = series([
+      ...build,
+      { close: 103, minutesSinceOpen: 20 }, // inside the true range: no trade
+      { close: 107, high: 108, low: 106, minutesSinceOpen: 25 },
+    ]);
+    const params = orb.paramsSchema.parse({ allowShort: false });
+    const state = orb.init(params, SYM);
+    // A late feed: only the 09:25 bar of the range, then a bar above it.
+    const lateWindow = [full[2], full[3]].map((c) => c?.candle as Candle);
+    const late = orb.analyze(
+      { ...(full[3] as MarketContext), candles: lateWindow },
+      state,
+    );
+    expect(late).toMatchObject({
+      side: "HOLD",
+      reason: "opening range incomplete: 1 of 3 bars",
+    });
+    // The catch-up fills the window; the next bar sees the whole range.
+    const caughtUp = orb.analyze(full[4] as MarketContext, state);
+    expect(caughtUp.side).toBe("BUY");
+    expect(caughtUp.stopLoss).toBe(100); // (106 + 94) / 2, the true range
+  });
+
   it("holds when the opening bars have scrolled out of the window", () => {
     const [late] = series([{ close: 107, minutesSinceOpen: 200 }]);
     const verdicts = run(orb, { allowShort: false }, [late as MarketContext]);
@@ -285,6 +316,14 @@ describe("ORB (plan/16 §5)", () => {
           minutesSinceOpen: 5,
           sessionOpenTs: day2,
         },
+        // Every bar of the range: a range missing one is refused (2026-11-18).
+        {
+          close: 100,
+          high: 101,
+          low: 99,
+          minutesSinceOpen: 10,
+          sessionOpenTs: day2,
+        },
         {
           close: 100,
           high: 102,
@@ -296,7 +335,7 @@ describe("ORB (plan/16 §5)", () => {
       ]),
     );
     expect(verdicts[3]?.side).toBe("BUY"); // day-1 entry
-    expect(verdicts[6]?.side).toBe("BUY"); // re-armed on day 2
+    expect(verdicts[7]?.side).toBe("BUY"); // re-armed on day 2
   });
 
   it("respects the volume gate when configured", () => {
@@ -417,6 +456,21 @@ describe("ORB (plan/16 §5)", () => {
         series([
           ...build,
           { close: 107, minutesSinceOpen: 20 }, // day 1: too early
+          // Day 2's whole range — a range missing a bar is refused.
+          {
+            close: 100,
+            high: 101,
+            low: 99,
+            minutesSinceOpen: 5,
+            sessionOpenTs: day2,
+          },
+          {
+            close: 100,
+            high: 102,
+            low: 98,
+            minutesSinceOpen: 10,
+            sessionOpenTs: day2,
+          },
           {
             close: 100,
             high: 103,
@@ -428,7 +482,7 @@ describe("ORB (plan/16 §5)", () => {
         ]),
       );
       expect(verdicts[3]?.side).toBe("HOLD");
-      expect(verdicts[5]?.side).toBe("BUY");
+      expect(verdicts[7]?.side).toBe("BUY");
     });
 
     it("refuses a window that ends at or before it starts", () => {

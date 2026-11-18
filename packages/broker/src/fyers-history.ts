@@ -56,6 +56,10 @@ const RESOLUTION: Record<CandleInterval, string> = {
   "15m": "15",
   "30m": "30",
   "60m": "60",
+  // Research only (§7.2 Q3). One request covered 366 days at "D" (measured
+  // 2026-11-17: 249 bars for a year of RELIANCE), past the 100-day cap the
+  // intraday resolutions have.
+  "1d": "D",
 };
 
 export interface FyersHistoryDeps {

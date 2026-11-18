@@ -6,7 +6,7 @@ import {
   parseHHMM,
   type SessionConfig,
 } from "./calendar.js";
-import { intervalMs } from "./market.js";
+import { intervalMs, isDailyInterval } from "./market.js";
 import type { CandleInterval } from "./primitives.js";
 
 /**
@@ -185,6 +185,11 @@ export function validateBar(
       reason: `ts ${String(bar.ts)} falls on ${dateKey}, not a trading day`,
     };
   }
+
+  // A daily bar is the whole session, stamped at 00:00 UTC of its IST date
+  // (05:30 IST); alignment above already pins it there. The trading-day
+  // check is all the calendar it needs.
+  if (isDailyInterval(options.interval)) return null;
 
   // `ts` is the bucket START, so the last valid bar of the day starts strictly
   // before the close — a 5m bucket stamped 15:30 would cover 15:30–15:35, and

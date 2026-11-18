@@ -16,13 +16,15 @@ export const StrategyExperimentDocSchema = z.object({
    * COUNTERFACTUAL — a Phase 6 run. HYPOTHESIS — a claim registered before
    * its test (Phase 7 D3). HYPOTHESIS_TEST — that claim tested, once (D4).
    * SETUP_ODDS — one plan's odds, by resampling and by its rule's history
-   * (Phase 17 D7).
+   * (Phase 17 D7). SCAN — a pre-open scan of the F&O universe on daily bars
+   * (Phase 18 D8).
    */
   kind: z.enum([
     "COUNTERFACTUAL",
     "HYPOTHESIS",
     "HYPOTHESIS_TEST",
     "SETUP_ODDS",
+    "SCAN",
   ]),
   createdAt: z.number().int().nonnegative(),
   fingerprint: z.string().regex(/^[0-9a-f]{64}$/),

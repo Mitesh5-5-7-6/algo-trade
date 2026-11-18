@@ -1020,3 +1020,14 @@ table.data.odds-table {
   font-size: 13px;
   line-height: 1.6;
 }
+
+/* Signals: today's trade cards (2026-11-18) */
+.trade-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.trade-card-head {
+  margin-bottom: 8px;
+  font-size: 1rem;
+}

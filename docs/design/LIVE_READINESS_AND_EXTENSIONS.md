@@ -351,6 +351,63 @@ history half.
   `strategy_experiments` document, `kind: "SETUP_ODDS"`, in the research
   database: the same collection, indexes and never-overwrite rule as the
   counterfactual runs, not a new collection for the same concept.
+- **D16 — Served by a separate research service (decided by the operator
+  2026-11-16).** The operator wants the odds in the dashboard. They are not
+  computed in the trading process: a rule's history replays a year of
+  sessions on one thread — seven seconds on the stored year — and that work
+  must not share an event loop with live ticks and exits; and the trading
+  deployment holds the paper database, not the research one (ADR §8.1).
+  So:
+  - **The research service** is its own process on the research database:
+    `apps/api/src/research-api/`, started with
+    `node dist/research-api/main.js`. It refuses, by name and before it
+    connects, any database but `neelkanth_research` or a scratch one. It
+    holds no broker, no Redis and no trading repository. Every route but the
+    health probes needs a shared secret as a bearer token.
+  - **The trading API relays.** The dashboard is a static site whose one
+    credential is the session cookie for the trading API, and that cookie is
+    never sent to another origin. So the dashboard asks the trading API
+    (`/research/odds`, `/research/odds/coverage`, behind the same session
+    guard as every other route) and `apps/api/src/control-plane/research-relay.ts`
+    passes the request on with the secret. It runs no research code and opens
+    no research database. Unconfigured or unanswered, it says so with a 503
+    and nothing else in the trading process changes (ADR §5.6).
+  - **Placement — reported, not silently chosen.** ADR §6 names
+    `apps/research-api` (with `packages/research`) for the day a research
+    API lands. The service is instead a second entry point inside `apps/api`:
+    the replay, the validation statistics and the odds code it calls all live
+    in `apps/api/src`, and a separate workspace could reach them only after
+    they moved to a shared package — a refactor of some hundred files that
+    this task does not justify. The process, the deployment and the database
+    are separate, which is what ADR §5.6 and §8.1 ask for; the workspace is
+    not, yet. Moving it is the ADR's own later step.
+  - **A dashboard run keeps nothing by default** (`save: false`); a kept run
+    is still a `SETUP_ODDS` experiment (D15).
+
+### 6.3 Deploying the research service
+
+One more web service on the same host as the API, from the same repository
+and the same build.
+
+| Setting              | Value                                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Build command        | the API service's own (it builds `apps/api/dist`)                                                                 |
+| Start command        | `node apps/api/dist/research-api/main.js`                                                                         |
+| `MONGO_URI`          | the same cluster, with the database `neelkanth_research`. Any other name is refused at start                      |
+| `RESEARCH_API_TOKEN` | a new random secret of 32 characters or more                                                                      |
+| `PORT`               | set by the platform; the service then binds every interface. Locally it is `127.0.0.1:4100` (`RESEARCH_API_PORT`) |
+| Health check path    | `/health/ready`                                                                                                   |
+
+Then, on the **API** service, set `RESEARCH_API_URL` to the research
+service's address and `RESEARCH_API_TOKEN` to the same secret — both or
+neither — and redeploy the API and the dashboard. The dashboard needs no new
+setting: it reaches research through the API.
+
+To check it: the dashboard's **Time Machine** tab shows the stored dates under
+the form. "Research data unavailable: the research service is not configured
+for this deployment" means the API's two settings are missing; "did not
+answer" means the service is down or its address is wrong; "refused this
+deployment's credentials" means the two secrets differ.
 
 ### 6.2 Open questions
 
@@ -390,6 +447,72 @@ Adopted from the reference's scanner.
   volume, and price band, each only from a verified source.
 - **D6 — Partial results say so.** A scan that stops short of its universe
   (rate limits, missing bars) is labelled PARTIAL with what was skipped.
+- **D7 — Built ahead of 15.2, 15.6 and 15.12 (decided by the operator
+  2026-11-16).** §2.2 placed the scanner after three Live-readiness tasks;
+  the operator asked for it now. What each was for, and what stands in for it:
+  - _15.6, the instrument master refreshed daily:_ the scan reads the
+    broker's public symbol files itself, at scan time (D9). It does not need
+    the trading process's copy.
+  - _15.12, the ban list:_ not available. Until its source is verified (§11),
+    no scan checks it, and **every scan is PARTIAL** and says "the F&O ban
+    list was not checked" (D5, D6). A candidate may be a banned security.
+  - _15.2, the broker ports:_ a scan on stored bars reads no positions, order
+    book or funds.
+- **D8 — A pre-open scan on daily bars, in research (Q1, Q2, decided
+  2026-11-16).** The scan is research: it reads bars already stored, keeps its
+  runs in the research database, and is served by the research service (§6.1
+  D16). Fetching the bars is the backfill's job, with the broker's token; the
+  scan never calls the broker. Intraday scanning waits, as Q1 says: the data
+  socket carries 100 symbols on the Standard plan (§11.1), fewer than the
+  universe.
+- **D9 — The universe is joined by token, not by name (found 2026-11-17).**
+  A derivative's row in the F&O file carries the fyToken of what it derives
+  from, and that token is the first column of the underlying's own row in the
+  cash file. So `BANKNIFTY` becomes `NSE:NIFTYBANK-INDEX` from the files
+  themselves, with no table of index names to go stale — on the files of
+  2026-11-17 the join found six index underlyings, one more than anyone would
+  have typed from memory (`NIFTYFPI`). An underlying whose token is missing
+  is rejected with that reason, not guessed.
+- **D10 — The published rate limit is honoured, not probed.** Phase 1 Q3
+  asked for the history rate limit to be measured. It is read from FYERS's
+  own page instead (§11.1) and the backfill is held under the lower plan's
+  figure — 50 data requests a minute — because finding the limit by exceeding
+  it costs the account its market data for the rest of the day after the
+  third time, and that is the paper session's feed.
+- **D11 — Daily bars are a candle interval, and only research reads them
+  (Q3, decided by the operator 2026-11-17: option (a)).** `CandleInterval`
+  gains `1d`. Two guards keep it out of trading: the strategy registry
+  refuses to instantiate a strategy on it — the one door live, paper, replay
+  and backtest all go through — and the live aggregator refuses to be built
+  with it. A daily bar is stamped 00:00 UTC of its IST trading date, 05:30
+  IST: that is FYERS's own stamp for resolution `D` (measured 2026-11-17 —
+  RELIANCE's bar of 2026-11-16 arrived as `1794787200`) and it is what
+  `floor(ts / day) * day` gives, so alignment needs no special case;
+  validation drops only the session-hours check for it. One request covered
+  366 days at `D` (measured: 249 bars of RELIANCE for a year), against 100
+  for the intraday resolutions. Fetched by
+  `backfill-candles.mts --interval=1d --max-days=366`, with `--real-volume`
+  for the cash equities, whose volume is real; an index's stays SUSPECT.
+- **D12 — The conditions (18.3).** Three Phase 5 detectors at their default
+  parameters: `EMA_CROSS`, `HIGH_VOLUME_BREAKOUT`, `RSI_REVERSION`.
+  `ORB_BREAKOUT` and `VWAP_RECLAIM` are left out — both are anchored to an
+  intraday session, and a daily bar has neither. On the daily interval the
+  sweep's detector window spans sessions, since each bar is one; otherwise a
+  "20-bar high" could never be seen. A member is a candidate when at least
+  one condition held on the data day's bar — the last trading day before the
+  scan day — and otherwise rejected as `NO_CONDITION`, `NOT_JUDGEABLE`
+  (every condition warming up or declining untrusted volume), `STALE_DATA`
+  or `NO_BARS`, each with every condition's verdict and the bar's time. A
+  bar on or after the scan day is refused, not filtered: it is a broken
+  caller. An index cannot be judged by `HIGH_VOLUME_BREAKOUT` while its
+  volume is SUSPECT; the other two still judge it.
+- **D13 — Served like the odds (D16).** `POST /scan` and
+  `GET /scan/coverage` on the research service, relayed by the trading API
+  as `/research/scan` and `/research/scan/coverage`. The service fetches
+  the two public symbol files at most once per IST day (about 19 MB), and
+  reads the trading calendar from `apps/api/scripts/calendars/nse-2025-26.json`
+  — the backfill's. A dashboard scan keeps nothing by default; a kept one is
+  a `SCAN` experiment with the files' sha256 in its manifest.
 
 ### 7.2 Open questions
 
@@ -398,7 +521,20 @@ Adopted from the reference's scanner.
   Version 1 is a pre-open scan on daily bars; intraday scanning waits for
   those answers.
 - **Q2.** Where scan runs are kept: the research database, or the trading
-  deployment's read-only side.
+  deployment's read-only side. **Decided: the research database, D8.**
+- **Q3 — Daily bars have no interval to be stored under (found
+  2026-11-17; decided: (a), D11).** `CandleInterval` is `1m` to `60m`; D8's daily bars and D4's
+  detectors, which take candles, need a daily one. Two ways:
+  - **(a)** Add `1d` to the candle interval, with two guards so trading can
+    never decide on it — the strategy registry refuses a daily strategy, the
+    live aggregator refuses a daily bucket — and an IST-day alignment rule for
+    stored daily bars. The detectors then run on daily bars unchanged.
+  - **(b)** A scanner-only daily bar outside the candle type, and conditions
+    written from the indicator folds alone. No core change, but D4's detectors
+    are not used, and 18.3 says they are.
+
+  Recommended: (a). It is a change to a core type, so it is the operator's to
+  approve before it is made. **The operator chose (a) on 2026-11-17 — D11.**
 
 ---
 

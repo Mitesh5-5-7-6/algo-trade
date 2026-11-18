@@ -14,12 +14,13 @@ describe("event catalog (plan/09 §6)", () => {
   // learned and discarded in the same function call, leaving a REJECTED row
   // that explained nothing. 21 since task 16.3 made six logged-only states
   // events (feed silent/recovered, trading halted/resumed, token
-  // missing/restored) so the operator can be told. The count is asserted
+  // missing/restored) so the operator can be told; 22 since TRADE_CARD
+  // (2026-11-18), the approved entry as a card. The count is asserted
   // literally so adding an event is always a deliberate edit here, never a
   // silent one.
-  it("contains exactly the 21 catalogued events, no duplicates", () => {
-    expect(EVENT_NAMES).toHaveLength(21);
-    expect(new Set(EVENT_NAMES).size).toBe(21);
+  it("contains exactly the 22 catalogued events, no duplicates", () => {
+    expect(EVENT_NAMES).toHaveLength(22);
+    expect(new Set(EVENT_NAMES).size).toBe(22);
   });
 
   it("has a payload schema for every event name", () => {

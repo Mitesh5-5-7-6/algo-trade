@@ -175,3 +175,43 @@ describe("odds.mts refuses a database it must not touch (17.6)", () => {
     }
   });
 });
+
+/**
+ * Task 18.5 (design §7.1 D8): the scan reads the research dataset's daily
+ * bars and keeps its runs beside the other experiments — never in a trading
+ * database.
+ */
+describe("scan.mts refuses a database it must not touch (18.5)", () => {
+  const SCAN_REFUSED = (db: string) =>
+    new RegExp(
+      `refusing "${db}": the scan reads and writes only neelkanth_research or a scratch neelkanth_it_\\*/neelkanth_ci_\\* database`,
+    );
+
+  it("refuses one named by --db, before connecting", () => {
+    const r = run(
+      "scan.mts",
+      ["--db=neelkanth_paper", "--date=2026-11-17"],
+      NOWHERE("neelkanth_research"),
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(SCAN_REFUSED("neelkanth_paper"));
+  });
+
+  it("refuses the one MONGO_URI names when --db is absent, dry run or not", () => {
+    for (const db of ["neelkanth", "neelkanth_live", "neelkanth_paper"]) {
+      const r = run("scan.mts", ["--dry-run"], NOWHERE(db));
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(SCAN_REFUSED(db));
+    }
+  });
+
+  it("lets the research and scratch databases through", () => {
+    for (const db of ["neelkanth_research", "neelkanth_it_scan"]) {
+      // No --date: past the guard it fails on the missing argument, before
+      // fetching anything, but never with a refusal.
+      const r = run("scan.mts", [`--db=${db}`], NOWHERE("neelkanth"));
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).not.toMatch(/refusing/);
+    }
+  });
+});

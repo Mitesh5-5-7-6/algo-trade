@@ -15,6 +15,12 @@ describe("CandleAggregator (plan/17 §5)", () => {
     expect(() => new CandleAggregator([])).toThrow();
   });
 
+  it("refuses the daily interval: daily bars are never built from live ticks (§7.2 Q3)", () => {
+    expect(() => new CandleAggregator(["5m", "1d"])).toThrow(
+      /refuses the 1d interval/,
+    );
+  });
+
   it("keeps a bar open until a tick crosses the boundary, then closes it OHLCV-correct", () => {
     const agg = new CandleAggregator(["1m"]);
     expect(agg.addTick(tick(1_000, 100, 5))).toEqual([]); // opens [0,60000)

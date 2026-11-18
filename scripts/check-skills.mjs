@@ -97,6 +97,28 @@ export const ALLOW = {
       },
     },
   },
+  // Task 19.4: the pre-open F&O scan on daily bars (Phase 18).
+  // Always a dry run: a kept scan is the operator's.
+  "apps/api/scripts/scan.mts": {
+    env: ".env.local",
+    refusal: "apps/api/scripts/scan.mts:52",
+    commands: {
+      "": {
+        flags: [
+          "--date",
+          "--min-days-to-expiry",
+          "--all",
+          "--calendar",
+          "--fo",
+          "--cm",
+          "--db",
+          "--dns",
+          "--dry-run",
+        ],
+        required: ["--db", "--dry-run"],
+      },
+    },
+  },
   // Task 19.3: the candidates and their verdicts — the two reads only.
   // declare is the operator's act; walk-forward and backtest --save keep
   // results, and a new walk-forward changes what verdict judges by default.

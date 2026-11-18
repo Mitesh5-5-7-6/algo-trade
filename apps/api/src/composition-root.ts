@@ -58,7 +58,14 @@ import { readDaySummary } from "./notifications/day-summary.js";
 import { subscribeCatalogue } from "./notifications/catalogue.js";
 import { createDailyMessages } from "./notifications/daily.js";
 import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
-import { FyersBroker, PaperBroker, type Broker } from "@neelkanth/broker";
+import { researchOddsClient } from "./signals/research-odds-client.js";
+import {
+  FyersBroker,
+  FyersHistoryProvider,
+  PaperBroker,
+  RateLimiter,
+  type Broker,
+} from "@neelkanth/broker";
 
 /** How often the session state is re-evaluated (plan/17 §6). */
 const SESSION_POLL_MS = 15_000;
@@ -346,6 +353,35 @@ export async function bootstrap(
     ...(paperOrderMonitor === undefined ? {} : { paperOrderMonitor }),
     mode: config.BROKER_MODE,
     liveState,
+    // A trade card's odds (2026-11-18), from the research service the
+    // dashboard's Time Machine uses — never computed in this process (D16).
+    ...(config.RESEARCH_API_URL === undefined ||
+    config.RESEARCH_API_TOKEN === undefined
+      ? {}
+      : {
+          askOdds: researchOddsClient({
+            url: config.RESEARCH_API_URL,
+            token: config.RESEARCH_API_TOKEN,
+          }),
+        }),
+    // Task 15.3: the bars a late feed missed. Its own limiter — never the
+    // order path's — at one request every 1.5 s, under the 50 a minute
+    // FYERS's Standard plan allows (design §7.1 D10). One day per request.
+    ...(fyersBroker === null || !config.FYERS_APP_ID
+      ? {}
+      : {
+          history: new FyersHistoryProvider({
+            appId: config.FYERS_APP_ID,
+            getToken: async () => (await lookupFyersToken()).accessToken,
+            maxDaysPerRequest: 1,
+            requestDelayMs: 1_500,
+            rateLimiter: new RateLimiter({
+              minIntervalMs: 1_500,
+              maxConcurrent: 1,
+            }),
+            maxRetries: 1,
+          }),
+        }),
   });
 
   // The operator is told what the catalogue says, from events alone (16.4).

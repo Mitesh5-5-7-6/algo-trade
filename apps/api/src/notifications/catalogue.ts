@@ -1,6 +1,7 @@
 import type { EventName, EventPayload } from "@neelkanth/contracts";
 import type { TradeMode } from "@neelkanth/core";
 import type { Chat, Notifier, Severity } from "./notifier.js";
+import { formatTradeCard } from "../signals/trade-card-message.js";
 
 /**
  * The event catalogue (Phase 16, task 16.4; design §5.2): which bus events
@@ -12,10 +13,10 @@ import type { Chat, Notifier, Severity } from "./notifier.js";
  * WARNING — order rejections and bursts of risk blocks, coalesced per window;
  * feed silent; daily loss at 50 % and 80 % of the limit; trading resumed; a
  * disconnect or token loss outside the session.
- * INFO — as it happens: entry fills, positions closed with reason and P&L,
+ * INFO — as it happens: trade cards for approved entries, entry fills, positions closed with reason and P&L,
  * the market opening, recoveries.
  *
- * Entry fills and closed positions go to the trades chat; everything else to
+ * Trade cards, entry fills and closed positions go to the trades chat; everything else to
  * operations (design §5.1 D8).
  *
  * Everything here is a consumer of events that already exist. Nothing reads a
@@ -150,6 +151,12 @@ export async function subscribeCatalogue(deps: CatalogueDeps): Promise<void> {
       `Strategy ${payload.strategyId}`,
       "trades",
     );
+  });
+  // What to trade for an approved entry (operator decision 2026-11-18):
+  // the contract, its buy price, stop and target, to the trades chat.
+  await deps.bus.subscribe("TRADE_CARD", ({ payload }) => {
+    const { title, body } = formatTradeCard(payload);
+    send("INFO", title, body, "trades");
   });
   await deps.bus.subscribe("POSITION_UPDATED", ({ payload }) => {
     if (payload.status !== "CLOSED") return;

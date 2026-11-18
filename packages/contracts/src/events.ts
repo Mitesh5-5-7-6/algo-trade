@@ -18,11 +18,12 @@ import {
   SymbolSchema,
   TickSchema,
   TimestampSchema,
+  TradeCardSchema,
   TradeModeSchema,
 } from "@neelkanth/core";
 
 /**
- * The event catalog (plan/09 §6; 21 events since task 16.3). These constants are the ONLY way to name
+ * The event catalog (plan/09 §6; 22 events since the trade card, 2026-11-18). These constants are the ONLY way to name
  * an event — string literals at emit/subscribe sites are banned (plan/25 §3):
  * a typo'd channel name doesn't error, it silently talks to nobody.
  */
@@ -50,6 +51,8 @@ export const EVENT_NAMES = [
   "TRADING_RESUMED",
   "BROKER_TOKEN_MISSING",
   "BROKER_TOKEN_RESTORED",
+  // What to trade for an approved entry (operator decision 2026-11-18).
+  "TRADE_CARD",
 ] as const;
 
 export const EventNameSchema = z.enum(EVENT_NAMES);
@@ -294,6 +297,13 @@ export const EVENT_PAYLOAD_SCHEMAS = {
     mode: TradeModeSchema,
     ts: TimestampSchema,
   }),
+
+  /**
+   * An entry the Risk Engine approved, as a card the operator can act on:
+   * contract, buy price, stop and target. Published after the order is
+   * placed; nothing in the order path subscribes.
+   */
+  TRADE_CARD: TradeCardSchema.extend({ mode: TradeModeSchema }),
 } as const satisfies Record<EventName, z.ZodTypeAny>;
 
 export type EventPayload<N extends EventName> = z.infer<

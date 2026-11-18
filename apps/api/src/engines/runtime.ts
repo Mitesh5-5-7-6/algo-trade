@@ -32,12 +32,13 @@ import {
   RiskLogsRepository,
   SettingsRepository,
   SignalsRepository,
+  TradeCardsRepository,
   StrategiesRepository,
   TradesRepository,
   StrategyStateRepository,
   type MongoConnection,
 } from "@neelkanth/db";
-import type { Broker } from "@neelkanth/broker";
+import type { Broker, HistoryProvider } from "@neelkanth/broker";
 import { fyersNormalizer } from "./fyers-normalizer.js";
 import {
   computePortfolio,
@@ -71,6 +72,9 @@ import type { LiveMarketState } from "./live-market-state.js";
 import { reconcilePaperBook } from "./paper-reconciliation.js";
 import { instrumentLookup } from "./synthetic-index.js";
 import { FEED_SILENCE_MS, feedSilentSeconds } from "./feed-health.js";
+import { catchUpSession } from "./session-catch-up.js";
+import { buildTradeCard, optionUnderlyingOf } from "../signals/trade-card.js";
+import { oddsForCard, type AskOdds } from "../signals/card-odds.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -194,6 +198,16 @@ export async function startEngineRuntime(deps: {
    * The runtime writes it; the Paper Broker reads it.
    */
   liveState: LiveMarketState;
+  /**
+   * The broker's history, for the bars a late feed missed (task 15.3). Absent,
+   * a feed that connects after the open trades on what it saw.
+   */
+  history?: Pick<HistoryProvider, "getHistory">;
+  /**
+   * The research service's Time Machine, for a trade card's odds (operator
+   * decision 2026-11-18). Absent, cards go out without odds and say why.
+   */
+  askOdds?: AskOdds;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -217,6 +231,7 @@ export async function startEngineRuntime(deps: {
   const strategiesRepo = new StrategiesRepository(db);
   const strategyState = new StrategyStateRepository(db);
   const settingsRepo = new SettingsRepository(db);
+  const tradeCards = new TradeCardsRepository(db);
   const bus = createEventBus(redis.publisher, redis.subscriber, onError);
   // A local wrapper so ports pass a plain function (not an unbound method).
   function publish<N extends EventName>(
@@ -727,9 +742,66 @@ export async function startEngineRuntime(deps: {
   const handoff = async (signal: Signal): Promise<void> => {
     const decision = await risk.validate(signal); // synchronous critical path
     if (decision.decision === "approved") {
-      await orderManager.place(signal, decision);
+      const result = await orderManager.place(signal, decision);
+      // The operator's card for the entry — after the order, never before it,
+      // and never in its way: a failure here is logged and nothing else.
+      if (result.status !== "rejected" && result.status !== "halted")
+        void publishTradeCard(signal).catch((error: unknown) => {
+          onError(error, { where: "tradeCard", signalId: signal.signalId });
+        });
     }
   };
+
+  /**
+   * What to trade for an approved entry (operator decision 2026-11-18): the
+   * contract, its buy price, stop and target. An option strategy's card is its
+   * own order's numbers; an index strategy's suggests the at-the-money call
+   * or put at its live premium, its stop and target estimated from the index
+   * levels. Stored for the dashboard and published for Telegram; nothing in
+   * the order path reads either.
+   */
+  async function publishTradeCard(signal: Signal): Promise<void> {
+    if (signal.side === "HOLD") return;
+    const now = Date.now();
+    const underlying = optionUnderlyingOf(signal.symbol);
+    const contract =
+      signal.underlyingSymbol !== undefined
+        ? instruments.get(signal.symbol)
+        : underlying === null
+          ? null
+          : instruments.nearestOption(
+              underlying,
+              signal.contextSnapshot.price,
+              optionTypeForSide(signal.side),
+              now,
+            );
+    const config = await strategiesRepo.findById(signal.strategyId);
+    const card = buildTradeCard(signal, {
+      strategyName: config?.name ?? signal.strategyId,
+      contract,
+      premium:
+        contract === null ? null : (lastPrices.get(contract.symbol) ?? null),
+    });
+    if (card === null) return;
+    await tradeCards.insert(card);
+    // The Time Machine's odds for the plan, asked of the research service —
+    // the order is already placed, so this can only delay the message, by at
+    // most the client's timeout. Unanswered, the card says so and goes out.
+    const odds = await oddsForCard(
+      card,
+      {
+        spot: lastPrices.get(card.underlying) ?? null,
+        rule:
+          config === null
+            ? null
+            : { type: config.type, params: config.params },
+        indexSymbols: settings.indexSymbols,
+      },
+      deps.askOdds ?? null,
+    );
+    await tradeCards.setOdds(card.signalId, odds);
+    await publish("TRADE_CARD", { ...card, odds, mode: deps.mode });
+  }
   const runner = new StrategyRunner({
     registry: createStrategyRegistry(),
     ports: strategyPorts,
@@ -1098,6 +1170,78 @@ export async function startEngineRuntime(deps: {
       note: "starting with cold windows; the feed still subscribes",
     });
   }
+
+  // Task 15.3: a feed that connects after the open has missed bars — on
+  // 2026-11-18 it connected at 09:29, when the operator logged in, and the
+  // opening range was one partial bar of three. The broker's history still
+  // holds them. Fetched, stored at their higher rank and reloaded into the
+  // windows — never published, so no strategy trades a bar that is gone. Run
+  // on connect, and once more just after the next 5-minute bar closes, which
+  // replaces the bar the live feed built from its first ticks alone.
+  // Indicators are left as they are: re-folding bars into a warm fold would
+  // count them twice, and a few early bars move a slow average very little.
+  let catchUpRunning = false;
+  let catchUpFollowUp: ReturnType<typeof setTimeout> | null = null;
+  const runCatchUp = async (reason: string): Promise<void> => {
+    const history = deps.history;
+    const now = Date.now();
+    if (history === undefined || catchUpRunning) return;
+    if (sessionManager.phase(now) !== "open") return;
+    catchUpRunning = true;
+    try {
+      const symbols = [
+        ...new Set([
+          ...deriveWorkingSet(enabledConfigs.values()),
+          ...settings.indexSymbols,
+        ]),
+      ];
+      const items = await catchUpSession(
+        {
+          now,
+          sessionOpenTs: istMinuteTs(now, openMinute),
+          symbols,
+          intervals: MARKET_INTERVALS,
+        },
+        { history, save: (candle) => candles.upsert(candle) },
+      );
+      for (const item of items) {
+        if (item.stored === 0) continue;
+        candleWindows.set(
+          `${item.symbol}|${item.interval}`,
+          await candles.loadRecent(item.symbol, item.interval, CANDLE_WINDOW),
+        );
+      }
+      log.info(
+        {
+          reason,
+          stored: items.reduce((n, i) => n + i.stored, 0),
+          failed: items
+            .filter((i) => i.error !== undefined)
+            .map((i) => `${i.symbol} ${i.interval}: ${i.error ?? ""}`),
+        },
+        "session catch-up: missed bars fetched from the broker's history",
+      );
+    } catch (error) {
+      onError(error, { where: "sessionCatchUp", reason });
+    } finally {
+      catchUpRunning = false;
+    }
+  };
+  deps.broker.onConnectionChange((next) => {
+    if (next !== "connected" || deps.history === undefined) return;
+    void runCatchUp("feed connected");
+    if (catchUpFollowUp !== null) clearTimeout(catchUpFollowUp);
+    const now = Date.now();
+    const nextFiveMinute = (Math.floor(now / 300_000) + 1) * 300_000;
+    catchUpFollowUp = setTimeout(
+      () => {
+        catchUpFollowUp = null;
+        void runCatchUp("the first live bar after connecting closed");
+      },
+      nextFiveMinute + 60_000 - now,
+    );
+    catchUpFollowUp.unref();
+  });
 
   // Without this the feed connects and subscribes to nothing: the socket is
   // up, the chip reads healthy, and not one tick ever arrives.

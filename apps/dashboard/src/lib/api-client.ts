@@ -2,6 +2,8 @@ import type { Order, Position, StrategyConfig } from "@neelkanth/core";
 import { API_BASE } from "./config";
 import type { ActivityEntry } from "./data";
 import type { OddsCoverage, OddsRequest, OddsResponse } from "./odds";
+import type { ScanCoverage, ScanRequest, ScanResponse } from "./scan";
+import type { TradeCard } from "./trade-card";
 
 /**
  * The REST half of the two data channels (plan/06 §5): request/response for
@@ -277,5 +279,15 @@ export const api = {
     apiFetch<OddsResponse>("/research/odds", {
       method: "POST",
       body: JSON.stringify(plan),
+    }),
+  /** Today's trade cards: what to trade for each approved entry, newest first. */
+  tradeCards: () => apiFetch<TradeCard[]>("/trade-cards"),
+  /** The daily bars the scan can judge on, per symbol. */
+  scanCoverage: () => apiFetch<ScanCoverage[]>("/research/scan/coverage"),
+  /** The pre-open F&O scan for one trading day. A few seconds. */
+  runScan: (request: ScanRequest) =>
+    apiFetch<ScanResponse>("/research/scan", {
+      method: "POST",
+      body: JSON.stringify(request),
     }),
 };

@@ -258,6 +258,43 @@ describe("the catalogue: INFO (task 16.4)", () => {
     ]);
   });
 
+  it("sends an approved entry's trade card to the trades chat (2026-11-18)", async () => {
+    const h = await harness();
+    h.emit("TRADE_CARD", {
+      signalId: "sig_1",
+      strategyId: "str_orb",
+      strategyName: "BANK NIFTY ORB",
+      ts: TS,
+      basis: "OPTION_STRATEGY",
+      underlying: "NSE:NIFTYBANK-INDEX",
+      direction: "BULLISH",
+      contract: "NSE:BANKNIFTY26NOV62100CE",
+      optionType: "CE",
+      strike: 62_100,
+      expiry: null,
+      lotSize: 30,
+      action: "BUY",
+      entry: 410,
+      stopLoss: 360,
+      target: 510,
+      stopPoints: 50,
+      targetPoints: 100,
+      rewardRisk: 2,
+      estimated: false,
+      assumedDelta: null,
+      index: null,
+      reason: "momentum",
+      note: null,
+      mode: "paper",
+    });
+    expect(h.sent.map((n) => [n.severity, n.title, n.chat])).toEqual([
+      ["INFO", "BUY BANKNIFTY26NOV62100CE @ 410", "trades"],
+    ]);
+    expect(h.sent[0]?.body).toContain(
+      "Buy price 410 · SL 360 (50 pts) · Target 510 (100 pts) · R:R 2",
+    );
+  });
+
   it("sends no INFO when INFO is off, and still sends the rest", async () => {
     const h = await harness({ includeInfo: false });
     h.emit("ORDER_FILLED", fill());
