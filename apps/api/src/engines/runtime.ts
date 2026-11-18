@@ -424,7 +424,7 @@ export async function startEngineRuntime(deps: {
     // Indices ride along for DATA only (plan/17 §7). They are never traded —
     // an index has no tradable contract — but the market-bias gate cannot read
     // direction from instruments it does not receive.
-    const symbols = [
+    const base = [
       ...new Set([
         ...traded,
         ...settings.indexSymbols,
@@ -432,6 +432,19 @@ export async function startEngineRuntime(deps: {
         ...trackedContracts,
       ]),
     ];
+    // An index has no traded volume: its near-month future's stands in, so
+    // VWAP and average volume can form (2026-11-18 — every live index bar
+    // had volume 0, and the strategies needing them never ran). Resolved on
+    // every sync, so the next contract takes over after an expiry.
+    const volumeSources = new Map<string, string>();
+    for (const symbol of base) {
+      const underlying = optionUnderlyingOf(symbol);
+      if (underlying === null) continue;
+      const future = instruments.nearestFuture(underlying, Date.now());
+      if (future !== null) volumeSources.set(symbol, future.symbol);
+    }
+    marketDataEngine.setVolumeSources(volumeSources);
+    const symbols = [...new Set([...base, ...volumeSources.values()])];
     await marketDataEngine.subscribe(symbols);
     if (symbols.length === 0) {
       // A feed subscribed to nothing looks identical to a healthy one: the
@@ -457,6 +470,7 @@ export async function startEngineRuntime(deps: {
         indices: settings.indexSymbols.length,
         breadth: settings.breadthSymbols.length,
         contracts: trackedContracts.size,
+        volumeFrom: Object.fromEntries(volumeSources),
       },
       "market data working set",
     );
@@ -1449,6 +1463,8 @@ export async function startEngineRuntime(deps: {
         }
       }
       if (evaluation.marketOpened) {
+        // Today's near-month futures for index volume (a rollover lands here).
+        await syncWorkingSet();
         indicatorEngine.onMarketOpen();
         positionEngine.resetDaily();
         // A new trading day starts at zero, durably — otherwise a restart later

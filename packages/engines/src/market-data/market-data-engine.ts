@@ -1,4 +1,4 @@
-import type { CandleInterval } from "@neelkanth/core";
+import type { Candle, CandleInterval } from "@neelkanth/core";
 import type { Broker } from "@neelkanth/broker";
 import { CandleAggregator } from "./candle-aggregator.js";
 import type { TickNormalizer } from "./normalize.js";
@@ -49,6 +49,10 @@ export class MarketDataEngine {
   /** Per-symbol last applied timestamp — the monotonic guard (plan/17 §8). */
   private readonly lastTs = new Map<string, number>();
   private workingSet: string[] = [];
+  /** Future symbol → the index whose bars its volume is credited to. */
+  private volumeTargets = new Map<string, string>();
+  /** Index symbol → the future its volume comes from, for the bar's label. */
+  private volumeSources = new Map<string, string>();
   private feed: MarketDataFeed | null = null;
 
   constructor(deps: MarketDataEngineDeps) {
@@ -81,6 +85,27 @@ export class MarketDataEngine {
     if (this.feed && this.workingSet.length > 0) {
       await this.feed.subscribe(this.workingSet);
     }
+  }
+
+  /**
+   * Which symbol's traded volume stands in for an index's (2026-11-18): an
+   * index has none of its own, so its live bars carried volume 0 and VWAP and
+   * average volume never formed for any strategy reading them. Keyed by index
+   * symbol, valued by its near-month future; the future must be in the
+   * subscribed set for its ticks to arrive. Replaces any previous mapping, so
+   * a rollover to the next contract is one call.
+   */
+  setVolumeSources(byIndex: ReadonlyMap<string, string>): void {
+    this.volumeSources = new Map(byIndex);
+    this.volumeTargets = new Map(
+      [...byIndex].map(([index, future]) => [future, index]),
+    );
+  }
+
+  /** A closed bar, labelled with where its volume came from when it is borrowed. */
+  private labelled(candle: Candle): Candle {
+    const source = this.volumeSources.get(candle.symbol);
+    return source === undefined ? candle : { ...candle, volumeSource: source };
   }
 
   private async resubscribe(): Promise<void> {
@@ -121,7 +146,14 @@ export class MarketDataEngine {
       // candle close instead (plan/08 §5).
       await this.ports.publish("MARKET_TICK", tick);
 
-      for (const candle of this.aggregator.addTick(tick)) {
+      // A future standing in for an index's volume: credit it to the index's
+      // bar of the same bucket, before that bar can close.
+      const index = this.volumeTargets.get(tick.symbol);
+      if (index !== undefined)
+        this.aggregator.addVolume(index, tick.ts, tick.volume);
+
+      for (const closed of this.aggregator.addTick(tick)) {
+        const candle = this.labelled(closed);
         await this.ports.saveCandle(candle);
         await this.ports.publish("CANDLE_CLOSED", candle);
       }
@@ -150,7 +182,8 @@ export class MarketDataEngine {
    */
   async flushOpenBars(): Promise<void> {
     try {
-      for (const candle of this.aggregator.flush()) {
+      for (const closed of this.aggregator.flush()) {
+        const candle = this.labelled(closed);
         await this.ports.saveCandle(candle);
         await this.ports.publish("CANDLE_CLOSED", candle);
       }
