@@ -18,3 +18,4 @@ export * from "./derivative.js";
 export * from "./option-chain.js";
 export * from "./strategy-version.js";
 export * from "./pattern.js";
+export * from "./trade-card.js";

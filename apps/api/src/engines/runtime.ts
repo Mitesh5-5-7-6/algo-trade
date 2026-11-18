@@ -32,6 +32,7 @@ import {
   RiskLogsRepository,
   SettingsRepository,
   SignalsRepository,
+  TradeCardsRepository,
   StrategiesRepository,
   TradesRepository,
   StrategyStateRepository,
@@ -72,6 +73,7 @@ import { reconcilePaperBook } from "./paper-reconciliation.js";
 import { instrumentLookup } from "./synthetic-index.js";
 import { FEED_SILENCE_MS, feedSilentSeconds } from "./feed-health.js";
 import { catchUpSession } from "./session-catch-up.js";
+import { buildTradeCard, optionUnderlyingOf } from "../signals/trade-card.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -223,6 +225,7 @@ export async function startEngineRuntime(deps: {
   const strategiesRepo = new StrategiesRepository(db);
   const strategyState = new StrategyStateRepository(db);
   const settingsRepo = new SettingsRepository(db);
+  const tradeCards = new TradeCardsRepository(db);
   const bus = createEventBus(redis.publisher, redis.subscriber, onError);
   // A local wrapper so ports pass a plain function (not an unbound method).
   function publish<N extends EventName>(
@@ -733,9 +736,50 @@ export async function startEngineRuntime(deps: {
   const handoff = async (signal: Signal): Promise<void> => {
     const decision = await risk.validate(signal); // synchronous critical path
     if (decision.decision === "approved") {
-      await orderManager.place(signal, decision);
+      const result = await orderManager.place(signal, decision);
+      // The operator's card for the entry — after the order, never before it,
+      // and never in its way: a failure here is logged and nothing else.
+      if (result.status !== "rejected" && result.status !== "halted")
+        void publishTradeCard(signal).catch((error: unknown) => {
+          onError(error, { where: "tradeCard", signalId: signal.signalId });
+        });
     }
   };
+
+  /**
+   * What to trade for an approved entry (operator decision 2026-11-18): the
+   * contract, its buy price, stop and target. An option strategy's card is its
+   * own order's numbers; an index strategy's suggests the at-the-money call
+   * or put at its live premium, its stop and target estimated from the index
+   * levels. Stored for the dashboard and published for Telegram; nothing in
+   * the order path reads either.
+   */
+  async function publishTradeCard(signal: Signal): Promise<void> {
+    if (signal.side === "HOLD") return;
+    const now = Date.now();
+    const underlying = optionUnderlyingOf(signal.symbol);
+    const contract =
+      signal.underlyingSymbol !== undefined
+        ? instruments.get(signal.symbol)
+        : underlying === null
+          ? null
+          : instruments.nearestOption(
+              underlying,
+              signal.contextSnapshot.price,
+              optionTypeForSide(signal.side),
+              now,
+            );
+    const config = await strategiesRepo.findById(signal.strategyId);
+    const card = buildTradeCard(signal, {
+      strategyName: config?.name ?? signal.strategyId,
+      contract,
+      premium:
+        contract === null ? null : (lastPrices.get(contract.symbol) ?? null),
+    });
+    if (card === null) return;
+    await tradeCards.insert(card);
+    await publish("TRADE_CARD", { ...card, mode: deps.mode });
+  }
   const runner = new StrategyRunner({
     registry: createStrategyRegistry(),
     ports: strategyPorts,

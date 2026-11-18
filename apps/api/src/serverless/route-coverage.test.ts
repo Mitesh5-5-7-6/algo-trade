@@ -16,6 +16,7 @@ import type { RuntimeControls } from "../control-plane/controls.js";
 const DASHBOARD_CALLS: ReadonlyArray<readonly [string, string]> = [
   ["GET", "/positions"],
   ["GET", "/orders"],
+  ["GET", "/trade-cards"],
   ["GET", "/activity"],
   ["GET", "/strategies"],
   ["GET", "/strategies/stats"],

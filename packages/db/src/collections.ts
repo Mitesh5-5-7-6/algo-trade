@@ -47,6 +47,13 @@ export const COLLECTIONS = {
   /** Non-signal safety events, including paper broker reconciliation mismatches. */
   riskEvents: "risk_events",
   notifications: "notifications",
+  /**
+   * Trade cards (decided by the operator 2026-11-18): what to trade for each
+   * approved entry — the contract, its buy price, stop and target. A read of
+   * a decision already taken; nothing in the order path reads it. Kept as
+   * long as the signals they describe.
+   */
+  tradeCards: "trade_cards",
   news: "news",
   brokerTokens: "broker_tokens",
   /**
@@ -404,6 +411,12 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.notifications)
       .createIndex({ dedupeKey: 1, outcome: 1 }, { sparse: true }),
+
+    // trade_cards — one per approved entry, listed newest first
+    db
+      .collection(COLLECTIONS.tradeCards)
+      .createIndex({ signalId: 1 }, { unique: true }),
+    db.collection(COLLECTIONS.tradeCards).createIndex({ ts: -1 }),
 
     // news
     db
