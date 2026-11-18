@@ -41,7 +41,7 @@ import {
 import type { Broker, HistoryProvider } from "@neelkanth/broker";
 import { fyersNormalizer } from "./fyers-normalizer.js";
 import {
-  computePortfolio,
+  portfolioForStrategy,
   EquityCurveTracker,
   ExitEngine,
   IndicatorEngine,
@@ -256,7 +256,12 @@ export async function startEngineRuntime(deps: {
   // strategy, it IS how an enabled strategy receives anything at all.
   const enabledConfigs = new Map<
     string,
-    { riskRules?: RiskRules; symbols: readonly string[] }
+    {
+      riskRules?: RiskRules;
+      symbols: readonly string[];
+      /** The strategy's own capital (2026-11-18), when it has one. */
+      allocatedCapital?: number;
+    }
   >();
   const settings = await settingsRepo.getGlobal();
   const state = {
@@ -643,18 +648,29 @@ export async function startEngineRuntime(deps: {
       }
       return await orders.hasInflightOrder(strategyId, symbol, side);
     },
-    readPortfolio: () => {
-      const p = computePortfolio(
-        positionEngine.getOpenPositions(),
-        (s) => lastPrices.get(s) ?? null,
-        state.allocatedCapital,
-        positionEngine.realizedPnl(),
-      );
+    readPortfolio: (strategyId) => {
+      const p = portfolioForStrategy({
+        strategyId,
+        allocation:
+          strategyId === undefined
+            ? undefined
+            : enabledConfigs.get(strategyId)?.allocatedCapital,
+        openPositions: positionEngine.getOpenPositions(),
+        priceOf: (s) => lastPrices.get(s) ?? null,
+        accountCapital: state.allocatedCapital,
+        accountRealizedToday: positionEngine.realizedPnl(),
+        strategyRealizedToday: (id) =>
+          positionEngine.realizedPnlForStrategy(id),
+      });
       return Promise.resolve({
         allocatedCapital: p.allocatedCapital,
         investedValue: p.investedValue,
         availableCapital: p.availableCapital,
       });
+    },
+    entriesClosed: () => {
+      const now = Date.now();
+      return now >= istMinuteTs(now, parseHHMM(settings.marketHours.squareOff));
     },
     readGlobalLimits: () => Promise.resolve(state.limits),
     readStrategyOverride: (strategyId) =>
@@ -792,9 +808,7 @@ export async function startEngineRuntime(deps: {
       {
         spot: lastPrices.get(card.underlying) ?? null,
         rule:
-          config === null
-            ? null
-            : { type: config.type, params: config.params },
+          config === null ? null : { type: config.type, params: config.params },
         indexSymbols: settings.indexSymbols,
       },
       deps.askOdds ?? null,
@@ -1113,6 +1127,9 @@ export async function startEngineRuntime(deps: {
       ...(config.riskRules === undefined
         ? {}
         : { riskRules: config.riskRules }),
+      ...(config.allocatedCapital === undefined
+        ? {}
+        : { allocatedCapital: config.allocatedCapital }),
     });
     try {
       await runner.enable(config);
@@ -1295,6 +1312,9 @@ export async function startEngineRuntime(deps: {
         ...(config.riskRules === undefined
           ? {}
           : { riskRules: config.riskRules }),
+        ...(config.allocatedCapital === undefined
+          ? {}
+          : { allocatedCapital: config.allocatedCapital }),
       });
       await runner.enable(config);
       await syncWorkingSet();

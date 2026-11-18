@@ -39,6 +39,10 @@ interface State {
   position: Position | null;
   inflight: boolean;
   portfolio: PortfolioSnapshot;
+  /** Which strategy the engine asked the capital of. */
+  portfolioAskedFor?: string | undefined;
+  /** Past the intraday square-off time. */
+  entriesClosed?: boolean;
   global: RiskLimits;
   override: RiskRules | null;
   failReadSession: boolean;
@@ -89,7 +93,11 @@ function harness(init: Partial<State> = {}) {
     readOpenPositionCount: () => Promise.resolve(state.openCount),
     readPosition: () => Promise.resolve(state.position),
     hasInflightIntent: () => Promise.resolve(state.inflight),
-    readPortfolio: () => Promise.resolve(state.portfolio),
+    readPortfolio: (strategyId) => {
+      state.portfolioAskedFor = strategyId;
+      return Promise.resolve(state.portfolio);
+    },
+    entriesClosed: () => state.entriesClosed ?? false,
     readGlobalLimits: () => Promise.resolve(state.global),
     readStrategyOverride: () => Promise.resolve(state.override),
     readMarketView: () => state.marketView,
@@ -378,6 +386,31 @@ describe("RiskEngine — check 5 risk-based sizing (plan/14 §4.4)", () => {
       decision: "blocked",
       failedCheck: "positionSize",
     });
+  });
+
+  it("sizes a signal against its own strategy's capital (2026-11-18)", async () => {
+    const h = harness();
+    await h.engine.validate(signal({ strategyId: "str_orb" }));
+    expect(h.state.portfolioAskedFor).toBe("str_orb");
+  });
+
+  it("refuses a new entry after the square-off time, never an exit (2026-11-18)", async () => {
+    const h = harness({ entriesClosed: true });
+    expect(await h.engine.validate(signal())).toMatchObject({
+      decision: "blocked",
+      failedCheck: "session",
+      reason: expect.stringMatching(/square-off/) as unknown,
+    });
+    const exiting = harness({ entriesClosed: true, position: longPosition });
+    expect(
+      await exiting.engine.validate(
+        signal({
+          side: "SELL",
+          positionId: longPosition.positionId,
+          exitReason: "SESSION_CLOSE",
+        }),
+      ),
+    ).toMatchObject({ decision: "approved" });
   });
 
   it("blocks when there is no capacity at all", async () => {

@@ -94,6 +94,22 @@ export class RiskEngine {
         });
       }
 
+      // No new risk after the intraday square-off: whatever opens now is
+      // carried past the close the square-off exists to flatten before.
+      if (riskIncreasing && this.ports.entriesClosed?.() === true) {
+        checks.push({
+          check: "session",
+          passed: false,
+          detail: "past the square-off time",
+        });
+        return await this.finish(signal, checks, {
+          decision: "blocked",
+          failedCheck: "session",
+          reason:
+            "past the intraday square-off time — no new entries until the next session",
+        });
+      }
+
       // --- Check 2: duplicate (applies to exits too, plan/14 §4.2, §5) ---
       stage = "duplicate";
       const duplicate = await this.ports.hasInflightIntent(
@@ -269,7 +285,7 @@ export class RiskEngine {
       );
     }
 
-    const portfolio = await this.ports.readPortfolio();
+    const portfolio = await this.ports.readPortfolio(signal.strategyId);
     const opensNewPosition = position === null;
     const openCount = opensNewPosition
       ? await this.ports.readOpenPositionCount()

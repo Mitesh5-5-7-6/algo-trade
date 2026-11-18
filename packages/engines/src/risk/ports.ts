@@ -39,7 +39,18 @@ export interface RiskPorts {
     symbol: string,
     side: "BUY" | "SELL",
   ): Promise<boolean>;
-  readPortfolio(): Promise<PortfolioSnapshot>;
+  /**
+   * The capital a signal is sized against: its strategy's own, when the
+   * strategy has an allocation (2026-11-18), otherwise the account's.
+   */
+  readPortfolio(strategyId?: string): Promise<PortfolioSnapshot>;
+  /**
+   * True once the intraday square-off time has passed (found 2026-11-18: an
+   * EMA crossover entry at 15:30, after the 15:12 square-off, was carried
+   * overnight). New entries are refused from then on; exits never are.
+   * Absent, nothing is refused on this ground.
+   */
+  entriesClosed?(): boolean;
   /**
    * The cached market view (plan/14 §4). Synchronous-by-cache: the gate reads
    * a value the Market Bias Engine already computed on candle close, never
