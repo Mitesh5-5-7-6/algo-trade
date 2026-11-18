@@ -1,5 +1,10 @@
 import type { Db } from "mongodb";
-import { TradeCardSchema, type TradeCard } from "@neelkanth/core";
+import {
+  CardOddsSchema,
+  TradeCardSchema,
+  type CardOdds,
+  type TradeCard,
+} from "@neelkanth/core";
 import { COLLECTIONS } from "./collections.js";
 
 /**
@@ -21,6 +26,14 @@ export class TradeCardsRepository {
       { signalId: doc.signalId },
       { $setOnInsert: doc },
       { upsert: true },
+    );
+  }
+
+  /** The Time Machine's odds for a card, once they are known. */
+  async setOdds(signalId: string, odds: CardOdds): Promise<void> {
+    await this.collection.updateOne(
+      { signalId },
+      { $set: { odds: CardOddsSchema.parse(odds) } },
     );
   }
 

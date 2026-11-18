@@ -26,6 +26,52 @@ import { EntityIdSchema, SymbolSchema, TimestampSchema } from "./primitives.js";
  *   them.
  * - `DIRECT` — a strategy on a tradable symbol (a stock): the symbol itself.
  */
+/**
+ * The Time Machine's odds for a card's plan (operator decision 2026-11-18),
+ * asked of the research service after the order is placed — never in its way.
+ * On the UNDERLYING's bars, in index points: an option's premium also moves
+ * with time and volatility.
+ */
+export const CardOddsSchema = z.object({
+  /** OK; UNAVAILABLE when asked and not answered; NOT_RUN when not askable. */
+  status: z.enum(["OK", "UNAVAILABLE", "NOT_RUN"]),
+  /** Why it is unavailable or not run, or what the plan's levels rest on. */
+  reason: z.string().min(1).nullable(),
+  /** The plan asked about, on the underlying. */
+  plan: z
+    .object({
+      side: z.enum(["LONG", "SHORT"]),
+      entry: z.number().positive(),
+      stop: z.number().positive(),
+      target: z.number().positive(),
+      /** True when the levels were worked back from premium at a delta. */
+      estimated: z.boolean(),
+    })
+    .nullable(),
+  /** Replays of the rest of the day from past sessions. */
+  replays: z.number().int().nonnegative().nullable(),
+  sessions: z.number().int().nonnegative().nullable(),
+  /** Shares of the replays, 0..1. */
+  targetFirst: z.number().min(0).max(1).nullable(),
+  stopFirst: z.number().min(0).max(1).nullable(),
+  neither: z.number().min(0).max(1).nullable(),
+  /** The target's share needed to break even, 1 / (1 + R). */
+  breakEven: z.number().min(0).max(1).nullable(),
+  /** The resampled verdict against break-even, e.g. NEAR_BREAK_EVEN. */
+  verdict: z.string().min(1).nullable(),
+  /** The strategy's own rule over real history, for a replayable rule. */
+  history: z
+    .object({
+      rule: z.string().min(1),
+      fired: z.number().int().nonnegative(),
+      averageR: z.number().nullable(),
+      verdict: z.string().min(1),
+    })
+    .nullable(),
+  fingerprint: z.string().nullable(),
+});
+export type CardOdds = z.infer<typeof CardOddsSchema>;
+
 export const TradeCardSchema = z.object({
   /** The signal's id: one card per approved entry. */
   signalId: EntityIdSchema,
@@ -69,5 +115,7 @@ export const TradeCardSchema = z.object({
   reason: z.string().min(1),
   /** What the card could not say, when something was missing. */
   note: z.string().min(1).nullable(),
+  /** The Time Machine's odds for the plan; absent until asked. */
+  odds: CardOddsSchema.optional(),
 });
 export type TradeCard = z.infer<typeof TradeCardSchema>;

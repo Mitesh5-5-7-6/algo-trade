@@ -58,6 +58,7 @@ import { readDaySummary } from "./notifications/day-summary.js";
 import { subscribeCatalogue } from "./notifications/catalogue.js";
 import { createDailyMessages } from "./notifications/daily.js";
 import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
+import { researchOddsClient } from "./signals/research-odds-client.js";
 import {
   FyersBroker,
   FyersHistoryProvider,
@@ -352,6 +353,17 @@ export async function bootstrap(
     ...(paperOrderMonitor === undefined ? {} : { paperOrderMonitor }),
     mode: config.BROKER_MODE,
     liveState,
+    // A trade card's odds (2026-11-18), from the research service the
+    // dashboard's Time Machine uses — never computed in this process (D16).
+    ...(config.RESEARCH_API_URL === undefined ||
+    config.RESEARCH_API_TOKEN === undefined
+      ? {}
+      : {
+          askOdds: researchOddsClient({
+            url: config.RESEARCH_API_URL,
+            token: config.RESEARCH_API_TOKEN,
+          }),
+        }),
     // Task 15.3: the bars a late feed missed. Its own limiter — never the
     // order path's — at one request every 1.5 s, under the 50 a minute
     // FYERS's Standard plan allows (design §7.1 D10). One day per request.

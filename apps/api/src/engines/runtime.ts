@@ -74,6 +74,7 @@ import { instrumentLookup } from "./synthetic-index.js";
 import { FEED_SILENCE_MS, feedSilentSeconds } from "./feed-health.js";
 import { catchUpSession } from "./session-catch-up.js";
 import { buildTradeCard, optionUnderlyingOf } from "../signals/trade-card.js";
+import { oddsForCard, type AskOdds } from "../signals/card-odds.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
@@ -202,6 +203,11 @@ export async function startEngineRuntime(deps: {
    * a feed that connects after the open trades on what it saw.
    */
   history?: Pick<HistoryProvider, "getHistory">;
+  /**
+   * The research service's Time Machine, for a trade card's odds (operator
+   * decision 2026-11-18). Absent, cards go out without odds and say why.
+   */
+  askOdds?: AskOdds;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -778,7 +784,23 @@ export async function startEngineRuntime(deps: {
     });
     if (card === null) return;
     await tradeCards.insert(card);
-    await publish("TRADE_CARD", { ...card, mode: deps.mode });
+    // The Time Machine's odds for the plan, asked of the research service —
+    // the order is already placed, so this can only delay the message, by at
+    // most the client's timeout. Unanswered, the card says so and goes out.
+    const odds = await oddsForCard(
+      card,
+      {
+        spot: lastPrices.get(card.underlying) ?? null,
+        rule:
+          config === null
+            ? null
+            : { type: config.type, params: config.params },
+        indexSymbols: settings.indexSymbols,
+      },
+      deps.askOdds ?? null,
+    );
+    await tradeCards.setOdds(card.signalId, odds);
+    await publish("TRADE_CARD", { ...card, odds, mode: deps.mode });
   }
   const runner = new StrategyRunner({
     registry: createStrategyRegistry(),

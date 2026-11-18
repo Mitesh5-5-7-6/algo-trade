@@ -1,4 +1,28 @@
-import type { TradeCard } from "@neelkanth/core";
+import type { CardOdds, TradeCard } from "@neelkanth/core";
+
+const pct = (share: number | null): string =>
+  share === null ? "—" : `${(share * 100).toFixed(0)}%`;
+
+/** The Time Machine's odds for a card, in a line or two; nothing before they are asked. */
+export function formatCardOdds(odds: CardOdds | undefined): string[] {
+  if (odds === undefined) return [];
+  if (odds.status !== "OK")
+    return [
+      `Time Machine: ${odds.status === "NOT_RUN" ? "not run" : "unavailable"} — ${odds.reason ?? "no reason given"}`,
+    ];
+  const lines = [
+    `Time Machine: target first ${pct(odds.targetFirst)} · stop first ${pct(odds.stopFirst)} · neither ${pct(odds.neither)} (break-even ${pct(odds.breakEven)}) — ${odds.verdict ?? "—"}, ${(odds.replays ?? 0).toLocaleString("en-IN")} replays of ${String(odds.sessions ?? 0)} sessions`,
+  ];
+  if (odds.history !== null)
+    lines.push(
+      `${odds.history.rule} history: ${String(odds.history.fired)} trades, average ${odds.history.averageR === null ? "—" : `${odds.history.averageR.toFixed(2)}R`} — ${odds.history.verdict}`,
+    );
+  if (odds.plan?.estimated === true && odds.reason !== null)
+    lines.push(
+      `Odds plan on the index: ${odds.plan.side} ${String(odds.plan.entry)} · SL ${String(odds.plan.stop)} · target ${String(odds.plan.target)} (${odds.reason})`,
+    );
+  return lines;
+}
 
 const num = (value: number): string =>
   value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -69,5 +93,6 @@ export function formatTradeCard(card: TradeCard): {
       `Premium SL and target are estimates from the index levels at delta ${String(card.assumedDelta ?? 0.5)}; the option also moves with time and volatility.`,
     );
   if (card.note !== null) lines.push(card.note);
+  lines.push(...formatCardOdds(card.odds));
   return { title, body: lines.join("\n") };
 }

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api-client";
+import { describeVerdict, pct } from "@/lib/odds";
 import { qk } from "@/lib/query-keys";
 import {
   bareSymbol,
@@ -113,9 +114,72 @@ function Card({ card }: { card: TradeCard }) {
           )}
         </tbody>
       </table>
+      <Odds card={card} />
       <p className="hint">{card.reason}</p>
       <p className="hint">{describeBasis(card)}.</p>
       {card.note !== null && <p className="hint">{card.note}.</p>}
     </section>
+  );
+}
+
+/** The Time Machine's odds for the card's plan, as the research service gave them. */
+function Odds({ card }: { card: TradeCard }) {
+  const odds = card.odds;
+  if (odds === undefined) return <p className="hint">Time Machine: asking…</p>;
+  if (odds.status !== "OK")
+    return (
+      <p className="hint">
+        Time Machine {odds.status === "NOT_RUN" ? "not run" : "unavailable"}:{" "}
+        {odds.reason}.
+      </p>
+    );
+  const tone = describeVerdict(odds.verdict ?? "").tone;
+  return (
+    <>
+      <p className={`odds-verdict ${tone}`} style={{ marginTop: 8 }}>
+        Time Machine: {describeVerdict(odds.verdict ?? "").label}
+      </p>
+      <table className="data odds-table">
+        <tbody>
+          <tr>
+            <td>Target first / stop first / neither</td>
+            <td className="num mono">
+              {pct(odds.targetFirst)} / {pct(odds.stopFirst)} /{" "}
+              {pct(odds.neither)}
+            </td>
+          </tr>
+          <tr>
+            <td>Break-even share</td>
+            <td className="num mono">{pct(odds.breakEven)}</td>
+          </tr>
+          <tr>
+            <td>Replays</td>
+            <td className="num mono">
+              {(odds.replays ?? 0).toLocaleString("en-IN")} of{" "}
+              {odds.sessions ?? 0} sessions
+            </td>
+          </tr>
+          {odds.history !== null && (
+            <tr>
+              <td>{odds.history.rule} over real history</td>
+              <td className="num mono">
+                {odds.history.fired} trades,{" "}
+                {odds.history.averageR === null
+                  ? "—"
+                  : `${odds.history.averageR.toFixed(2)}R`}{" "}
+                — {describeVerdict(odds.history.verdict).label}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+      {odds.plan?.estimated === true && (
+        <p className="hint">
+          Asked on the index: {odds.plan.side} {price(odds.plan.entry)}, SL{" "}
+          {price(odds.plan.stop)}, target {price(odds.plan.target)} —{" "}
+          {odds.reason}.
+        </p>
+      )}
+    </>
   );
 }
