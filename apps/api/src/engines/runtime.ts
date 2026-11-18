@@ -840,6 +840,8 @@ export async function startEngineRuntime(deps: {
     handoff,
     nextSignalId: () => `sig_${crypto.randomUUID()}`,
     candleWindow: CANDLE_WINDOW,
+    // Live: a strategy waiting on its indicators says so (2026-11-18).
+    recordNotReady: true,
     onError,
   });
 

@@ -84,6 +84,13 @@ export interface StrategyRunnerDeps {
   now?: () => number;
   /** Required error sink — no silent failures (plan/02 §10). */
   onError: (error: unknown, context: Record<string, unknown>) => void;
+  /**
+   * Record a HOLD naming the missing indicators when a strategy cannot be
+   * evaluated yet (2026-11-18). On in the live runtime, where a strategy
+   * waiting forever must be visible; off by default, so a replay's record —
+   * and every fingerprint kept from it — is unchanged.
+   */
+  recordNotReady?: boolean;
 }
 
 /**
@@ -365,6 +372,7 @@ export class StrategyRunner {
           .requiredIndicators()
           .map(indicatorKey)
           .filter((key) => !(key in payload.indicators));
+        if (missing.length > 0 && this.deps.recordNotReady !== true) continue;
         if (missing.length > 0) {
           // Recorded, never skipped silently (2026-11-18): VWAP never formed
           // on volume-less index bars, and three strategies sat idle for days
