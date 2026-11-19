@@ -59,6 +59,11 @@ import { subscribeCatalogue } from "./notifications/catalogue.js";
 import { createDailyMessages } from "./notifications/daily.js";
 import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
 import { researchOddsClient } from "./signals/research-odds-client.js";
+import { createMorningStart } from "./broker/morning-start.js";
+import {
+  fyersTokenExpiry,
+  renewWithRefreshToken,
+} from "./broker/fyers-token-renewal.js";
 import {
   FyersBroker,
   FyersHistoryProvider,
@@ -431,9 +436,7 @@ export async function bootstrap(
           day,
           new Set((await settingsRepo.getGlobal()).marketHolidays),
         ),
-      ...(fyersBroker === null
-        ? {}
-        : { tokenStatus: async () => (await lookupFyersToken()).status }),
+      // The token reminders are the morning start's now (2026-11-19).
       readSummary: (day) => readDaySummary(mongo.db, config.BROKER_MODE, day),
       alreadySent: (key) => notificationsRepo.wasSent(key),
       onError: (error, context) => {
@@ -445,6 +448,75 @@ export async function bootstrap(
     }, 60_000);
     dailyTimer.unref();
     void daily.tick(Date.now());
+  }
+
+  // The morning start (operator decision 2026-11-19): renew the FYERS token
+  // automatically before the open when given the PIN, and remind at 08:45
+  // and 09:05 while there is still none. Runs whether or not Telegram is set:
+  // the renewal does not need it.
+  let morningTimer: ReturnType<typeof setInterval> | undefined;
+  if (fyersBroker !== null && config.FYERS_APP_ID && config.FYERS_APP_SECRET) {
+    const appId = config.FYERS_APP_ID;
+    const appSecret = config.FYERS_APP_SECRET;
+    const pin = config.FYERS_PIN;
+    const settingsRepo = new SettingsRepository(mongo.db);
+    const morning = createMorningStart({
+      isTradingDay: async (day) =>
+        isTradingDayIST(
+          day,
+          new Set((await settingsRepo.getGlobal()).marketHolidays),
+        ),
+      tokenStatus: async () => (await lookupFyersToken()).status,
+      renew:
+        pin === undefined
+          ? null
+          : async () => {
+              const user = await users.findFirstUser();
+              if (!user) return "no operator account";
+              const stored = await brokerTokens.getDecryptedToken(user.userId);
+              if (!stored?.refreshToken)
+                return "no refresh token stored — log in once from the dashboard";
+              const result = await renewWithRefreshToken({
+                appId,
+                appSecret,
+                refreshToken: stored.refreshToken,
+                pin,
+              });
+              if (!result.ok) {
+                brokerLog.warn(
+                  { reason: result.reason },
+                  "automatic FYERS login failed",
+                );
+                return result.reason;
+              }
+              await brokerTokens.saveToken(
+                user.userId,
+                result.accessToken,
+                fyersTokenExpiry(Date.now()),
+                result.refreshToken ?? stored.refreshToken,
+              );
+              brokerLog.info("automatic FYERS login — reconnecting the feed");
+              await broker.connect();
+              return null;
+            },
+      renewUnavailable: "FYERS_PIN is not set on this deployment",
+      notify: (severity, title, body, dedupeKey) => {
+        notifier.notify({
+          severity,
+          mode: config.BROKER_MODE,
+          title,
+          body,
+          dedupeKey,
+        });
+      },
+      onError: (error, context) => {
+        brokerLog.warn({ err: error, ...context }, "morning start failed");
+      },
+    });
+    morningTimer = setInterval(() => {
+      void morning.tick(Date.now());
+    }, 60_000);
+    morningTimer.unref();
   }
 
   let tokenLifecycle: { close(): Promise<void> } | undefined;
@@ -632,6 +704,7 @@ export async function bootstrap(
       clearInterval(sessionTimer);
       clearInterval(equityTimer);
       if (dailyTimer !== undefined) clearInterval(dailyTimer);
+      if (morningTimer !== undefined) clearInterval(morningTimer);
       stopMeter?.();
       shutdownLog.info("closing realtime bridge + http server");
       // The bridge owns the shared HTTP server's close (io.close closes it too),
