@@ -190,6 +190,21 @@ describe("the relay to the research service (17.8)", () => {
     }
   });
 
+  it("names the platform's status when the answer is not JSON (2026-11-19)", async () => {
+    const { app } = server(
+      () => new Response("<html>bad gateway</html>", { status: 502 }),
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/research/scan",
+      payload: {},
+    });
+    expect(response.json<{ error: { message: string } }>().error.message).toBe(
+      "the research service gave an unreadable answer (HTTP 502, not JSON) — it may be restarting, or out of memory; see its logs",
+    );
+    await app.close();
+  });
+
   it("never turns the service's refusal of its secret into a login prompt", async () => {
     const { app } = server(() =>
       json(401, { error: { code: "UNAUTHORIZED", message: "no" } }),

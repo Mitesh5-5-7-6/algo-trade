@@ -86,9 +86,14 @@ export function registerResearchRelay(
     try {
       payload = await response.json();
     } catch {
+      // Not JSON is almost always the hosting platform answering for the
+      // service — a 502 while it restarts after a crash, or runs out of
+      // memory. Say the status, so the operator knows which (2026-11-19).
       return {
         status: 503,
-        payload: UNAVAILABLE("the research service gave an unreadable answer"),
+        payload: UNAVAILABLE(
+          `the research service gave an unreadable answer (HTTP ${String(response.status)}, not JSON) — it may be restarting, or out of memory; see its logs`,
+        ),
       };
     }
     return { status: response.status, payload };
