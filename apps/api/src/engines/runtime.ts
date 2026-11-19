@@ -391,6 +391,10 @@ export async function startEngineRuntime(deps: {
     normalizer: fyersNormalizer,
     intervals: MARKET_INTERVALS,
     onError,
+    // Only ticks stamped inside today's open session build bars (2026-11-19:
+    // a connect-time snapshot stamped 04:50 drove a phantom short). Asked of
+    // the session manager by the tick's own time, never the clock's.
+    acceptTick: (tick) => sessionManager.phase(tick.ts) === "open",
   });
   marketDataEngine.attach(deps.broker);
 

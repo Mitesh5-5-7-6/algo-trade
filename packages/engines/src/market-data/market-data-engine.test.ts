@@ -418,3 +418,25 @@ describe("an index's volume from its future (2026-11-18)", () => {
     expect(h.candles[0]?.volumeSource).toBeUndefined();
   });
 });
+
+describe("ticks stamped outside the session (2026-11-19)", () => {
+  it("builds no bar and moves no price from a tick the rule refuses, and counts it", async () => {
+    const h = harness();
+    const open = ist(9, 15);
+    const engine = new MarketDataEngine({
+      ports: h.ports,
+      normalizer: fixtureNormalizer,
+      intervals: ["1m"],
+      onError: (error, context) => h.errors.push({ error, context }),
+      acceptTick: (tick) => tick.ts >= open,
+    });
+    // The connect-time snapshot: stamped 04:50, arriving at 10:22.
+    await engine.ingestRaw(raw(ist(4, 50), 2_500));
+    await engine.ingestRaw(raw(ist(9, 15) + 1_000, 100));
+    await engine.ingestRaw(raw(ist(9, 16) + 1_000, 101));
+    expect(h.candles.map((c) => c.ts)).toEqual([ist(9, 15)]);
+    expect(h.candles[0]?.open).toBe(100);
+    expect(h.events.filter((e) => e.name === "MARKET_TICK")).toHaveLength(2);
+    expect(engine.refusedTicks().get("NSE:RELIANCE-EQ")).toBe(1);
+  });
+});

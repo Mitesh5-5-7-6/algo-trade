@@ -1,4 +1,4 @@
-import type { Candle, CandleInterval } from "@neelkanth/core";
+import type { Candle, CandleInterval, Tick } from "@neelkanth/core";
 import type { Broker } from "@neelkanth/broker";
 import { CandleAggregator } from "./candle-aggregator.js";
 import type { TickNormalizer } from "./normalize.js";
@@ -19,6 +19,14 @@ export interface MarketDataEngineDeps {
    * The composition root passes a logging fn; tests pass a capturing one.
    */
   onError: (error: unknown, context: Record<string, unknown>) => void;
+  /**
+   * Whether a tick's own timestamp may build a bar (2026-11-19). FYERS sends a
+   * snapshot when the feed connects, stamped hours before the open (04:50):
+   * it became a bar, strategies decided on it inside the open session, and an
+   * exit fired twice — the second opening a short nobody decided on. Absent,
+   * every tick is taken, as before.
+   */
+  acceptTick?: (tick: Tick) => boolean;
 }
 
 /**
@@ -46,6 +54,9 @@ export class MarketDataEngine {
   private readonly normalizer: TickNormalizer;
   private readonly aggregator: CandleAggregator;
   private readonly onError: MarketDataEngineDeps["onError"];
+  private readonly acceptTick: MarketDataEngineDeps["acceptTick"];
+  /** Ticks refused for their timestamp, per symbol — reported, not hidden. */
+  private readonly refused = new Map<string, number>();
   /** Per-symbol last applied timestamp — the monotonic guard (plan/17 §8). */
   private readonly lastTs = new Map<string, number>();
   private workingSet: string[] = [];
@@ -60,6 +71,12 @@ export class MarketDataEngine {
     this.normalizer = deps.normalizer;
     this.aggregator = new CandleAggregator(deps.intervals);
     this.onError = deps.onError;
+    this.acceptTick = deps.acceptTick;
+  }
+
+  /** How many ticks each symbol had refused for falling outside the session. */
+  refusedTicks(): ReadonlyMap<string, number> {
+    return this.refused;
   }
 
   /** Wire the broker's data side: raw messages in, resubscribe on reconnect. */
@@ -129,6 +146,12 @@ export class MarketDataEngine {
       const tick = this.normalizer(raw);
       if (tick === null) {
         this.onError(new Error("unparseable market message"), { raw });
+        return;
+      }
+
+      // A tick stamped outside the session builds nothing and moves no price.
+      if (this.acceptTick !== undefined && !this.acceptTick(tick)) {
+        this.refused.set(tick.symbol, (this.refused.get(tick.symbol) ?? 0) + 1);
         return;
       }
 
