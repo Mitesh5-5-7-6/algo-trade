@@ -69,20 +69,34 @@ export async function setupOddsFromStore(
   return { run, saved };
 }
 
-/** Stored bars of the symbols strictly before an IST date — read only. */
+/**
+ * Stored bars of the symbols strictly before an IST date, from `fromTs` on
+ * (default: all of them) — read only.
+ *
+ * One symbol at a time (2026-11-19). All at once, a scan's 224 symbols held
+ * every raw document beside its parsed copy together — about 200 MB of heap
+ * for 27 MB of bars — and the research service, on a 512 MB instance, was
+ * killed mid-scan and answered with the platform's HTML error page.
+ */
 export async function loadCandlesBefore(
   db: Db,
   symbols: readonly string[],
   interval: CandleInterval,
   date: string,
+  fromTs = 0,
 ): Promise<Candle[]> {
   const repo = new CandlesRepository(db);
-  const perSymbol = await Promise.all(
-    symbols.map((symbol) =>
-      repo.findRange(symbol, interval, 0, istDayStart(date)),
-    ),
-  );
-  return perSymbol.flat();
+  const out: Candle[] = [];
+  for (const symbol of symbols) {
+    for (const candle of await repo.findRange(
+      symbol,
+      interval,
+      fromTs,
+      istDayStart(date),
+    ))
+      out.push(candle);
+  }
+  return out;
 }
 
 /** What the store holds for one symbol: enough to say what a plan can use. */

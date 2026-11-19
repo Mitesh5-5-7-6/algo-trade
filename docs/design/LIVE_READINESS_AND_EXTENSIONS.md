@@ -389,25 +389,37 @@ history half.
 One more web service on the same host as the API, from the same repository
 and the same build.
 
-| Setting              | Value                                                                                                             |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Build command        | the API service's own (it builds `apps/api/dist`)                                                                 |
-| Start command        | `node apps/api/dist/research-api/main.js`                                                                         |
-| `MONGO_URI`          | the same cluster, with the database `neelkanth_research`. Any other name is refused at start                      |
-| `RESEARCH_API_TOKEN` | a new random secret of 32 characters or more                                                                      |
-| `PORT`               | set by the platform; the service then binds every interface. Locally it is `127.0.0.1:4100` (`RESEARCH_API_PORT`) |
-| Health check path    | `/health/ready`                                                                                                   |
+| Setting              | Value                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Build command        | the API service's own (it builds `apps/api/dist`)                                                                        |
+| Start command        | `node --max-old-space-size=256 apps/api/dist/research-api/main.js` — the cap is required on a 512 MB instance; see below |
+| `MONGO_URI`          | the same cluster, with the database `neelkanth_research`. Any other name is refused at start                             |
+| `RESEARCH_API_TOKEN` | a new random secret of 32 characters or more                                                                             |
+| `PORT`               | set by the platform; the service then binds every interface. Locally it is `127.0.0.1:4100` (`RESEARCH_API_PORT`)        |
+| Health check path    | `/health/ready`                                                                                                          |
 
 Then, on the **API** service, set `RESEARCH_API_URL` to the research
 service's address and `RESEARCH_API_TOKEN` to the same secret — both or
 neither — and redeploy the API and the dashboard. The dashboard needs no new
 setting: it reaches research through the API.
 
+**Memory (found 2026-11-19).** On Render's free instance (512 MB, 0.1 CPU)
+the service was killed during a scan and answered with the platform's HTML
+502, which the dashboard showed as "the research service gave an unreadable
+answer". Measured locally on the real service: a scan peaked at 429 MB, all
+224 symbols' bars loaded at once. Bars now load one symbol at a time, a scan
+reads 180 days of daily history (`SCAN_HISTORY_DAYS`), and only the F&O
+file's futures rows are parsed: a scan peaks at 281 MB, an odds run at 404 MB.
+With `--max-old-space-size=256` Node collects before it grows: 221 MB and
+289 MB, with fingerprints identical to the uncapped run. Keep the cap.
+
 To check it: the dashboard's **Time Machine** tab shows the stored dates under
 the form. "Research data unavailable: the research service is not configured
 for this deployment" means the API's two settings are missing; "did not
 answer" means the service is down or its address is wrong; "refused this
 deployment's credentials" means the two secrets differ.
+"unreadable answer (HTTP 502, not JSON)" means the platform answered for the
+service: it is restarting or ran out of memory; its logs say which.
 
 ### 6.2 Open questions
 

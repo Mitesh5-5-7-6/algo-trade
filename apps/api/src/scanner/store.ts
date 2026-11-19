@@ -15,6 +15,15 @@ export const SYMBOL_FILE_URLS = {
 /** 09:00 IST: the universe is judged as it stands before the scan day's open. */
 const PRE_OPEN_MS = 9 * 3_600_000;
 
+/**
+ * How much daily history a scan reads: 180 calendar days, some 120 sessions —
+ * six times the longest condition's warm-up (EMA 21, a 20-bar high, RSI 14),
+ * so every average has long converged. Bounded (2026-11-19) so a scan's
+ * memory does not grow with every day stored; the whole history once took
+ * a 512 MB research service past its limit.
+ */
+export const SCAN_HISTORY_DAYS = 180;
+
 export interface StoredScanRequest {
   scanDate: string;
   /** The two symbol files' text, read at scan time (design §7.1 D9). */
@@ -40,6 +49,8 @@ export interface ScanManifest {
   symbolFiles: { foSha256: string; cmSha256: string };
   holidays: string[];
   specialSessions: string[];
+  /** Calendar days of daily history the scan read before its day. */
+  historyDays: number;
 }
 
 /**
@@ -66,6 +77,7 @@ export async function scanFromStore(
     universe.members.map((m) => m.symbol),
     "1d",
     request.scanDate,
+    istDayStart(request.scanDate) - SCAN_HISTORY_DAYS * 86_400_000,
   );
   const barsBySymbol = new Map<string, Candle[]>();
   for (const candle of candles) {
@@ -96,6 +108,7 @@ export async function scanFromStore(
     },
     holidays: [...request.holidays].sort(),
     specialSessions: [...request.specialSessions].sort(),
+    historyDays: SCAN_HISTORY_DAYS,
   };
   if (!request.save) return { run, manifest, saved: false };
 

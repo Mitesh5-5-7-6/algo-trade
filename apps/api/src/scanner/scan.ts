@@ -15,7 +15,7 @@ import {
 import type { UniverseMember, UniverseRejection } from "./universe.js";
 
 /** Bumped whenever the same bars and universe would give a different scan. */
-export const SCAN_VERSION = "1";
+export const SCAN_VERSION = "2"; // 2: 180 days of history, not all of it
 
 const DAY_MS = 86_400_000;
 

@@ -98,7 +98,10 @@ export function buildUniverse(
   const futures = new Map<string, Contract[]>();
   let unreadableRows = 0;
   for (const row of files.fo.split("\n")) {
-    if (row.trim() === "") continue;
+    // Only futures matter, and a future's symbol ends `FUT`: some 700 of the
+    // file's 92,000 rows. Skipping the options before parsing them keeps a
+    // scan inside a small research instance's memory (2026-11-19).
+    if (!row.includes("FUT,")) continue;
     const instrument = parseInstrumentRow(row);
     if (instrument === null) {
       unreadableRows += 1;

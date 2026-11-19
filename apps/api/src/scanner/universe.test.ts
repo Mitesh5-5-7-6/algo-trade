@@ -158,14 +158,15 @@ describe("the scanner's universe (18.2)", () => {
     ]);
   });
 
-  it("counts the rows it could not read rather than guessing at them", () => {
+  it("counts the futures rows it could not read rather than guessing at them", () => {
     const universe = build([
       future("RELIANCE", "Nov", expiryIn(6), 500, "10100000002885"),
+      // Not a future at all: skipped before parsing (2026-11-19), not counted.
       "not,a,row",
       "101126112361697,BROKEN 23 Nov 26 FUT,13,abc,0.1,,x,2026-11-16,1,NSE:BROKEN26NOVFUT,10,11,1,BROKEN,1,-1.0,XX,1,None,0,0.0",
     ]);
     expect(universe.members).toHaveLength(1);
-    expect(universe.unreadableRows).toBe(2);
+    expect(universe.unreadableRows).toBe(1);
   });
 
   it("is the same universe whatever order the rows come in", () => {
