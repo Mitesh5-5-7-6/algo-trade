@@ -423,6 +423,105 @@ describe("FyersBroker.readOptionChain", () => {
     );
   });
 
+  /**
+   * Rows verbatim from a live FYERS response of 2026-11-18. The underlying's
+   * own row has an EMPTY option type and strike -1; read as anything else,
+   * no spot was found and every chain was thrown away.
+   */
+  it("finds the spot in FYERS's real underlying row: empty option type, strike -1", async () => {
+    const now = Date.now();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            s: "ok",
+            code: 200,
+            data: {
+              expiryData: [
+                {
+                  date: "next",
+                  expiry: String(Math.floor((now + 5 * 86_400_000) / 1000)),
+                  expiry_flag: "M",
+                },
+              ],
+              optionsChain: [
+                {
+                  ask: 0,
+                  bid: 0,
+                  description: "NIFTY50-INDEX",
+                  ex_symbol: "NIFTY",
+                  exchange: "NSE",
+                  fp: 25234.3,
+                  fpch: -181,
+                  fpchp: -0.71,
+                  fyToken: "101000000026000",
+                  ltp: 25227.95,
+                  ltpch: -159.45,
+                  ltpchp: -0.63,
+                  option_type: "",
+                  strike_price: -1,
+                  symbol: "NSE:NIFTY50-INDEX",
+                },
+                {
+                  ask: 27.1,
+                  bid: 26.35,
+                  fyToken: "101126112364428",
+                  ltp: 26.35,
+                  ltpch: 4.55,
+                  ltpchp: 20.87,
+                  oi: 1240460,
+                  oich: 301405,
+                  oichp: 32.1,
+                  option_type: "PE",
+                  prev_oi: 939055,
+                  strike_price: 24750,
+                  symbol: "NSE:NIFTY26NOV24750PE",
+                  volume: 30383600,
+                },
+                {
+                  ask: 500.8,
+                  bid: 495.4,
+                  fyToken: "101126112364427",
+                  ltp: 502.2,
+                  ltpch: -184.15,
+                  ltpchp: -26.83,
+                  oi: 72670,
+                  oich: -1040,
+                  oichp: -1.41,
+                  option_type: "CE",
+                  prev_oi: 73710,
+                  strike_price: 24750,
+                  symbol: "NSE:NIFTY26NOV24750CE",
+                  volume: 127985,
+                },
+              ],
+            },
+          }),
+      }),
+    );
+
+    const snapshot = await new FyersBroker(deps()).readOptionChain("NIFTY");
+    expect(snapshot).toMatchObject({
+      underlying: "NIFTY",
+      spot: 25227.95,
+      rows: [
+        {
+          strike: 24750,
+          callOI: 72670,
+          putOI: 1240460,
+          callChangeOI: -1040,
+          putChangeOI: 301405,
+          callLtp: 502.2,
+          putLtp: 26.35,
+          callVolume: 127985,
+          putVolume: 30383600,
+        },
+      ],
+    });
+  });
+
   it("returns null when the response cannot produce a complete chain", async () => {
     vi.stubGlobal(
       "fetch",

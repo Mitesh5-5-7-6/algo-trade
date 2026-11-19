@@ -84,6 +84,13 @@ export interface StrategyRunnerDeps {
   now?: () => number;
   /** Required error sink — no silent failures (plan/02 §10). */
   onError: (error: unknown, context: Record<string, unknown>) => void;
+  /**
+   * Record a HOLD naming the missing indicators when a strategy cannot be
+   * evaluated yet (2026-11-18). On in the live runtime, where a strategy
+   * waiting forever must be visible; off by default, so a replay's record —
+   * and every fingerprint kept from it — is unchanged.
+   */
+  recordNotReady?: boolean;
 }
 
 /**
@@ -361,11 +368,39 @@ export class StrategyRunner {
 
       for (const instance of instances) {
         // Readiness gating (plan/18 §4): every required indicator present.
-        const required = instance.strategy.requiredIndicators();
-        const allReady = required.every(
-          (spec) => indicatorKey(spec) in payload.indicators,
-        );
-        if (!allReady) continue;
+        const missing = instance.strategy
+          .requiredIndicators()
+          .map(indicatorKey)
+          .filter((key) => !(key in payload.indicators));
+        if (missing.length > 0 && this.deps.recordNotReady !== true) continue;
+        if (missing.length > 0) {
+          // Recorded, never skipped silently (2026-11-18): VWAP never formed
+          // on volume-less index bars, and three strategies sat idle for days
+          // leaving not one row behind — indistinguishable from not enabled.
+          await this.deps.ports.persistSignal(
+            this.toSignal(
+              instance,
+              {
+                side: "HOLD",
+                confidence: 0,
+                reason: `indicators not ready: ${missing.join(", ")}`,
+              },
+              buildContext({
+                symbol: payload.symbol,
+                interval,
+                candle,
+                candles,
+                indicators: payload.indicators,
+                session,
+                position: null,
+                sentiment,
+              }),
+              candle.ts,
+              { symbol: instance.symbol, price: candle.close },
+            ),
+          );
+          continue;
+        }
 
         const position = await this.deps.ports.readPosition(
           instance.strategyId,

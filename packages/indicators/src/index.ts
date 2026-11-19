@@ -5,3 +5,6 @@ export * from "./rsi.js";
 export * from "./atr.js";
 export * from "./vwap.js";
 export * from "./rolling-mean.js";
+export * from "./supertrend.js";
+export * from "./macd.js";
+export * from "./bollinger.js";

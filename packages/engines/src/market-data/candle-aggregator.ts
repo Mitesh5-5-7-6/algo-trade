@@ -33,6 +33,14 @@ interface BarState {
 export class CandleAggregator {
   private readonly intervals: readonly CandleInterval[];
   private readonly bars = new Map<string, BarState>();
+  /**
+   * Volume credited to a bucket whose bar has not opened yet — a future's tick
+   * can land in a new minute a moment before the index's does.
+   */
+  private readonly pendingVolume = new Map<
+    string,
+    { bucketStart: number; volume: number }
+  >();
 
   constructor(intervals: readonly CandleInterval[]) {
     if (intervals.length === 0) {
@@ -70,11 +78,11 @@ export class CandleAggregator {
       const state = this.bars.get(key);
 
       if (state === undefined) {
-        this.bars.set(key, this.startBar(bucketStart, tick));
+        this.bars.set(key, this.startBar(key, bucketStart, tick));
       } else if (bucketStart > state.bucketStart) {
         closed.push(this.finalize(tick.symbol, interval, state));
         // Intermediate empty buckets produce no bar (honest absence).
-        this.bars.set(key, this.startBar(bucketStart, tick));
+        this.bars.set(key, this.startBar(key, bucketStart, tick));
       } else if (bucketStart === state.bucketStart) {
         state.high = Math.max(state.high, tick.ltp);
         state.low = Math.min(state.low, tick.ltp);
@@ -97,17 +105,55 @@ export class CandleAggregator {
       closed.push(this.finalize(symbol, interval, state));
     }
     this.bars.clear();
+    this.pendingVolume.clear();
     return closed;
   }
 
-  private startBar(bucketStart: number, tick: Tick): BarState {
+  /**
+   * Credit volume traded elsewhere to `symbol`'s bar of the same bucket
+   * (2026-11-18): an index has no traded volume of its own — every live
+   * index bar arrived with volume 0, so VWAP and average volume never formed
+   * — and its near-month future's volume stands in for it. Volume for a
+   * bucket whose bar is already closed is dropped, never moved into a later
+   * one; volume for one not yet opened waits for it.
+   */
+  addVolume(symbol: string, ts: number, volume: number): void {
+    if (!(volume > 0)) return;
+    for (const interval of this.intervals) {
+      const bucketStart =
+        Math.floor(ts / intervalMs(interval)) * intervalMs(interval);
+      const key = CandleAggregator.key(symbol, interval);
+      const state = this.bars.get(key);
+      if (state !== undefined && state.bucketStart === bucketStart) {
+        state.volume += volume;
+        continue;
+      }
+      if (state !== undefined && bucketStart < state.bucketStart) continue;
+      const pending = this.pendingVolume.get(key);
+      this.pendingVolume.set(key, {
+        bucketStart,
+        volume:
+          pending?.bucketStart === bucketStart
+            ? pending.volume + volume
+            : volume,
+      });
+    }
+  }
+
+  private startBar(key: string, bucketStart: number, tick: Tick): BarState {
+    const pending = this.pendingVolume.get(key);
+    let credited = 0;
+    if (pending !== undefined && pending.bucketStart <= bucketStart) {
+      if (pending.bucketStart === bucketStart) credited = pending.volume;
+      this.pendingVolume.delete(key);
+    }
     return {
       bucketStart,
       open: tick.ltp,
       high: tick.ltp,
       low: tick.ltp,
       close: tick.ltp,
-      volume: tick.volume,
+      volume: tick.volume + credited,
     };
   }
 

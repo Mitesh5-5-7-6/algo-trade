@@ -10,7 +10,23 @@ export type IndicatorSpec =
   | { readonly kind: "atr"; readonly period: number }
   | { readonly kind: "vwap" }
   | { readonly kind: "sma"; readonly period: number }
-  | { readonly kind: "avgVolume"; readonly period: number };
+  | { readonly kind: "avgVolume"; readonly period: number }
+  | {
+      readonly kind: "supertrend";
+      readonly period: number;
+      readonly multiplier: number;
+    }
+  | {
+      readonly kind: "macd";
+      readonly fast: number;
+      readonly slow: number;
+      readonly signal: number;
+    }
+  | {
+      readonly kind: "bollinger";
+      readonly period: number;
+      readonly stdDev: number;
+    };
 
 /**
  * The hot-state / context key a spec's value appears under (e.g. "ema9").
@@ -30,5 +46,11 @@ export function indicatorKey(spec: IndicatorSpec): string {
       return `sma${String(spec.period)}`;
     case "avgVolume":
       return `avgvol${String(spec.period)}`;
+    case "supertrend":
+      return `supertrend${String(spec.period)}x${String(spec.multiplier)}`;
+    case "macd":
+      return `macd${String(spec.fast)}_${String(spec.slow)}_${String(spec.signal)}`;
+    case "bollinger":
+      return `bb${String(spec.period)}x${String(spec.stdDev)}`;
   }
 }

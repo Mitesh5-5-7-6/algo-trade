@@ -210,7 +210,17 @@ function normalizeOptionChain(
   let chainSpot = spot;
 
   for (const entry of data.optionsChain) {
-    if (entry.option_type === "XX" || entry.option_type === "INDEX") {
+    // The underlying's own row carries the spot. FYERS marks it with an
+    // EMPTY option type and strike -1 (verified against a live response,
+    // 2026-11-18): reading only "XX"/"INDEX" here found no spot, every chain
+    // came back null, and every chain-reading strategy held all day on
+    // "option chain not available".
+    if (
+      entry.option_type === "XX" ||
+      entry.option_type === "INDEX" ||
+      entry.option_type === "" ||
+      (typeof entry.strike_price === "number" && entry.strike_price <= 0)
+    ) {
       if (typeof entry.ltp === "number" && entry.ltp > 0) chainSpot = entry.ltp;
       continue;
     }

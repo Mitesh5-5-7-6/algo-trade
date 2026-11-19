@@ -63,6 +63,20 @@ const EnvSchema = z
     FYERS_APP_SECRET: z.string().min(1).optional(),
     FYERS_REDIRECT_URL: z.string().url().optional(),
     /**
+     * The FYERS account PIN, for the automatic morning login (operator
+     * decision 2026-11-19): with the stored refresh token it asks FYERS for
+     * the day's access token before the open. A credential — a deployment
+     * secret, never committed. Unset, the morning start only reminds.
+     * Empty is read as unset.
+     */
+    FYERS_PIN: z.preprocess(
+      (v) => (v === "" ? undefined : v),
+      z
+        .string()
+        .regex(/^\d{4,6}$/, "the FYERS PIN is 4 to 6 digits")
+        .optional(),
+    ),
+    /**
      * Shared secret the FYERS webhook caller must present (plan/21 §4). A
      * broker cannot hold an operator session, so this is what stands between
      * the callback path and the open internet. Optional because FYERS

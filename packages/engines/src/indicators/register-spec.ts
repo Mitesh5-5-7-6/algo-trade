@@ -2,9 +2,12 @@ import type { CandleInterval } from "@neelkanth/core";
 import {
   atr,
   avgVolume,
+  bollinger,
   ema,
+  macd,
   rsi,
   sma,
+  supertrend,
   vwap,
   type IndicatorSpec,
 } from "@neelkanth/indicators";
@@ -40,6 +43,23 @@ export function registerIndicatorSpec(
       return;
     case "avgVolume":
       engine.register(symbol, interval, avgVolume(spec.period));
+      return;
+    case "supertrend":
+      engine.register(
+        symbol,
+        interval,
+        supertrend(spec.period, spec.multiplier),
+      );
+      return;
+    case "macd":
+      engine.register(
+        symbol,
+        interval,
+        macd(spec.fast, spec.slow, spec.signal),
+      );
+      return;
+    case "bollinger":
+      engine.register(symbol, interval, bollinger(spec.period, spec.stdDev));
       return;
   }
 }

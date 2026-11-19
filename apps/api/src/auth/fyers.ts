@@ -3,6 +3,7 @@ import type { ApiServer } from "../server.js";
 import { ValidationError, UnauthorizedError } from "../errors.js";
 import { BrokerTokensRepository } from "@neelkanth/db";
 import { createHash } from "crypto";
+import { fyersTokenExpiry } from "../broker/fyers-token-renewal.js";
 
 export interface FyersAuthRoutesDeps {
   fyersAppId: string;
@@ -111,7 +112,8 @@ export function registerFyersAuthRoutes(
     }
 
     // FYERS access tokens usually expire daily (~14 hours).
-    const expiresAt = Date.now() + 14 * 60 * 60 * 1000;
+    // FYERS tokens expire at the next 06:30 IST (v3 docs), not 14 hours on.
+    const expiresAt = fyersTokenExpiry(Date.now());
 
     // The request must carry a valid session (authUser set by the guard).
     const userId = request.authUser?.userId;

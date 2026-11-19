@@ -84,6 +84,16 @@ export const StrategyConfigSchema = z.object({
   symbols: z.array(SymbolSchema).min(1),
   riskRules: RiskRulesSchema.optional(),
   exitRules: ExitRulesSchema.optional(),
+  /**
+   * This strategy's own capital, in rupees (operator decision 2026-11-18).
+   *
+   * Set, the strategy is sized from it alone — its own open positions and its
+   * own realized P&L today — so strategies stop taking capacity from one
+   * another and each one's result can be judged by itself. The account-wide
+   * safety limits (daily loss, open positions) still apply across all of them.
+   * Absent, it shares the account's capital as before.
+   */
+  allocatedCapital: z.number().positive().optional(),
   enabled: z.boolean(),
   status: StrategyStatusSchema,
   /**

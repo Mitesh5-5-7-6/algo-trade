@@ -43,6 +43,19 @@ describe("loadConfig (plan/04 §6 fail-fast)", () => {
     ).toThrow(ConfigValidationError);
   });
 
+  it("takes the FYERS PIN as 4 to 6 digits, an empty value as unset (2026-11-19)", () => {
+    expect(loadConfig({ ...validEnv, FYERS_PIN: "1234" }).FYERS_PIN).toBe(
+      "1234",
+    );
+    expect(
+      loadConfig({ ...validEnv, FYERS_PIN: "" }).FYERS_PIN,
+    ).toBeUndefined();
+    expect(loadConfig(validEnv).FYERS_PIN).toBeUndefined();
+    expect(() => loadConfig({ ...validEnv, FYERS_PIN: "12ab" })).toThrow(
+      ConfigValidationError,
+    );
+  });
+
   it("rejects a short session secret", () => {
     expect(() => loadConfig({ ...validEnv, SESSION_SECRET: "short" })).toThrow(
       ConfigValidationError,

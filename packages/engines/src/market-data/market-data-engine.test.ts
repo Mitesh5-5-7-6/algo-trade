@@ -360,3 +360,83 @@ describe("MarketDataEngine — Redis is off the tick path", () => {
     expect(h.lastTick("NSE:RELIANCE-EQ")?.ltp).toBe(110);
   });
 });
+
+describe("an index's volume from its future (2026-11-18)", () => {
+  const INDEX = "NSE:NIFTY50-INDEX";
+  const FUTURE = "NSE:NIFTY26NOVFUT";
+  const tick = (sym: string, ts: number, ltp: number, vol: number) => ({
+    sym,
+    ltp,
+    vol,
+    ts,
+  });
+
+  it("credits the future's traded volume to the index's bar of the same minute, and says so", async () => {
+    const h = harness();
+    const engine = engineWith(h);
+    engine.setVolumeSources(new Map([[INDEX, FUTURE]]));
+    // 09:15: the index ticks with no volume; the future trades 300 + 200.
+    await engine.ingestRaw(tick(INDEX, ist(9, 15) + 1_000, 25_000, 0));
+    await engine.ingestRaw(tick(FUTURE, ist(9, 15) + 2_000, 25_080, 300));
+    await engine.ingestRaw(tick(FUTURE, ist(9, 15) + 50_000, 25_082, 200));
+    // 09:16: the future's tick lands a moment before the index's.
+    await engine.ingestRaw(tick(FUTURE, ist(9, 16) + 500, 25_085, 70));
+    await engine.ingestRaw(tick(INDEX, ist(9, 16) + 1_000, 25_004, 0));
+    await engine.ingestRaw(tick(INDEX, ist(9, 17) + 1_000, 25_006, 0));
+
+    const index = h.candles.filter((c) => c.symbol === INDEX);
+    expect(index.map((c) => [c.ts, c.volume, c.volumeSource])).toEqual([
+      [ist(9, 15), 500, FUTURE],
+      [ist(9, 16), 70, FUTURE],
+    ]);
+    // The future keeps its own volume; nothing is moved off it.
+    const future = h.candles.filter((c) => c.symbol === FUTURE);
+    expect(future.map((c) => c.volume)).toEqual([500]);
+  });
+
+  it("drops volume for a minute whose index bar has already closed", async () => {
+    const h = harness();
+    const engine = engineWith(h);
+    engine.setVolumeSources(new Map([[INDEX, FUTURE]]));
+    await engine.ingestRaw(tick(INDEX, ist(9, 15) + 1_000, 25_000, 0));
+    await engine.ingestRaw(tick(INDEX, ist(9, 16) + 1_000, 25_004, 0));
+    // A 09:15 future tick arriving after the index moved on: not moved to 09:16.
+    await engine.ingestRaw(tick(FUTURE, ist(9, 15) + 59_000, 25_080, 999));
+    await engine.ingestRaw(tick(INDEX, ist(9, 17) + 1_000, 25_006, 0));
+    const index = h.candles.filter((c) => c.symbol === INDEX);
+    expect(index.map((c) => c.volume)).toEqual([0, 0]);
+  });
+
+  it("leaves every other symbol's bars and labels alone", async () => {
+    const h = harness();
+    const engine = engineWith(h);
+    engine.setVolumeSources(new Map([[INDEX, FUTURE]]));
+    await engine.ingestRaw(raw(ist(9, 15) + 1_000, 100, 5));
+    await engine.ingestRaw(raw(ist(9, 16) + 1_000, 101, 7));
+    expect(h.candles).toHaveLength(1);
+    expect(h.candles[0]?.volume).toBe(5);
+    expect(h.candles[0]?.volumeSource).toBeUndefined();
+  });
+});
+
+describe("ticks stamped outside the session (2026-11-19)", () => {
+  it("builds no bar and moves no price from a tick the rule refuses, and counts it", async () => {
+    const h = harness();
+    const open = ist(9, 15);
+    const engine = new MarketDataEngine({
+      ports: h.ports,
+      normalizer: fixtureNormalizer,
+      intervals: ["1m"],
+      onError: (error, context) => h.errors.push({ error, context }),
+      acceptTick: (tick) => tick.ts >= open,
+    });
+    // The connect-time snapshot: stamped 04:50, arriving at 10:22.
+    await engine.ingestRaw(raw(ist(4, 50), 2_500));
+    await engine.ingestRaw(raw(ist(9, 15) + 1_000, 100));
+    await engine.ingestRaw(raw(ist(9, 16) + 1_000, 101));
+    expect(h.candles.map((c) => c.ts)).toEqual([ist(9, 15)]);
+    expect(h.candles[0]?.open).toBe(100);
+    expect(h.events.filter((e) => e.name === "MARKET_TICK")).toHaveLength(2);
+    expect(engine.refusedTicks().get("NSE:RELIANCE-EQ")).toBe(1);
+  });
+});
