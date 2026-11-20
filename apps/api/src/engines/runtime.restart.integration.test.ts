@@ -445,6 +445,58 @@ describe("the runtime records exactly one trade per round trip (§2.7)", () => {
   );
 });
 
+/**
+ * 2026-11-19: after a restart only the current ATM strikes were subscribed;
+ * four option positions held in earlier strikes got no price, so their
+ * targets were never judged and the square-off was refused "no current price
+ * available" until the close. A held symbol must stream, always.
+ */
+describe("a symbol with an open position stays subscribed", () => {
+  it(
+    "subscribes it as the position opens, and again after a restart",
+    async () => {
+      const first = new ScriptedFakeBroker();
+      const runtime = await boot(first);
+      try {
+        expect(first.subscriptions.has(SYMBOL)).toBe(false);
+        await runtime.bus.publish("ORDER_FILLED", {
+          strategyId: STRATEGY,
+          symbol: SYMBOL,
+          qty: 10,
+          slippage: 0,
+          charges: 0,
+          mode: "paper",
+          orderId: "ord_held_in",
+          side: "BUY",
+          filledPrice: 100,
+          filledAt: 1,
+          ts: 1,
+        });
+        await vi.waitFor(
+          () => {
+            expect(first.subscriptions.has(SYMBOL)).toBe(true);
+          },
+          { timeout: 20_000, interval: 50 },
+        );
+      } finally {
+        await runtime.shutdown();
+      }
+
+      const second = new ScriptedFakeBroker();
+      const restarted = await boot(second);
+      try {
+        expect(restarted.getOpenPositions().map((p) => p.symbol)).toContain(
+          SYMBOL,
+        );
+        expect(second.subscriptions.has(SYMBOL)).toBe(true);
+      } finally {
+        await restarted.shutdown();
+      }
+    },
+    RESTART_TIMEOUT_MS,
+  );
+});
+
 describe("paper reconciliation at runtime boot (Phase 14 D4)", () => {
   it(
     "durably halts, records the mismatch, and closes a broker-flat position",

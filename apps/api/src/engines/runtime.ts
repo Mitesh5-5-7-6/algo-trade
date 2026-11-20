@@ -251,6 +251,8 @@ export async function startEngineRuntime(deps: {
     { fetchedAt: number; request?: Promise<OptionChainSnapshot | null> }
   >();
   const candleWindows = new Map<string, Candle[]>();
+  /** When each symbol's last price arrived, for the dashboard's freshness. */
+  const lastPriceAt = new Map<string, number>();
   // Symbols ride along with the risk rules because the market-data working
   // set is derived from them: subscribing is not a side effect of enabling a
   // strategy, it IS how an enabled strategy receives anything at all.
@@ -422,6 +424,8 @@ export async function startEngineRuntime(deps: {
    * follows the money rather than pinning to whatever was ATM at boot.
    */
   const trackedContracts = new Set<string>();
+  /** What the feed was last asked for, so a newly held symbol can be added. */
+  let subscribedSymbols = new Set<string>();
 
   const syncWorkingSet = async (): Promise<void> => {
     const traded = deriveWorkingSet(enabledConfigs.values());
@@ -434,6 +438,12 @@ export async function startEngineRuntime(deps: {
         ...settings.indexSymbols,
         ...settings.breadthSymbols,
         ...trackedContracts,
+        // Every symbol a position is open in, whatever the ATM strike is now
+        // (2026-11-19): after a restart only the current ATM strikes were
+        // subscribed, four option positions in earlier strikes got no price,
+        // their targets were never judged, and the 15:12 square-off was
+        // refused "no current price available" every minute until the close.
+        ...positionEngine.getOpenPositions().map((p) => p.symbol),
       ]),
     ];
     // An index has no traded volume: its near-month future's stands in, so
@@ -450,6 +460,7 @@ export async function startEngineRuntime(deps: {
     marketDataEngine.setVolumeSources(volumeSources);
     const symbols = [...new Set([...base, ...volumeSources.values()])];
     await marketDataEngine.subscribe(symbols);
+    subscribedSymbols = new Set(symbols);
     if (symbols.length === 0) {
       // A feed subscribed to nothing looks identical to a healthy one: the
       // socket connects, the status chip reads LIVE, and no tick ever arrives
@@ -948,6 +959,7 @@ export async function startEngineRuntime(deps: {
   };
   await bus.subscribe("MARKET_TICK", async (event) => {
     lastPrices.set(event.payload.symbol, event.payload.ltp);
+    lastPriceAt.set(event.payload.symbol, Date.now());
     lastTickAt = Date.now();
     await deps.paperOrderMonitor?.onMarketTick(event.payload);
   });
@@ -1024,7 +1036,14 @@ export async function startEngineRuntime(deps: {
   await bus.subscribe("RISK_BLOCKED", (event) => {
     runner.onRiskBlocked(event.payload);
   });
-  await bus.subscribe("POSITION_UPDATED", async () => {
+  await bus.subscribe("POSITION_UPDATED", async (event) => {
+    // A position in a symbol the feed is not carrying must start streaming
+    // now, or nothing can judge its stop and target (2026-11-19).
+    if (
+      event.payload.status === "OPEN" &&
+      !subscribedSymbols.has(event.payload.symbol)
+    )
+      await syncWorkingSet();
     await pnl.refresh();
     // Realized P&L may have moved, so the durable copy of it must follow. The
     // in-memory counter is already right; this is what makes it survive the
@@ -1356,7 +1375,19 @@ export async function startEngineRuntime(deps: {
       return exitEngine.exitNow(positionId, Date.now());
     },
     getOpenPositions() {
-      return positionEngine.getOpenPositions();
+      // With the price each one was last heard at, and when — a position whose
+      // price has stopped arriving is the one whose exits cannot fire.
+      return positionEngine.getOpenPositions().map((position) => {
+        const ltp = lastPrices.get(position.symbol);
+        const ltpAt = lastPriceAt.get(position.symbol);
+        return {
+          ...position,
+          ...(ltp === undefined
+            ? {}
+            : { ltp, unrealizedPnl: unrealizedPnl(position, ltp) }),
+          ...(ltpAt === undefined ? {} : { ltpAt }),
+        };
+      });
     },
     realizedPnl() {
       return positionEngine.realizedPnl();

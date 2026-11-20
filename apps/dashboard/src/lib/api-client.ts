@@ -3,7 +3,7 @@ import { API_BASE } from "./config";
 import type { ActivityEntry } from "./data";
 import type { OddsCoverage, OddsRequest, OddsResponse } from "./odds";
 import type { ScanCoverage, ScanRequest, ScanResponse } from "./scan";
-import type { TradeCard } from "./trade-card";
+import type { LiveTradeCard } from "./trade-card";
 
 /**
  * The REST half of the two data channels (plan/06 §5): request/response for
@@ -281,7 +281,7 @@ export const api = {
       body: JSON.stringify(plan),
     }),
   /** Today's trade cards: what to trade for each approved entry, newest first. */
-  tradeCards: () => apiFetch<TradeCard[]>("/trade-cards"),
+  tradeCards: () => apiFetch<LiveTradeCard[]>("/trade-cards"),
   /** The daily bars the scan can judge on, per symbol. */
   scanCoverage: () => apiFetch<ScanCoverage[]>("/research/scan/coverage"),
   /** The pre-open F&O scan for one trading day. A few seconds. */

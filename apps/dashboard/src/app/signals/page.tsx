@@ -4,12 +4,17 @@ import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api-client";
 import { describeVerdict, pct } from "@/lib/odds";
 import { qk } from "@/lib/query-keys";
+import { formatSignedINR } from "@/lib/format";
+import { LevelBar, useNow } from "@/components/level-bar";
 import {
+  age,
   bareSymbol,
   cardTime,
   describeBasis,
+  describeExit,
   price,
-  type TradeCard,
+  type CardLive,
+  type LiveTradeCard,
 } from "@/lib/trade-card";
 
 const message = (error: unknown): string =>
@@ -26,16 +31,17 @@ export default function SignalsPage() {
   const cards = useQuery({
     queryKey: qk.tradeCards,
     queryFn: api.tradeCards,
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
   });
 
   return (
     <>
       <h1 className="page-title">Signals</h1>
       <p className="hint" style={{ marginBottom: 16 }}>
-        Today&apos;s entries that passed the Risk Engine, newest first. Paper
-        trading has already acted on each; these are the numbers to trade it by
-        hand.
+        Today&apos;s entries that passed the Risk Engine, newest first, and any
+        older one still open. Each shows what paper trading did with it, live:
+        the price it holds at, the P&amp;L, and how close it is to its stop or
+        target. Refreshes every 5 seconds.
       </p>
       {cards.isError && <p className="login-error">{message(cards.error)}</p>}
       {cards.isPending && <p className="hint">Loading today&apos;s signals…</p>}
@@ -53,7 +59,7 @@ export default function SignalsPage() {
   );
 }
 
-function Card({ card }: { card: TradeCard }) {
+function Card({ card }: { card: LiveTradeCard }) {
   const what =
     card.contract === null
       ? bareSymbol(card.underlying)
@@ -70,6 +76,9 @@ function Card({ card }: { card: TradeCard }) {
           · {cardTime(card.ts)} · {card.strategyName}
         </span>
       </div>
+      {card.live !== undefined && (
+        <Live live={card.live} suggested={card.basis === "INDEX_SUGGESTED"} />
+      )}
       <table className="data odds-table">
         <tbody>
           <tr>
@@ -123,7 +132,7 @@ function Card({ card }: { card: TradeCard }) {
 }
 
 /** The Time Machine's odds for the card's plan, as the research service gave them. */
-function Odds({ card }: { card: TradeCard }) {
+function Odds({ card }: { card: LiveTradeCard }) {
   const odds = card.odds;
   if (odds === undefined) return <p className="hint">Time Machine: asking…</p>;
   if (odds.status !== "OK")
@@ -181,5 +190,74 @@ function Odds({ card }: { card: TradeCard }) {
         </p>
       )}
     </>
+  );
+}
+
+/** What paper trading did with this card, live (2026-11-20). */
+function Live({ live, suggested }: { live: CardLive; suggested: boolean }) {
+  const now = useNow();
+  if (live.state === "NOT_FILLED")
+    return (
+      <div className="live-block">
+        <span className="chip chip-muted">Not filled</span>
+      </div>
+    );
+  if (live.state === "CLOSED") {
+    const tone =
+      live.exitReason === "TAKE_PROFIT"
+        ? "chip-pos"
+        : live.exitReason === "STOP_LOSS"
+          ? "chip-neg"
+          : "chip-muted";
+    return (
+      <div className="live-block">
+        <span className={`chip ${tone}`}>{describeExit(live.exitReason)}</span>
+        <span className="mono"> at {price(live.exitPrice)}</span>
+        {live.netPnl !== null && (
+          <span className={`mono live-pnl ${live.netPnl < 0 ? "neg" : "pos"}`}>
+            {formatSignedINR(live.netPnl)}
+          </span>
+        )}
+        {live.exitTime !== null && (
+          <span className="hint"> · {cardTime(live.exitTime)}</span>
+        )}
+      </div>
+    );
+  }
+  const pnl = live.unrealizedPnl;
+  return (
+    <div className="live-block">
+      <div>
+        <span className={`chip ${live.stale ? "chip-neg" : "chip-live"}`}>
+          {live.stale ? "⚠ No live price" : "● Open"}
+        </span>
+        <span className="mono live-price"> {price(live.ltp)}</span>
+        <span className={`price-age ${live.stale ? "neg" : "hint"}`}>
+          {" "}
+          {age(live.ltpAt, now)}
+        </span>
+        {pnl !== null && (
+          <span
+            className={`mono live-pnl ${pnl < 0 ? "neg" : pnl > 0 ? "pos" : ""}`}
+          >
+            {formatSignedINR(pnl)}
+          </span>
+        )}
+      </div>
+      <LevelBar
+        stop={live.stopLoss}
+        entry={live.avgEntryPrice}
+        target={live.target}
+        ltp={live.ltp}
+      />
+      <p className="hint">
+        Holding {bareSymbol(live.symbol)} × {live.qty} at{" "}
+        {price(live.avgEntryPrice)}.
+        {suggested &&
+          " Paper trading holds the index itself; the option above is the suggestion, and its premium stop and target are estimates — the position closes on the index levels."}
+        {live.stale &&
+          " No price has arrived for this contract for over two minutes, so its stop and target cannot be judged until one does."}
+      </p>
+    </div>
   );
 }

@@ -36,6 +36,8 @@ export function useDashboardData(enabled = true): LiveDashboard {
     queryFn: api.positions,
     initialData: mock.positions,
     enabled,
+    // Live prices ride on the positions read (2026-11-20).
+    refetchInterval: 5_000,
   });
   const orders = useQuery({
     queryKey: qk.orders,

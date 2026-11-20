@@ -37,6 +37,16 @@ export class TradeCardsRepository {
     );
   }
 
+  /** The cards of these signals, newest first. */
+  async findBySignalIds(signalIds: readonly string[]): Promise<TradeCard[]> {
+    if (signalIds.length === 0) return [];
+    const docs = await this.collection
+      .find({ signalId: { $in: [...signalIds] } }, { projection: { _id: 0 } })
+      .sort({ ts: -1 })
+      .toArray();
+    return docs.map((doc) => TradeCardSchema.parse(doc));
+  }
+
   /** Cards at or after `since`, newest first, at most `limit`. */
   async findSince(since: number, limit: number): Promise<TradeCard[]> {
     const docs = await this.collection
