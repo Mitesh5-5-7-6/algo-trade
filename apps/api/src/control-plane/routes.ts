@@ -33,6 +33,7 @@ import {
 } from "../jobs/historical-backfill.js";
 import { resolveFnoLimits } from "@neelkanth/engines";
 import { startOfDayIST } from "@neelkanth/core";
+import { cardLive } from "../signals/card-status.js";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import type { ApiServer } from "../server.js";
 import { NotFoundError, ValidationError } from "../errors.js";
@@ -452,9 +453,43 @@ export function registerControlPlane(
   });
   app.get("/signals", () => signals.findRecent(LIST_LIMIT));
   // Today's trade cards, newest first: what to trade for each approved entry.
-  app.get("/trade-cards", () =>
-    tradeCards.findSince(startOfDayIST(Date.now()), LIST_LIMIT),
-  );
+  // Each with what became of it (2026-11-20): open with its live price and
+  // P&L, closed with how, or never filled. A card from an earlier day whose
+  // position is still open is included — that is the one most worth seeing.
+  app.get("/trade-cards", async () => {
+    const now = Date.now();
+    const since = startOfDayIST(now);
+    const open = await trades.findAllOpen();
+    const today = await tradeCards.findSince(since, LIST_LIMIT);
+    const carried = await tradeCards.findBySignalIds(
+      open
+        .map((t) => t.entrySignalId)
+        .filter((id): id is string => id !== undefined)
+        .filter((id) => !today.some((c) => c.signalId === id)),
+    );
+    const todaysTrades = await trades.findRange(since, now + 1);
+    const bySignal = new Map(
+      [...open, ...todaysTrades]
+        .filter((t) => t.entrySignalId !== undefined)
+        .map((t) => [t.entrySignalId, t] as const),
+    );
+    const positions = runtime.getOpenPositions();
+    const marketOpen = runtime.session().phase === "open";
+    return [...today, ...carried].map((card) => {
+      const trade = bySignal.get(card.signalId) ?? null;
+      const position =
+        trade === null || trade.status !== "OPEN"
+          ? null
+          : (positions.find(
+              (p) =>
+                p.strategyId === trade.strategyId && p.symbol === trade.symbol,
+            ) ?? null);
+      return {
+        ...card,
+        live: cardLive({ card, trade, position, now, marketOpen }),
+      };
+    });
+  });
   app.get("/risk-events", () => riskEvents.findRecent(LIST_LIMIT));
   app.get("/risk-logs", () => riskLogs.findRecent(LIST_LIMIT));
   // What the operator was told, and what failed to reach them (task 16.6).

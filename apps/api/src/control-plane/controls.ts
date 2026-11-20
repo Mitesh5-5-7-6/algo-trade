@@ -1,11 +1,11 @@
 import type {
   BrokerConnectionState,
-  Position,
   RiskLimits,
   SessionContext,
   StrategyConfig,
 } from "@neelkanth/core";
 import type { EquityPoint } from "@neelkanth/engines";
+import type { LivePosition } from "../signals/card-status.js";
 
 /**
  * The slice of the engine runtime the control plane drives (plan/05 §4). A
@@ -42,7 +42,8 @@ export interface RuntimeControls {
    * fire-and-forget call would hide.
    */
   exitPositionNow(positionId: string): Promise<boolean>;
-  getOpenPositions(): Position[];
+  /** Open positions, each with the last price the feed delivered and when. */
+  getOpenPositions(): LivePosition[];
   realizedPnl(): number;
   unrealizedPnl(): number;
   session(): SessionContext;
