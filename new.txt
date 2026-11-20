@@ -1,0 +1,926 @@
+Your system would investigate:
+Why did the Indian market become bullish or bearish? What conditions existed before the move? Have similar conditions occurred during the last 4–5 years? What happened afterward?
+
+This could become a separate research engine that feeds intelligence into your existing algo-trading system.
+
+My recommendation: build this as a separate research module, not directly inside the strategy execution engine.
+
+0. The one goal, and how we know it worked (added 2026-11-20)
+Every phase must move this one number:
+
+  "Does skipping entries on days the engine marks as poor improve the
+   paper/replay results of the existing strategies, after costs?"
+
+- Success: the filtered strategy beats the unfiltered one on data the
+  engine never saw (out-of-sample), after brokerage, taxes and slippage,
+  with at least 30 skipped trades.
+- Every external data category below is REQUIRED scope (operator decision
+  2026-11-20): it is collected, stored point-in-time and shown in the
+  weekly report, whether or not it helps the strategies.
+- What is NOT automatic: a category changes how strategies trade only
+  after it passes the test above. A category that fails stays in the
+  report as context, and is not used as a filter.
+- Each phase ends with a pass/fail check before the next one starts.
+
+1. What exactly should we research?
+I'd divide the research into 10 categories.
+1. Historical price and candle research
+Core dataset
+Use the data that actually exists (measured on FYERS, 2026-11-20):
+
+- Daily candles: 5 years (from 22 Nov 2021). Use these for day-level
+  questions: regimes, gaps, what came before big up/down days.
+- 1/5/60-minute candles: 1 year only (rolling; the oldest day disappears
+  every day). We already hold about 13.5 months of NIFTY/BANKNIFTY 5m.
+- Expired futures and options: nothing. FYERS refuses expired symbols.
+
+So from today, save every session's 5-minute bars (indices, stocks and the
+day's option contracts) automatically. Intraday history then grows by one
+year every year instead of rolling off. Buy multi-year intraday data from a
+licensed vendor only if 1 year proves too short. NSE's free daily F&O
+bhavcopy covers expired options at daily level.
+
+
+
+
+
+
+
+
+
+
+Index data
+- NIFTY 50
+- BANKNIFTY
+- FINNIFTY
+- SENSEX
+- NIFTY IT, AUTO, PHARMA, METAL, FMCG, ENERGY
+
+
+
+
+
+
+
+
+
+
+
+
+
+Related stock data
+- Reliance, HDFC Bank, ICICI Bank
+- SBI, Infosys, TCS
+- Adani stocks
+- Sector leaders and laggards
+- Historical NIFTY constituents
+
+
+
+
+
+
+
+
+
+
+
+
+
+Candle analysis
+- 5-minute OHLCV
+- Gap-up / gap-down
+- Opening range breakout
+- VWAP deviation
+- EMA crossover
+- Support/resistance
+- Volume spikes
+- Candlestick patterns
+- Volatility expansion/contraction
+
+
+
+But don't just classify candles as bullish or bearish.
+
+For every 5-minute candle, calculate what happened afterward:
+Measurement	Purpose
+Next 5 minutes	Immediate reaction
+Next 15 minutes	Short momentum
+Next 30 minutes	Intraday continuation
+Next 60 minutes	Trend continuation
+Market close	Full-day result
+Next trading day	Overnight effect
+
+This allows you to investigate which conditions historically preceded meaningful moves.
+2. Global market impact
+Very important
+Indian markets don't operate in isolation.
+
+Research these:
+
+
+
+
+
+
+
+
+
+
+US markets
+- S&P 500
+- Nasdaq
+- Dow Jones
+- US VIX
+
+
+
+
+
+
+
+
+
+
+
+Asian markets
+- Nikkei 225
+- Hang Seng
+- Shanghai Composite
+- GIFT NIFTY
+
+
+
+
+
+
+
+
+
+
+
+Currency
+- USD/INR
+- Dollar Index
+- Major currency movements
+
+
+
+
+
+
+
+
+
+
+
+Interest rates
+- US 10-year yield
+- Indian 10-year yield
+- RBI policy rates
+
+
+Questions your research engine should answer:
+- When Nasdaq falls 2%, how frequently does NIFTY open negatively?
+- When GIFT NIFTY is strongly positive, does NIFTY follow?
+- When US VIX increases sharply, how does BANKNIFTY behave?
+- Does a strong dollar coincide with weakness in Indian equities?
+- Which global indicators have predictive value at the Indian market open?
+Importantly, measure these relationships rather than assuming them.
+3. FII / DII investment analysis
+High priority
+This is one of the most important research categories for Indian markets.
+
+Track:
+- FII cash-market buying and selling.
+- DII cash-market buying and selling.
+- FII index futures positioning.
+- FII index options positioning.
+- Participant-wise open interest.
+- Long/short ratios.
+- Changes in derivatives positioning.
+- Delivery volumes and institutional activity where available.
+For example:
+FII cash       : -₹2,500 Cr
+DII cash       : +₹3,100 Cr
+FII futures    : Net short increasing
+NIFTY          : -0.8%
+
+Research:
+How frequently does this combination
+precede further weakness?
+
+
+Don't assume that FII selling automatically means the market will fall. DII buying, positioning and global conditions can change the outcome.
+
+Also, FII cash flows and derivatives positioning have different reporting frequencies. Don't pretend daily data is available at every five-minute interval.
+4. Commodities and economic conditions
+
+
+
+
+
+
+
+
+
+
+Crude oil
+- Brent crude
+- WTI crude
+- Sudden price spikes
+
+
+
+
+
+
+
+
+
+
+
+Gold
+- Gold price
+- Safe-haven demand
+- Global uncertainty
+
+
+
+
+
+
+
+
+
+
+
+Industrial metals
+- Copper
+- Aluminium
+- Zinc
+
+
+
+
+
+
+
+
+
+
+
+Energy
+- Natural gas
+- Energy prices
+- Supply disruptions
+
+
+Also collect:
+- RBI announcements.
+- Inflation (CPI/WPI).
+- GDP.
+- Industrial production.
+- PMI.
+- Government budget.
+- Fiscal policy.
+- Interest-rate decisions.
+Example research question:
+
+When Brent crude rises by 5% over a short period, how do NIFTY, BANKNIFTY, Reliance, ONGC, aviation and automobile stocks react?
+
+This is more useful than simply saying crude is bullish or bearish.
+5. News and geopolitical events
+This is where your idea becomes particularly interesting.
+
+I would create an event intelligence database.
+News categories
+
+
+
+
+
+
+
+
+
+
+Government and RBI
+
+Policy decisions, budgets, taxes, regulations, rate changes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Geopolitical
+
+War, sanctions, trade restrictions, international agreements.
+
+
+
+
+
+
+
+
+
+
+
+
+
+AI and technology
+
+AI announcements, semiconductor demand, chip restrictions, major technology investments.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Corporate news
+
+Earnings, acquisitions, order wins, management changes, regulatory actions.
+
+
+
+
+
+
+
+
+
+
+
+
+
+Political and economic events
+
+Elections, policy changes, government announcements, infrastructure spending.
+
+
+
+For every news event, extract:
+Field	Example
+Event timestamp	10:25 IST
+Category	AI / Technology
+Affected stocks	IT companies
+Affected sector	NIFTY IT
+Sentiment	Positive / Negative / Mixed
+Expected impact	Low / Medium / High
+Actual reaction	NIFTY IT +1.2%
+Reaction window	5m, 30m, 1d
+Source	Original article
+
+Important: Store when the news actually became publicly available, not just the date printed on the article. Otherwise, your backtest will accidentally use future information.
+6. Indian festivals, expiry and calendar effects
+This is another category I'd definitely include.
+
+Research:
+- Diwali and Muhurat trading.
+- Holi and other market holidays.
+- Union Budget.
+- RBI policy days.
+- General and state election results.
+- Monthly expiry.
+- Weekly expiry.
+- First and last trading days of the month.
+- Quarter-end.
+- Financial-year-end.
+- Long weekends.
+- Pre-holiday and post-holiday sessions.
+Don't assume festivals create a predictable direction. Test whether they change volatility, volume, gaps or intraday behavior.
+7. Derivatives market intelligence
+Since your actual trading system trades NIFTY, BANKNIFTY and FINNIFTY options, this category deserves its own research module.
+
+Collect historical:
+- CE/PE option prices.
+- Strike-wise open interest.
+- Change in OI.
+- Put-call ratio (PCR).
+- Implied volatility (IV).
+- India VIX.
+- IV skew.
+- Option volume.
+- Expiry-day behavior.
+- ATM and OTM premium movement.
+- Futures basis and rollover data.
+Example:
+NIFTY underlying: +0.65%
+Call OI: Increasing
+Put OI: Decreasing
+India VIX: -4%
+
+Research:
+Does this combination historically
+support bullish continuation?
+
+
+Also investigate cases where the index rises but call premiums fall. This can reveal the impact of IV contraction and theta decay.
+8. More factors people often overlook
+I'd add these too:
+Factor	What to investigate
+Market breadth	Advance/decline ratio
+Sector rotation	Which sectors lead the market?
+Bank weightage	HDFC, ICICI, SBI, Axis impact
+Corporate earnings	Results and guidance
+Block deals	Large institutional transactions
+IPO activity	Liquidity and sentiment
+Government spending	Infrastructure, defence, railways
+Monsoon	Agriculture, FMCG, rural demand
+Weather	Extreme weather and supply disruptions
+Global shipping	Freight rates, supply chains
+Semiconductor cycle	IT, electronics, manufacturing
+Regulatory decisions	SEBI, RBI, government
+Credit conditions	Bank lending and liquidity
+Market positioning	Crowded long/short trades
+
+This is important because NIFTY is a weighted index. Five large stocks can influence the index much more than dozens of smaller stocks.
+
+2. How I would build the actual research engine
+I would not build one giant AI prompt that reads all the data and announces bullish or bearish. That's a recipe for expensive, confident nonsense.
+
+Build a proper quantitative research pipeline.
+Indian Market Intelligence Engine
+DATA COLLECTION LAYER
+
+NSE · FYERS · RBI · FII/DII · Global markets · News · Commodities
+
+
+Market data
+
+5-minute OHLCV
+
+
+Economic data
+
+Rates, inflation, GDP
+
+
+News intelligence
+
+Events and sentiment
+
+
+Flow intelligence
+
+FII/DII and OI
+
+
+Global data
+
+Indices, FX, crude
+
+
+Calendar data
+
+Expiry, festivals, events
+
+
+
+
+NORMALIZATION & TIME ALIGNMENT
+
+IST timestamps · Missing data · Point-in-time availability · Data quality
+
+
+QUANTITATIVE RESEARCH ENGINE
+
+Pattern discovery · Correlation · Event studies · Regime detection · Statistical testing
+
+
+AI MARKET INTELLIGENCE
+
+News classification · Event explanation · Historical similarity · Evidence summaries
+
+
+RESEARCH OUTPUT
+ Bullish
+Historical evidence
+
+Bearish
+Historical evidence
+
+Sideways
+Choppy conditions
+
+Uncertain
+Insufficient evidence
+
+
+
+
+EXISTING ALGO-TRADING SYSTEM
+
+Market regime filter · Strategy selection · Risk-aware execution
+
+
+3. The most important research: discover historical market conditions
+This is where I'd spend the most effort.
+
+Don't only ask what happened on a bullish day. Find the conditions that existed before the bullish move.
+
+For example, imagine your research engine discovers a historical pattern:
+Illustrative research finding, not an actual backtest result
+Bullish historical setup
+- Nasdaq previous session: positive
+- GIFT NIFTY: positive gap indication
+- FII index futures: net long positioning increasing
+- India VIX: declining
+- Bank NIFTY: outperforming NIFTY
+- NIFTY: above VWAP
+- Market breadth: positive
+
+Research questions
+- How many times did this combination occur?
+- What percentage resulted in positive 30-minute returns?
+- What was the median return?
+- What was the maximum adverse movement?
+- Did the pattern work in both trending and volatile markets?
+- Did it survive transaction costs?
+
+Do the same for bearish and sideways regimes.
+
+One very important distinction: correlation is not causation. The engine should report that certain conditions preceded a move, not claim that one news headline caused it without supporting evidence.
+4. Historical research dashboard
+I would build a dedicated dashboard with these sections:
+Market Research Dashboard
+Research period
+
+Daily: Nov 2021 – today (5 years)
+Intraday: Sep 2025 – today (grows every day from the archive)
+
+
+Candle interval
+
+1 day for regimes and seasonality; 5 minutes for intraday questions
+
+
+
+Historical market regimes
+Illustrative layout only, not historical market statistics.
+
+UI design approch: Chart view
+
+Bullish sessions
+
+Bearish sessions
+
+Sideways sessions
+
+
+01202120222023202420252026
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Actual counts should be populated from the historical dataset.
+Research modules
+- Yearly market analysis
+  Historical
+- Monthly seasonality
+  Historical
+- Day-of-week analysis
+  Statistical
+- News impact analysis
+  Event study
+- FII/DII impact
+  Flow study
+- Global market correlation
+  Cross-market
+- Similar historical days
+  AI + Quant
+
+5. What technology should we use?
+Decision (2026-11-20): build on what already exists. The project's
+architecture decision (docs/architecture/ARCHITECTURE_DECISION.md) is a
+TypeScript monorepo with MongoDB, and a research service already runs
+separately from execution (Time Machine, scanner, pattern sweep, validation
+gate with Holm correction). The engine extends that service:
+
+- Language: TypeScript, reusing the existing indicators and replay.
+- Storage: MongoDB (neelkanth_research). Five years of daily bars for
+  224 symbols plus the intraday archive stays in the low GB range.
+- API: the existing research service. Dashboard: the existing Next.js app.
+
+Python, Parquet or PostgreSQL only if a measured need appears (for example
+an ML library with no TypeScript equivalent), and then only as a separate
+research tool, recorded as an architecture decision first.
+
+The original suggestion, kept for reference:
+Component	Recommendation
+Research language	Python
+Data processing	Polars + NumPy
+Statistical analysis	SciPy + Statsmodels
+Machine learning	Scikit-learn + XGBoost
+News intelligence	LLM + NLP
+Historical storage	Parquet + Zstandard
+Database	PostgreSQL / TimescaleDB
+Research API	FastAPI
+Dashboard	Your existing Next.js dashboard
+Scheduling	Background workers
+
+I would not put all historical research into MongoDB or Redis.
+
+Use Parquet for large historical datasets, PostgreSQL for research metadata and results, and Redis for frequently accessed live information.
+Possible data sources
+Data	Potential source
+Historical candles	FYERS API, licensed NSE data providers
+FII/DII	NSE reports
+Derivatives	NSE historical derivatives data
+RBI/economic data	RBI, MOSPI, official government sources
+Global markets	Licensed market-data providers
+Commodities	Exchange/provider historical data
+News	Reuters, financial news providers, official company announcements
+Corporate announcements	NSE/BSE
+
+One important challenge: five years of historical five-minute data may not be available through one API endpoint. Verify historical retention, exchange permissions, corporate actions and redistribution rights before committing to a provider.
+
+6. How I would execute this project
+Don't attempt all ten categories at once.
+
+I'd split development into six phases. Order changed (2026-11-20): the
+cheapest test of the goal in section 0 comes first. Expensive data (news,
+macro, ML) comes only after price data alone has been tried. Each phase is
+added to docs/PLAN.md as tasks before it starts.
+
+0. Phase 0: Stop losing data (start now)
+   - Save every session's 5m bars automatically (indices, stocks, the
+     day's option contracts, India VIX).
+   - Save the option chain (OI, IV, PCR) every 5 minutes for NIFTY and
+     BANKNIFTY. Expired contracts cannot be fetched later.
+   - Fetch the remaining 4 years of daily bars for the 224 F&O symbols.
+   Pass: a week of complete archives; 5 years of daily bars stored.
+1. Phase 1: Price regimes and similarity
+   - Bullish/bearish/sideways classification on daily bars.
+   - Historical Similarity Engine (section 8).
+   - India VIX, futures volume, calendar effects (section 6).
+   Pass: the skip-filter test in section 0, out-of-sample.
+2. Phase 2: External market data (ALL categories, see section 9)
+   - Global indices, currency, commodities, rates.
+   - FII/DII, participant-wise OI.
+   - Economic data, India/US budgets, RBI/Fed decisions.
+   - Monsoon, weather, shipping, semiconductor cycle, credit,
+     regulatory decisions, breadth, sector rotation, earnings,
+     block deals, IPOs, government spending.
+   - Each stored with the time it became public (section 7A).
+   Pass: every category has a source, a schedule, and a week of
+   correct, timestamped data.
+3. Phase 3: Derivatives intelligence, news and events
+   - OI change, PCR, IV, skew, rollover, futures basis.
+   - News and geopolitical events with publish time; AI classification;
+     reaction measured, not assumed.
+   Pass: a week of complete data; news timestamps checked by hand on a
+   sample of 50 events.
+4. Phase 4: Research and the weekly report (section 10)
+   - Pattern research: which conditions preceded bullish/bearish moves,
+     across all categories, with the safeguards in section 7.
+   - Weekly Market Conditions Report, every week.
+   Pass: four weekly reports delivered on time, every number traceable
+   to its source and timestamp; each tested pattern has a recorded
+   verdict.
+5. Phase 5: Machine learning
+   - Only on features that passed Phase 4.
+   - Walk-forward testing, probability calibration.
+6. Phase 6: Connect to the algo
+   - Patterns that passed become a filter the Risk Engine reads
+     ("stay out today", "reduce size"), never a signal source.
+   - Paper trading for at least 20 sessions before anything real.
+7. Three important things I would not compromise on
+A. Avoid look-ahead bias.
+
+Suppose FII data is published after market close. Your 10:00 AM strategy must not use that day's FII figure.
+
+Every feature must have an actual availability timestamp.
+
+B. Avoid overfitting.
+
+If you discover that a particular candle pattern worked 80% of the time in 2022, that doesn't mean it will work in 2026.
+
+Use:
+- Training: earlier years.
+- Validation: subsequent periods.
+- Final testing: completely unseen periods.
+- Walk-forward testing across different market regimes.
+Include brokerage, taxes, slippage and execution delays.
+
+Testing many patterns guarantees some will look good by luck. If 100
+patterns are tested, about 5 will pass a 95% test even when none is real.
+So:
+- Register each hypothesis before testing it (the existing hypothesis
+  registry).
+- Correct for the number of tests (Holm correction, already in the
+  validation gate).
+- Minimum 30 occurrences before any result is shown as evidence.
+- Report the number of patterns tried next to every pattern that passed.
+
+C. Don't confuse explanation with prediction.
+
+Your AI might explain that a market rally coincided with positive global sentiment and institutional buying.
+
+That does not establish that the same combination will predict tomorrow's rally.
+
+Keep two separate outputs:
+1. Historical explanation: Why did the market move?
+2. Predictive research: What conditions have historically preceded similar moves?
+This distinction is essential.
+
+8. My biggest additional idea: Historical Similarity Engine
+I'd actually make this one of the most valuable features.
+
+Imagine it's 11:00 AM on a trading day.
+
+Your engine collects the current market state:
+NIFTY: Above VWAP
+EMA 9 > EMA 15
+India VIX: Falling
+BANKNIFTY: Outperforming
+FII positioning: Net long
+GIFT NIFTY: Positive
+Market breadth: Positive
+
+
+It searches the historical database for similar conditions.
+Historical Similarity Research
+Illustrative interface, not actual research
+Current market condition
+Bullish setup
+Hypothetical market state at 11:00 IST
+
+Similar historical sessions
+Session A · 2023
+Similar
+
+Similar VWAP, volatility and breadth conditions
+Session B · 2024
+Similar
+
+Similar global market and banking-sector strength
+Session C · 2025
+Similar
+
+Similar trend and derivatives positioning
+
+Outcomes to calculate
+- Subsequent 30-minute return.
+- Subsequent 60-minute return.
+- Closing return.
+- Maximum favorable/adverse excursion.
+- Percentage of profitable hypothetical trades.
+
+This could help your existing strategies avoid entering when the current market conditions historically produced poor results.
+
+The similarity algorithm must compare only information available at that historical time, and the sample size and uncertainty must be displayed.
+
+How it is tested (so it is a measurement, not a story):
+- Features are numbers, each scaled the same way: distance from VWAP in
+  ATR, EMA gap, VIX change, gap %, BANKNIFTY vs NIFTY strength,
+  minutes since open.
+- Similar = the nearest past moments at the same time of day, at least
+  one session apart, from before the moment being judged.
+- Fewer than 30 similar moments: say "not enough history", not a verdict.
+- Benchmark: compare against random past moments at the same time of day.
+  If "similar" does not predict better than random, the engine says so.
+
+My final recommendation
+I would give this project a separate identity:
+
+Indian Market Intelligence Engine
+
+Quantitative Research Platform
+
+
+
+Its responsibilities
+1. Understand historical Indian market behavior.
+2. Identify conditions associated with bullish and bearish movements.
+3. Understand relationships between global and Indian markets.
+4. Discover recurring patterns and market regimes.
+5. Explain historical movements using timestamped evidence.
+6. Find similar historical market conditions.
+7. Evaluate whether discovered patterns have predictive value.
+8. Provide evidence-based market intelligence to the trading engine.
+
+One final architectural decision: Keep the Intelligence Engine independent of the execution engine.
+             MARKET INTELLIGENCE
+                      |
+             Historical Research
+                      |
+              Pattern Discovery
+                      |
+             Live Market Context
+                      |
+             Regime Classification
+                      |
+               Existing Algo
+                      |
+              Strategy Signals
+                      |
+                 Risk Engine
+                      |
+                 Execution
+
+
+Your existing trading system should remain responsible for entries, exits, lot sizing and risk. The new engine should provide market context and validated research signals.
+
+9. External data catalogue (required scope, 2026-11-20)
+Every source must be checked for cost, licence and history depth before it
+is built. "Available at" is when the strategy may first use the value.
+
+Category              Items                                  Frequency     Available at          Likely source (verify)
+Global indices        S&P 500, Nasdaq, Dow, US VIX,           daily         after their close      licensed market-data provider
+                      Nikkei, Hang Seng, Shanghai,
+                      GIFT NIFTY                              intraday      live                   provider / NSE IX
+Currency              USD/INR, Dollar Index, major pairs      daily/intra   live                   provider; RBI reference rate
+Interest rates        US 10Y, India 10Y, RBI repo, Fed        daily/event   publish time           RBI, US Treasury, Fed
+Commodities           Brent, WTI, gold, silver, copper,       daily/intra   live                   MCX via broker; provider
+                      aluminium, zinc, natural gas
+FII/DII               cash buy/sell                           daily         evening, after close   NSE provisional data
+                      participant-wise OI (FII/DII/pro/client) daily         evening, after close   NSE archives
+Economic data         CPI, WPI, GDP, IIP, PMI                 monthly/qtr   release time           MOSPI, RBI, PMI publisher
+                      US CPI, jobs, GDP                       monthly/qtr   release time           US statistics agencies
+Budgets / policy      India Union Budget, US budget,          event         speech/publish time    government sites
+                      RBI and Fed decisions, SEBI rules
+India VIX             level and change                        5m + daily    live                   FYERS (INDIAVIX index)
+Derivatives           OI, change in OI, PCR, IV, skew,        5m            live (own archive)     FYERS option chain
+                      rollover, futures basis                 daily         after close            NSE F&O bhavcopy
+Calendar              holidays, Muhurat, expiries, budget,    yearly/event  known in advance       NSE circulars
+                      RBI days, elections, month/quarter end
+News / geopolitics    policy, war, sanctions, AI/chips,       event         publish time           licensed news feed;
+                      corporate, elections                                                         NSE/BSE announcements
+Breadth / rotation    advance-decline, sector indices         5m + daily    live                   computed from own bars
+Earnings              results, guidance                       event         filing time            NSE/BSE filings
+Block/bulk deals      large trades                            daily         evening                NSE
+IPO activity          issues, subscription                    event         publish time           NSE/BSE
+Government spending   infra, defence, railways                monthly/event publish time           government releases
+Monsoon / weather     rainfall vs normal, extreme weather     daily/weekly  publish time           IMD
+Global shipping       freight indices                         daily/weekly  publish time           licensed index provider
+Semiconductor cycle   chip index, monthly chip sales          daily/monthly publish time           provider; industry association
+Credit conditions     bank credit growth, liquidity           fortnightly   publish time           RBI
+Market positioning    FII long/short ratio, PCR, OI build-up  daily/5m      as above               computed from the above
+
+10. Weekly Market Conditions Report (Phase 4)
+When: every Saturday 10:00 IST, covering the week just closed and the
+week ahead. Delivered to the dashboard (Research tab) and Telegram.
+
+Sections:
+1. One-paragraph summary: what moved the Indian market this week, and the
+   engine's reading for next week (bullish / bearish / sideways /
+   uncertain), with the evidence count behind it.
+2. Global markets: US, Asia, GIFT NIFTY, US VIX, week's change.
+3. Currency and rates: USD/INR, Dollar Index, US/India 10Y, central banks.
+4. Commodities: crude, gold, metals, energy, with a note on the sectors
+   each one historically moved (only patterns that passed testing).
+5. FII/DII: weekly cash flows, participant-wise OI change, long/short ratio.
+6. Economic data: releases this week vs expectations; releases next week.
+7. News and geopolitical events: the week's top events with publish time
+   and the measured market reaction.
+8. Calendar next week: holidays, expiries, RBI/Fed, budget, results,
+   festivals, with how such days historically changed volatility.
+9. India VIX and derivatives: VIX level/change, OI build-up by strike,
+   PCR, IV and skew changes, rollover.
+10. Other factors: breadth, sector rotation, earnings, block deals, IPOs,
+    government spending, monsoon/weather, shipping, semiconductor cycle,
+    regulatory decisions, credit conditions, positioning.
+11. Pattern scoreboard: which researched conditions are active now, each
+    with occurrences, hit rate, average move, and its verdict (passed /
+    failed / not enough history).
+12. Strategy impact: last week's paper results per strategy, and what the
+    filter would have changed.
+
+Rules for the report:
+- Every number shows its source and the time it became public.
+- Explanation ("why it moved") is kept apart from prediction ("what
+  preceded similar moves"), as section 7C says.
+- A pattern without at least 30 occurrences is shown as context, never
+  as a forecast.
+- Missing data is shown as missing, never filled in.
+
+I particularly like this direction because you're moving from building a bot that simply reacts to indicators toward building a system that studies market behavior.
+
+The real objective shouldn't be to predict every market movement. It should be to discover which market conditions give your strategies a measurable statistical advantage, and when they should stay out.
