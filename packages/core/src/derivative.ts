@@ -34,3 +34,27 @@ export type DerivativeTarget = z.infer<typeof DerivativeTargetSchema>;
 export function optionTypeForSide(side: "BUY" | "SELL"): OptionType {
   return side === "BUY" ? "CE" : "PE";
 }
+
+/**
+ * The market direction an order takes, as BUY (bullish) or SELL (bearish).
+ *
+ * For anything but an option the order side IS the direction. An option is
+ * different: every option entry is a BUY (14.8), and buying a put is a
+ * bearish trade. Reading the order side alone made the market-bias check
+ * block every bought put on a bearish day — the day a put is right
+ * (paper review 2026-11-23: four put entries refused on a −2% session).
+ *
+ * The option type is read off the traded symbol's suffix, as FYERS names
+ * every option contract (…CE / …PE). `underlyingSymbol` is required as well,
+ * so an equity whose ticker happens to end in "PE" is never mistaken for a
+ * put: only a derivative signal carries one.
+ */
+export function directionalSide(signal: {
+  side: "BUY" | "SELL";
+  symbol: string;
+  underlyingSymbol?: string | undefined;
+}): "BUY" | "SELL" {
+  if (signal.underlyingSymbol === undefined) return signal.side;
+  if (!signal.symbol.endsWith("PE")) return signal.side;
+  return signal.side === "BUY" ? "SELL" : "BUY";
+}

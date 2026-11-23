@@ -283,6 +283,61 @@ describe("RiskEngine — check 3 market bias (plan/14 §4)", () => {
     expect(decision.decision).toBe("approved");
   });
 
+  /**
+   * Every option entry is a BUY (14.8), so the order side alone said
+   * "bullish" for a bought put. Paper, 2026-11-23: four put entries were
+   * refused as "BUY against a BEARISH market" on a −2% day.
+   */
+  describe("an option entry is judged by its direction, not its order side", () => {
+    const put = {
+      symbol: "NSE:NIFTY26NOV25550PE",
+      underlyingSymbol: "NSE:NIFTY50-INDEX",
+    };
+    const call = {
+      symbol: "NSE:NIFTY26NOV25550CE",
+      underlyingSymbol: "NSE:NIFTY50-INDEX",
+    };
+
+    it("allows a bought put into a bearish market", async () => {
+      const h = harness({ marketView: view("BEARISH") });
+      const decision = await h.engine.validate(signal({ ...put, side: "BUY" }));
+      // Later checks (F&O sizing needs the contract) are not this test's
+      // business; the market-bias check must pass and must not be the block.
+      expect(decision).not.toMatchObject({ failedCheck: "marketBias" });
+      const check = h.logs[0]?.checks.find((c) => c.check === "marketBias");
+      expect(check?.passed).toBe(true);
+    });
+
+    it("blocks a bought put into a bullish market", async () => {
+      const h = harness({ marketView: view("BULLISH") });
+      const decision = await h.engine.validate(signal({ ...put, side: "BUY" }));
+      expect(decision).toMatchObject({
+        decision: "blocked",
+        failedCheck: "marketBias",
+      });
+    });
+
+    it("still blocks a bought call into a bearish market", async () => {
+      const h = harness({ marketView: view("BEARISH") });
+      const decision = await h.engine.validate(signal({ ...call, side: "BUY" }));
+      expect(decision).toMatchObject({
+        decision: "blocked",
+        failedCheck: "marketBias",
+      });
+    });
+
+    it("never reads an equity ending in PE as a put", async () => {
+      const h = harness({ marketView: view("BEARISH") });
+      const decision = await h.engine.validate(
+        signal({ symbol: "NSE:ACMEPE", side: "BUY" }),
+      );
+      expect(decision).toMatchObject({
+        decision: "blocked",
+        failedCheck: "marketBias",
+      });
+    });
+  });
+
   it("records the market read on the log even when it passes", async () => {
     const h = harness({ marketView: view("BULLISH") });
     await h.engine.validate(signal({ side: "BUY" }));

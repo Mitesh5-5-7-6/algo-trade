@@ -247,7 +247,7 @@ describe("OrderManager reconciliation (plan/12 §8)", () => {
     expect(h.orders.get("ord_9")?.status).toBe("FILLED");
   });
 
-  it("reports unknown for an order the broker has never seen", async () => {
+  it("leaves a LIVE order the broker has never seen as unknown", async () => {
     const h = harness();
     const stuck: Order = {
       orderId: "ord_x",
@@ -258,10 +258,43 @@ describe("OrderManager reconciliation (plan/12 §8)", () => {
       qty: 5,
       type: "MARKET",
       status: "PLACED",
+      mode: "live",
+      createdAt: 1000,
+    };
+    h.orders.set("ord_x", stuck);
+    expect((await h.manager.reconcile(stuck)).status).toBe("unknown");
+    expect(h.orders.get("ord_x")?.status).toBe("PLACED");
+  });
+
+  /**
+   * Paper review 2026-11-23. A 20 Nov square-off order stayed PLACED with no
+   * record in the paper book. It counted as an exit in flight forever, so the
+   * position was never closed again, and every boot's reconciliation found
+   * the mismatch and switched trading off.
+   */
+  it("rejects a PAPER order the paper broker has no record of — it never ran", async () => {
+    const h = harness();
+    const stuck: Order = {
+      orderId: "ord_x",
+      signalId: "sig_x",
+      strategyId: "str_1",
+      symbol: "NSE:BANKNIFTY26NOV62700CE",
+      side: "SELL",
+      qty: 90,
+      type: "MARKET",
+      status: "PLACED",
       mode: "paper",
       createdAt: 1000,
     };
-    expect((await h.manager.reconcile(stuck)).status).toBe("unknown");
+    h.orders.set("ord_x", stuck);
+    const result = await h.manager.reconcile(stuck);
+    expect(result.status).toBe("rejected");
+    expect(h.orders.get("ord_x")).toMatchObject({
+      status: "REJECTED",
+      rejectReason: expect.stringContaining("no record") as unknown,
+    });
+    expect(h.events.some((e) => e.name === "ORDER_REJECTED")).toBe(true);
+    expect(h.events.some((e) => e.name === "ORDER_FILLED")).toBe(false);
   });
 
   /**

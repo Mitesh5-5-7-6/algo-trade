@@ -320,7 +320,38 @@ export class OrderManager {
       return { status: "unknown", orderId: order.orderId };
     }
     if (!status.found) {
-      // Verifiably absent at the broker — safe to leave for resubmit decision.
+      if (order.mode === "paper") {
+        // The paper broker is the only place a paper order can execute, and
+        // it keeps every order it accepts. Absent from its book, the order
+        // never ran and never will. Left PLACED it counted as an exit "in
+        // flight" forever: the position could never be closed again, and
+        // every boot's reconciliation found the same mismatch and switched
+        // trading off (paper review 2026-11-23: a 20 Nov square-off order,
+        // five restarts, a BANKNIFTY call held through expiry).
+        const reason =
+          "reconciled: the paper broker has no record of this order — it never executed";
+        await this.ports.updateOrder(order.orderId, {
+          status: "REJECTED",
+          rejectReason: reason,
+        });
+        await this.ports.publish(
+          "ORDER_REJECTED",
+          {
+            orderId: order.orderId,
+            signalId: order.signalId,
+            strategyId: order.strategyId,
+            symbol: order.symbol,
+            side: order.side,
+            qty: order.qty,
+            reason,
+            mode: order.mode,
+            ts: this.now(),
+          },
+          order.signalId,
+        );
+        return { status: "rejected", order, reason };
+      }
+      // Live: verifiably absent at the broker — left for a resubmit decision.
       return { status: "unknown", orderId: order.orderId };
     }
     if (status.status === "FILLED") {

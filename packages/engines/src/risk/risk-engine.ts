@@ -1,5 +1,6 @@
 import {
   contradictsMarket,
+  directionalSide,
   type FnoSizingLog,
   type Position,
   type RiskCheckName,
@@ -136,7 +137,11 @@ export class RiskEngine {
       // direction, so it cannot contradict one.
       if (riskIncreasing && signal.side !== "HOLD") {
         const view = this.ports.readMarketView();
-        const against = contradictsMarket(signal.side, view);
+        // The direction, not the order side: a bought put is bearish.
+        const against = contradictsMarket(
+          directionalSide({ ...signal, side: signal.side }),
+          view,
+        );
         checks.push({
           check: "marketBias",
           passed: !against,
