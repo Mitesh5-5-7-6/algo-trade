@@ -11,12 +11,15 @@ import { useState } from "react";
  */
 export function StepUpDialog({
   title,
+  copy,
   busy,
   error,
   onConfirm,
   onCancel,
 }: {
   title: string;
+  /** What confirming does, when it is not loosening a control. */
+  copy?: string;
   busy: boolean;
   error: string | null;
   onConfirm: (password: string) => void;
@@ -29,8 +32,8 @@ export function StepUpDialog({
       <div className="modal-card">
         <p className="panel-title">⚠ Confirm: {title}</p>
         <p className="modal-copy">
-          This action loosens a safety control. Re-enter your password to
-          confirm it is you.
+          {copy ??
+            "This action loosens a safety control. Re-enter your password to confirm it is you."}
         </p>
         <div className="field">
           <label htmlFor="stepup-password">Password</label>

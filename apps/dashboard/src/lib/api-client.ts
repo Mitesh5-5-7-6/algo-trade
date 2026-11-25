@@ -255,6 +255,17 @@ export const api = {
       body: JSON.stringify({ stepUpPassword }),
     }),
 
+  /**
+   * ⚠ step-up: sell (or buy back) one whole position at market now, recorded
+   * as MANUAL_EMERGENCY (Phase 3 D5). 404 when nothing was sent: the position
+   * closed meanwhile, an exit is already in flight, or risk refused it.
+   */
+  exitPosition: (positionId: string, stepUpPassword: string) =>
+    apiFetch<{ positionId: string; exiting: boolean }>(
+      `/positions/${encodeURIComponent(positionId)}/exit`,
+      { method: "POST", body: JSON.stringify({ stepUpPassword }) },
+    ),
+
   // TOTP 2FA management (plan/21 §8)
   totpSetup: () =>
     apiFetch<{ secret: string; url: string }>("/auth/totp/setup", {

@@ -1,6 +1,10 @@
 "use client";
 
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { LevelBar, useNow } from "@/components/level-bar";
+import { StepUpDialog } from "@/components/step-up-dialog";
+import { api, isStepUpRequired } from "@/lib/api-client";
 import { useDashboardData } from "@/lib/live";
 import { formatIN, formatSignedINR, formatTimeIST } from "@/lib/format";
 import { age, bareSymbol, price } from "@/lib/trade-card";
@@ -27,6 +31,29 @@ export default function PositionsPage() {
   const strategyName = (id: string) =>
     strategies.find((s) => s.config.strategyId === id)?.config.name ?? id;
   const total = positions.reduce((sum, p) => sum + p.unrealizedPnl, 0);
+
+  // Manual exit (2026-11-25): the API's step-up exit, given a button.
+  const [exiting, setExiting] = useState<LivePosition | null>(null);
+  const [exitError, setExitError] = useState<string | null>(null);
+  const [exitSent, setExitSent] = useState<string | null>(null);
+  const exit = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.exitPosition(id, password),
+    onSuccess: (_answer, { id }) => {
+      setExitSent(id);
+      setExiting(null);
+      setExitError(null);
+    },
+    onError: (err: unknown) => {
+      setExitError(
+        isStepUpRequired(err)
+          ? "Confirmation failed — wrong password?"
+          : err instanceof Error
+            ? err.message
+            : "The exit was not sent.",
+      );
+    },
+  });
 
   return (
     <>
@@ -61,6 +88,7 @@ export default function PositionsPage() {
                 <th>Stop → target</th>
                 <th className="num">Unrealized</th>
                 <th>Opened</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -108,6 +136,22 @@ export default function PositionsPage() {
                     <td className="mono">
                       {formatTimeIST(position.openedAt, false)}
                     </td>
+                    <td>
+                      {exitSent === position.positionId ? (
+                        <span className="hint">Exit sent…</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-danger-confirm"
+                          onClick={() => {
+                            setExitError(null);
+                            setExiting(position);
+                          }}
+                        >
+                          {position.side === "LONG" ? "Sell now" : "Buy back now"}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -120,6 +164,21 @@ export default function PositionsPage() {
           and target cannot be judged until it does.
         </p>
       </div>
+      {exiting !== null && (
+        <StepUpDialog
+          title={`exit ${bareSymbol(exiting.symbol)}`}
+          copy={`${exiting.side === "LONG" ? "Sells" : "Buys back"} all ${formatIN(exiting.qty)} at market now, recorded as a manual exit. A contract with no live price cannot be exited this way. Re-enter your password to confirm.`}
+          busy={exit.isPending}
+          error={exitError}
+          onConfirm={(password) => {
+            exit.mutate({ id: exiting.positionId, password });
+          }}
+          onCancel={() => {
+            setExiting(null);
+            setExitError(null);
+          }}
+        />
+      )}
     </>
   );
 }
