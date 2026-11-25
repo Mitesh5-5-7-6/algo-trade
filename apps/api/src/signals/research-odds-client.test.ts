@@ -17,12 +17,12 @@ const BODY: OddsBody = {
 function scripted(responses: Response[]) {
   const calls: string[] = [];
   const fetch = (url: string | URL | Request): Promise<Response> => {
-    calls.push(String(url));
+    calls.push(url instanceof Request ? url.url : url.toString());
     const next = responses.shift();
     if (next === undefined) throw new Error("no more responses");
     return Promise.resolve(next);
   };
-  return { fetch: fetch as typeof globalThis.fetch, calls };
+  return { fetch, calls };
 }
 
 const platform429 = () =>
