@@ -926,6 +926,8 @@ the detailed design for this phase and keeps each task's dependencies.
 
 | 14.15 | One exit per position when two bars breach at once: the exit claim is taken before the durable check is awaited | COMPLETE | see git log | `packages/engines/src/exit/exit-engine.ts` `claim`, used by bar, square-off and manual exits. `packages/engines/src/exit/exit-engine.test.ts` "exits once when two bars reach the stop at the same moment" fails without the fix. Found 2026-11-25: the 1m and 5m bars of BANKNIFTY 64100 CE closed together at 12:55, both stop exits filled, and the second opened a short call. Strict integration not yet run |
 
+| 14.16 | A trade card's Time Machine request retries a platform refusal (429, 502–504) and names who refused | COMPLETE | `cb16cc0` | `apps/api/src/signals/research-odds-client.ts` (retry with Retry-After, capped, within the 30 s budget; non-JSON kept as headers + excerpt) and `apps/api/src/control-plane/research-relay.ts` (the same excerpt). `research-odds-client.test.ts` 3/3, `research-relay.test.ts` 8/8. Found 2026-11-25: every card since 23 Nov got 429 while the service was healthy. Strict integration not yet run |
+
 **14.13–14.15 were found by the 2026-11-23 and 2026-11-25 paper reviews**, on
 the running paper path, and come before 14.7's sessions for the same reason as
 14.8.
