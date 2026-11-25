@@ -1,4 +1,5 @@
 import type {
+  CheckpointOddsTable,
   ExitRules,
   Position,
   SessionContext,
@@ -43,10 +44,26 @@ export interface ExitPorts {
    * silently widening the risk on a trade that had already been protected.
    */
   updateStopLoss(positionId: string, stopLoss: number): Promise<void>;
+  /**
+   * The three-part target's odds table (PLAN.md 14.17), or null while none
+   * has been fetched. Optional: without it the checkpoints are off and the
+   * engine judges stop and target alone — replay and the golden record run
+   * so, unchanged.
+   */
+  readCheckpointOdds?(): CheckpointOddsTable | null;
+  /** The last price of a symbol — the index, for an option's checkpoint. */
+  readPrice?(symbol: string): number | null;
 }
 
 /**
  * Why the Exit Engine decided to flatten — recorded on the signal's reason.
  * `time` and `manual` are Phase 3 (D2, D5).
  */
-export type ExitTrigger = "stop" | "target" | "time" | "square_off" | "manual";
+export type ExitTrigger =
+  | "stop"
+  | "target"
+  | "time"
+  | "square_off"
+  | "manual"
+  /** A three-part target's checkpoint, whose next part was unlikely (14.17). */
+  | "checkpoint";

@@ -1,4 +1,13 @@
-import { intervalMs, type Position, type Signal } from "@neelkanth/core";
+import {
+  CHECKPOINT_ASSUMED_DELTA,
+  CHECKPOINT_MIN_CHANCE,
+  checkpointChance,
+  checkpointLevels,
+  checkpointUnderlying,
+  intervalMs,
+  type Position,
+  type Signal,
+} from "@neelkanth/core";
 import type { ExitReason } from "@neelkanth/core";
 import type { EventPayload } from "@neelkanth/contracts";
 import type { ExitPorts, ExitTrigger } from "./ports.js";
@@ -19,6 +28,8 @@ const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
   time: "TIME_EXIT",
   square_off: "SESSION_CLOSE",
   manual: "MANUAL_EMERGENCY",
+  // Profit taken at T1 or T2 because the next part was unlikely (14.17).
+  checkpoint: "TAKE_PROFIT",
 };
 
 /**
@@ -132,6 +143,14 @@ export class ExitEngine {
           this.heldTooLong(position, candle);
         if (trigger === null) {
           if (await this.alreadyExiting(position.positionId)) continue;
+          // The three-part target (14.17): a checkpoint reached may end the
+          // trade here, or move the stop to the entry for the next part.
+          const early = await this.checkpoint(position, candle);
+          if (early !== null) {
+            if (!(await this.claim(position.positionId))) continue;
+            await this.exit(position, "checkpoint", candle.close, candle.ts, early);
+            continue;
+          }
           // Judged against the levels the bar OPENED with; only now may the
           // bar's extreme move the stop, and only for the next bar (Q3).
           await this.trail(position, candle);
@@ -278,6 +297,77 @@ export class ExitEngine {
     return false;
   }
 
+  /** Checkpoints a position has passed this session: 1 after T1, 2 after T2. */
+  private readonly passed = new Map<string, number>();
+
+  /**
+   * The three-part target (PLAN.md 14.17). One entry, never added to; the way
+   * to the target split into equal thirds. When this bar reaches the next
+   * checkpoint, the chance of the part after it decides: below the threshold,
+   * the reason to exit everything now (returned); otherwise the stop moves to
+   * the entry and the position holds (null).
+   *
+   * Off without an odds table (replay, the golden record). No chance for a
+   * case → hold: the gate only ever exits early.
+   *
+   * Which checkpoints are passed is held in memory; after a restart a stop
+   * already at the entry says T1 was passed. T2 may then be judged a second
+   * time, which can only end in the same two answers.
+   */
+  private async checkpoint(
+    position: Position,
+    candle: EventPayload<"CANDLE_CLOSED">,
+  ): Promise<string | null> {
+    const table = this.deps.ports.readCheckpointOdds?.() ?? null;
+    if (table === null) return null;
+    const levels = checkpointLevels(position);
+    const where = checkpointUnderlying(position);
+    if (levels === null || where === null) return null;
+
+    const long = position.side === "LONG";
+    const entry = position.avgEntryPrice;
+    const stopAtEntry =
+      position.stopLoss !== undefined &&
+      (long ? position.stopLoss >= entry : position.stopLoss <= entry);
+    let passed = this.passed.get(position.positionId) ?? (stopAtEntry ? 1 : 0);
+    const reached = (level: number) =>
+      long ? candle.high >= level : candle.low <= level;
+
+    // One third of the way, on the index the move is measured on.
+    const third = Math.abs(levels.t3 - entry) / 3;
+    const spot = where.option
+      ? (this.deps.ports.readPrice?.(where.underlying) ?? null)
+      : candle.close;
+    const minutesSinceOpen =
+      ((candle.ts + intervalMs(candle.interval) + 19_800_000) % 86_400_000) /
+        60_000 -
+      (9 * 60 + 15);
+
+    while (passed < 2 && reached(passed === 0 ? levels.t1 : levels.t2)) {
+      const part = passed + 1; // the checkpoint just reached: T1 or T2
+      const chance =
+        spot === null || spot <= 0
+          ? null
+          : checkpointChance(table, {
+              underlying: where.underlying,
+              direction: where.direction,
+              minutesSinceOpen,
+              movePct:
+                (where.option ? third / CHECKPOINT_ASSUMED_DELTA : third) / spot,
+              // The stop sits at the entry: one part back from T1, two from T2.
+              back: part,
+            });
+      if (chance !== null && chance < CHECKPOINT_MIN_CHANCE) {
+        this.passed.set(position.positionId, part);
+        return `checkpoint T${String(part)}, chance of T${String(part + 1)} ${String(Math.round(chance * 100))}%`;
+      }
+      passed = part;
+      this.passed.set(position.positionId, passed);
+      if (!stopAtEntry) await this.deps.ports.updateStopLoss(position.positionId, entry);
+    }
+    return null;
+  }
+
   /**
    * Take the right to exit this position, or say someone already has.
    *
@@ -325,6 +415,7 @@ export class ExitEngine {
     trigger: ExitTrigger,
     price: number,
     ts: number,
+    note?: string,
   ): Promise<boolean> {
     this.exiting.add(position.positionId);
     const signal: Signal = {
@@ -334,7 +425,7 @@ export class ExitEngine {
       side: closingSide(position),
       confidence: this.exitConfidence,
       qtyProposal: position.qty,
-      reason: `exit: ${trigger}`,
+      reason: note === undefined ? `exit: ${trigger}` : `exit: ${note}`,
       exitReason: EXIT_REASON[trigger],
       // Carried so the order can be found again by position — the durable
       // guard has nothing to match on otherwise (D3).

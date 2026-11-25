@@ -5,7 +5,17 @@ import { istDateKey, isTradingDayIST } from "@neelkanth/core";
 import { DEFAULT_GLOBAL_SETTINGS } from "@neelkanth/db";
 import { UnauthorizedError, ValidationError } from "../errors.js";
 import { OddsRefusal } from "../odds/refusal.js";
-import { setupOddsFromStore, storedCoverage } from "../odds/store.js";
+import {
+  loadCandlesBefore,
+  setupOddsFromStore,
+  storedCoverage,
+} from "../odds/store.js";
+import { buildCheckpointOdds } from "../odds/checkpoint-odds.js";
+import type { CheckpointOddsTable } from "@neelkanth/core";
+
+/** History the three-part target's odds are built from (PLAN.md 14.17). */
+const CHECKPOINT_DAYS = 180;
+const CHECKPOINT_INDICES = ["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"];
 import {
   loadTradingCalendar,
   type TradingCalendar,
@@ -118,6 +128,28 @@ export function registerResearchRoutes(
 
   /** What the store holds, so a plan can be made for a symbol and date it covers. */
   app.get("/odds/coverage", () => storedCoverage(deps.db, "5m"));
+
+  // The three-part target's odds table (PLAN.md 14.17): built from the last
+  // CHECKPOINT_DAYS of stored index bars, kept for the IST day it was built
+  // on. The trading process fetches it at boot and each morning and decides
+  // from memory; it never waits on this service mid-trade (D16).
+  let checkpointCache: { day: string; table: CheckpointOddsTable } | null =
+    null;
+  app.get("/checkpoint-odds", async () => {
+    const day = istDateKey(deps.now());
+    if (checkpointCache?.day !== day) {
+      const fromTs = deps.now() - CHECKPOINT_DAYS * 86_400_000;
+      const bars = await loadCandlesBefore(
+        deps.db,
+        CHECKPOINT_INDICES,
+        "5m",
+        day,
+        fromTs,
+      );
+      checkpointCache = { day, table: buildCheckpointOdds(bars, deps.now()) };
+    }
+    return checkpointCache.table;
+  });
 
   app.post("/odds", async (request) => {
     const body = parse(OddsBody, request.body);

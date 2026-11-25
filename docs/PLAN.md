@@ -928,25 +928,28 @@ the detailed design for this phase and keeps each task's dependencies.
 
 | 14.16 | A trade card's Time Machine request retries a platform refusal (429, 502–504) and names who refused | COMPLETE | `cb16cc0` | `apps/api/src/signals/research-odds-client.ts` (retry with Retry-After, capped, within the 30 s budget; non-JSON kept as headers + excerpt) and `apps/api/src/control-plane/research-relay.ts` (the same excerpt). `research-odds-client.test.ts` 3/3, `research-relay.test.ts` 8/8. Found 2026-11-25: every card since 23 Nov got 429 while the service was healthy. Strict integration not yet run |
 
-| 14.17 | Three-part target (scale-out) with an odds gate after each part | READY | — | Operator decisions 2026-11-25, below. Starts after 14.13–14.16 are deployed and one clean paper session confirms them |
+| 14.17 | Three-part target with an odds gate at T1 and T2 | COMPLETE | see git log | `packages/core/src/checkpoint.ts` (levels, table, lookup); `apps/api/src/odds/checkpoint-odds.ts` + `GET /checkpoint-odds` on the research service; `packages/engines/src/exit/exit-engine.ts` `checkpoint`; `apps/api/src/engines/runtime.ts` fetches the table daily. Tests: `packages/engines/src/exit/checkpoint.test.ts` 6/6 on the operator's 25750 PE example, `apps/api/src/odds/checkpoint-odds.test.ts` 4/4; core 140, engines 392, API 824 passed. Real data (`apps/api/scripts/checkpoint-odds-preview.mts`): 17,728 bars, 238 sessions, built in 320 ms. Strict integration not yet run |
 
-**14.17 — three-part target (operator decisions 2026-11-25).** Applies to
-every strategy, whenever the quantity allows three parts; otherwise the single
-target stands (a 1-lot BANKNIFTY option; an index position of 1–3 units).
+**14.17 — three-part target (operator decisions 2026-11-25, final).** One
+entry, never added to and never partly sold.
 
-- Levels: T1 = entry + 1R, T2 = entry + 2R, T3 = the strategy's own target
-  (R = entry − stop; mirrored for a short). Example: entry ₹218.01, stop
-  ₹163.46 → T1 ₹272.56, T2 ₹327.11, T3 ₹348.72.
-- Quantity: 40% / 40% / 20%, rounded to whole lots (5 lots → 2 / 2 / 1).
-- At T1: sell part 1 and move the stop to the entry price.
-- Odds gate: after T1, and again after T2, if the stored chance of reaching
-  the next part before the (moved) stop is below 40%, sell the rest now.
-- The chances are computed nightly by the research service from stored
-  history and read by the trading process from the database. The trading
-  path never calls the research service (design §6.1 D16). No stored chance
-  for a case → hold to the next part (the gate only ever exits early).
-- Each partial exit is its own order and Trade leg, reported as
-  `TAKE_PROFIT` with the part number; the move to entry is a stop change.
+- Levels: the way from entry to the strategy's own target in equal thirds.
+  Example: entry ₹218.01, target ₹348.72 → T1 ₹261.58, T2 ₹305.15, T3
+  ₹348.72.
+- At T1: the chance of T2 before falling back to the entry. Below 40% → sell
+  everything now (`TAKE_PROFIT`, "checkpoint T1, chance of T2 n%"). Otherwise
+  hold everything and move the stop to the entry price.
+- At T2: the same for T3, the stop two parts back. T3 is the ordinary target.
+- The chances come from the research service's `/checkpoint-odds`: from the
+  last 180 days of stored 5m NIFTY and BANKNIFTY bars, by direction, hour of
+  the session and move size; an option's third is taken to the index at delta
+  0.5. The trading process fetches the table once a day and decides from
+  memory: no exit waits on the research service (D16). No table, or no case
+  with 30+ samples → hold (the gate only ever exits early).
+- Off in replay and the golden record (no table port), so both are unchanged;
+  paper parity (14.5) will name a checkpoint exit as a difference.
+- Superseded the same day's first answers (1R/2R levels, 40/40/20 partial
+  sales): the operator chose one exit for the whole position.
 
 **14.13–14.15 were found by the 2026-11-23 and 2026-11-25 paper reviews**, on
 the running paper path, and come before 14.7's sessions for the same reason as

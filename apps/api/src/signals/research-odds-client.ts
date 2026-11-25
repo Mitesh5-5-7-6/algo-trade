@@ -60,6 +60,35 @@ export function researchOddsClient(options: {
   };
 }
 
+/**
+ * The three-part target's odds table (PLAN.md 14.17), fetched once a day by
+ * the trading process. Throws on anything but a 200 with JSON, naming who
+ * answered; the caller keeps its last table and tries again later.
+ */
+export function researchCheckpointOddsClient(options: {
+  url: string;
+  token: string;
+  timeoutMs?: number;
+  fetch?: typeof globalThis.fetch;
+}): () => Promise<unknown> {
+  const send = options.fetch ?? globalThis.fetch;
+  return async () => {
+    const response = await send(new URL("/checkpoint-odds", options.url), {
+      headers: { authorization: `Bearer ${options.token}` },
+      // A first build reads half a year of bars; a free instance may also
+      // need a minute to wake.
+      signal: AbortSignal.timeout(options.timeoutMs ?? 120_000),
+    });
+    const text = await response.text().catch(() => "");
+    const body = parse(text, response);
+    if (response.status !== 200)
+      throw new Error(
+        `checkpoint odds: the research service answered ${String(response.status)}: ${JSON.stringify(body).slice(0, 200)}`,
+      );
+    return body;
+  };
+}
+
 /** The JSON body, or a short excerpt naming who answered when it is not JSON. */
 function parse(text: string, response: Response): unknown {
   try {

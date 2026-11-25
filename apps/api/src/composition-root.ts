@@ -58,7 +58,10 @@ import { readDaySummary } from "./notifications/day-summary.js";
 import { subscribeCatalogue } from "./notifications/catalogue.js";
 import { createDailyMessages } from "./notifications/daily.js";
 import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
-import { researchOddsClient } from "./signals/research-odds-client.js";
+import {
+  researchCheckpointOddsClient,
+  researchOddsClient,
+} from "./signals/research-odds-client.js";
 import { createMorningStart } from "./broker/morning-start.js";
 import {
   fyersTokenExpiry,
@@ -365,6 +368,11 @@ export async function bootstrap(
       ? {}
       : {
           askOdds: researchOddsClient({
+            url: config.RESEARCH_API_URL,
+            token: config.RESEARCH_API_TOKEN,
+          }),
+          // The three-part target's odds table (14.17), once a day.
+          fetchCheckpointOdds: researchCheckpointOddsClient({
             url: config.RESEARCH_API_URL,
             token: config.RESEARCH_API_TOKEN,
           }),

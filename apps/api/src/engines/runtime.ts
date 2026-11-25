@@ -65,7 +65,13 @@ import {
   type RiskPorts,
   type StrategyPorts,
 } from "@neelkanth/engines";
-import { istDateKey, optionTypeForSide, startOfDayIST } from "@neelkanth/core";
+import {
+  CheckpointOddsTableSchema,
+  istDateKey,
+  optionTypeForSide,
+  startOfDayIST,
+  type CheckpointOddsTable,
+} from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import { loadInstrumentMaster } from "./load-instruments.js";
 import type { LiveMarketState } from "./live-market-state.js";
@@ -208,6 +214,11 @@ export async function startEngineRuntime(deps: {
    * decision 2026-11-18). Absent, cards go out without odds and say why.
    */
   askOdds?: AskOdds;
+  /**
+   * The research service's three-part target odds table (PLAN.md 14.17).
+   * Absent, the checkpoints are off and exits are stop and target alone.
+   */
+  fetchCheckpointOdds?: () => Promise<unknown>;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -860,9 +871,41 @@ export async function startEngineRuntime(deps: {
     onError,
   });
 
+  // --- The three-part target's odds (PLAN.md 14.17) ---
+  // Fetched from the research service once a day and held here: an exit
+  // decision reads memory and never waits on another service (D16). Until a
+  // table arrives the checkpoints are off; a failed fetch keeps the last one
+  // and is retried ten minutes later.
+  let checkpointOdds: CheckpointOddsTable | null = null;
+  let checkpointDay = "";
+  let checkpointTriedAt = 0;
+  const refreshCheckpointOdds = async (now: number): Promise<void> => {
+    if (deps.fetchCheckpointOdds === undefined) return;
+    const day = istDateKey(now);
+    if (checkpointDay === day || now - checkpointTriedAt < 600_000) return;
+    checkpointTriedAt = now;
+    try {
+      checkpointOdds = CheckpointOddsTableSchema.parse(
+        await deps.fetchCheckpointOdds(),
+      );
+      checkpointDay = day;
+      log.info(
+        {
+          rows: checkpointOdds.rows.length,
+          sessions: checkpointOdds.sessions,
+        },
+        "three-part target odds loaded",
+      );
+    } catch (error) {
+      onError(error, { where: "refreshCheckpointOdds" });
+    }
+  };
+
   // --- Exit Engine: stops, targets, and the intraday square-off ---
   const exitEngine = new ExitEngine({
     ports: {
+      readCheckpointOdds: () => checkpointOdds,
+      readPrice: (symbol) => lastPrices.get(symbol) ?? null,
       readOpenPositions: () => positionEngine.getOpenPositions(),
       readSession: () => Promise.resolve(state.session),
       persistSignal: (signal) => signals.insert(signal),
@@ -1517,6 +1560,8 @@ export async function startEngineRuntime(deps: {
       // session is still open enough for risk to approve the exits. Runs on the
       // session tick rather than on MARKET_CLOSE — by the close it is too late,
       // the Risk Engine's session check would block every exit order.
+      // Cheap when today's table is held; never awaited by an exit.
+      void refreshCheckpointOdds(now);
       if (evaluation.phase === "open") {
         await exitEngine.onSessionTick(
           now,
