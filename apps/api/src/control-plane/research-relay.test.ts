@@ -192,15 +192,20 @@ describe("the relay to the research service (17.8)", () => {
 
   it("names the platform's status when the answer is not JSON (2026-11-19)", async () => {
     const { app } = server(
-      () => new Response("<html>bad gateway</html>", { status: 502 }),
+      () =>
+        new Response("<html>bad gateway</html>", {
+          status: 502,
+          headers: { server: "cloudflare" },
+        }),
     );
     const response = await app.inject({
       method: "POST",
       url: "/research/scan",
       payload: {},
     });
+    // Who answered, as well as the status (2026-11-25).
     expect(response.json<{ error: { message: string } }>().error.message).toBe(
-      "the research service gave an unreadable answer (HTTP 502, not JSON) — it may be restarting, or out of memory; see its logs",
+      'the research service gave an unreadable answer (HTTP 502, not JSON; server=cloudflare: "bad gateway") — it may be restarting, or out of memory; see its logs',
     );
     await app.close();
   });

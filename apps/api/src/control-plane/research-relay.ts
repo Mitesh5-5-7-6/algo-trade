@@ -83,16 +83,31 @@ export function registerResearchRelay(
         ),
       };
     let payload: unknown;
+    const text = await response.text().catch(() => "");
     try {
-      payload = await response.json();
+      payload = JSON.parse(text) as unknown;
     } catch {
       // Not JSON is almost always the hosting platform answering for the
       // service — a 502 while it restarts after a crash, or runs out of
-      // memory. Say the status, so the operator knows which (2026-11-19).
+      // memory. Say the status, so the operator knows which (2026-11-19),
+      // and who answered: the platform's headers and the page's first words
+      // (2026-11-25, a 429 nobody could place).
+      const via = ["server", "rndr-id", "retry-after"]
+        .map((h) => {
+          const v = response.headers.get(h);
+          return v === null ? null : `${h}=${v}`;
+        })
+        .filter((v) => v !== null)
+        .join(", ");
+      const excerpt = text
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 100);
       return {
         status: 503,
         payload: UNAVAILABLE(
-          `the research service gave an unreadable answer (HTTP ${String(response.status)}, not JSON) — it may be restarting, or out of memory; see its logs`,
+          `the research service gave an unreadable answer (HTTP ${String(response.status)}, not JSON${via === "" ? "" : `; ${via}`}${excerpt === "" ? "" : `: "${excerpt}"`}) — it may be restarting, or out of memory; see its logs`,
         ),
       };
     }
