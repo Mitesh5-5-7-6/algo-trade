@@ -1013,6 +1013,19 @@ table.data.odds-table {
   min-width: 0;
   width: 100%;
 }
+/* A trade card's values wrap inside the card rather than widening it: on a
+   phone the index-levels line pushed every right-aligned value off-screen
+   (2026-11-25). Each number keeps its label (non-breaking spaces in the
+   markup); the break falls between them. */
+table.data.odds-table td {
+  white-space: normal;
+}
+table.data.odds-table td:first-child {
+  padding-right: 8px;
+}
+.panel.trade-card:has(> table.data) {
+  overflow-x: visible;
+}
 .odds-notes {
   margin: 0 0 12px;
   padding-left: 18px;
