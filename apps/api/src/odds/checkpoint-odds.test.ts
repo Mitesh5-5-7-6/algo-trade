@@ -17,7 +17,7 @@ function bar(i: number, day: number, close: number, high: number, low: number): 
     close,
     volume: 0,
     source: "BROKER_HISTORICAL",
-  } as Candle;
+  };
 }
 
 describe("buildCheckpointOdds", () => {

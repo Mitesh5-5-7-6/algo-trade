@@ -101,7 +101,9 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
   it("exits once when two bars reach the stop at the same moment", async () => {
     let release: () => void = () => undefined;
     const slowCheck = new Promise<boolean>((resolve) => {
-      release = () => resolve(false);
+      release = () => {
+        resolve(false);
+      };
     });
     const handedOff: Signal[] = [];
     const engine = new ExitEngine({

@@ -90,7 +90,7 @@ function Card({ card }: { card: LiveTradeCard }) {
             <td className="num mono">
               {price(card.stopLoss)}
               {card.stopPoints !== null &&
-                ` (${price(card.stopPoints)} pts)`}
+                ` (${price(card.stopPoints)}\u00a0pts)`}
             </td>
           </tr>
           <tr>
@@ -98,7 +98,7 @@ function Card({ card }: { card: LiveTradeCard }) {
             <td className="num mono">
               {price(card.target)}
               {card.targetPoints !== null &&
-                ` (${price(card.targetPoints)} pts)`}
+                ` (${price(card.targetPoints)}\u00a0pts)`}
             </td>
           </tr>
           <tr>
@@ -118,8 +118,8 @@ function Card({ card }: { card: LiveTradeCard }) {
               <td>{bareSymbol(card.underlying)} levels</td>
               <td className="num mono">
                 {price(card.index.entry)} ·{" "}
-                {`SL ${price(card.index.stopLoss)}`} ·{" "}
-                {`target ${price(card.index.target)}`}
+                {`SL\u00a0${price(card.index.stopLoss)}`} ·{" "}
+                {`target\u00a0${price(card.index.target)}`}
               </td>
             </tr>
           )}
