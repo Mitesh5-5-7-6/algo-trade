@@ -125,17 +125,19 @@ export class ExitEngine {
       this.prune(open);
       for (const position of open) {
         if (position.symbol !== candle.symbol) continue;
-        if (await this.alreadyExiting(position.positionId)) continue;
+        if (this.exiting.has(position.positionId)) continue;
         // Q3 rule 4: stop, then target, then time.
         const trigger =
           ExitEngine.breach(position, candle) ??
           this.heldTooLong(position, candle);
         if (trigger === null) {
+          if (await this.alreadyExiting(position.positionId)) continue;
           // Judged against the levels the bar OPENED with; only now may the
           // bar's extreme move the stop, and only for the next bar (Q3).
           await this.trail(position, candle);
           continue;
         }
+        if (!(await this.claim(position.positionId))) continue;
         await this.exit(position, trigger, candle.close, candle.ts);
       }
     } catch (error) {
@@ -158,7 +160,7 @@ export class ExitEngine {
       this.prune(open);
       for (const position of open) {
         if (!this.squaresOff(position.strategyId)) continue;
-        if (await this.alreadyExiting(position.positionId)) continue;
+        if (!(await this.claim(position.positionId))) continue;
         await this.exit(position, "square_off", position.avgEntryPrice, now);
       }
     } catch (error) {
@@ -217,7 +219,7 @@ export class ExitEngine {
       this.prune(open);
       const position = open.find((p) => p.positionId === positionId);
       if (position === undefined) return false;
-      if (await this.alreadyExiting(positionId)) return false;
+      if (!(await this.claim(positionId))) return false;
       return await this.exit(position, "manual", position.avgEntryPrice, now);
     } catch (error) {
       this.deps.onError(error, { where: "exitNow", positionId });
@@ -274,6 +276,25 @@ export class ExitEngine {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Take the right to exit this position, or say someone already has.
+   *
+   * The mark goes in BEFORE the first await. Checking memory, then waiting on
+   * the durable check, then marking left a gap: two bar events closing at the
+   * same minute (a 1m and a 5m bar) both passed the memory check, both waited,
+   * both found no order in flight, and both sold. The second sell opened a
+   * short call (paper, 2026-11-25 12:55, BANKNIFTY 64100 CE). Claimed
+   * synchronously, the second caller sees the mark and stands down.
+   *
+   * An order already in flight from before a restart keeps the mark, as
+   * `alreadyExiting` does.
+   */
+  private async claim(positionId: string): Promise<boolean> {
+    if (this.exiting.has(positionId)) return false;
+    this.exiting.add(positionId);
+    return !(await this.deps.ports.hasExitInFlight(positionId));
   }
 
   /**

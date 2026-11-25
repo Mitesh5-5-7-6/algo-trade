@@ -93,6 +93,47 @@ describe("ExitEngine (plan/13, plan/14 §5)", () => {
     expect(persisted).toHaveLength(1);
   });
 
+  /**
+   * Paper, 2026-11-25 12:55: the 1m and 5m bars of BANKNIFTY 64100 CE closed
+   * together, both judged the stop while the durable in-flight check was
+   * still answering, and both sold — the second sell opened a short call.
+   */
+  it("exits once when two bars reach the stop at the same moment", async () => {
+    let release: () => void = () => undefined;
+    const slowCheck = new Promise<boolean>((resolve) => {
+      release = () => resolve(false);
+    });
+    const handedOff: Signal[] = [];
+    const engine = new ExitEngine({
+      ports: {
+        readOpenPositions: () => [position()],
+        readSession: () => Promise.resolve(session),
+        persistSignal: () => Promise.resolve(),
+        hasExitInFlight: () => slowCheck,
+        readExitRules: () => null,
+        updateStopLoss: () => Promise.resolve(),
+      },
+      handoff: (signal) => {
+        handedOff.push(signal);
+        return Promise.resolve(undefined);
+      },
+      nextSignalId: (() => {
+        let n = 0;
+        return () => `sig_${String(++n)}`;
+      })(),
+      onError: () => undefined,
+    });
+    const oneMinute = { ...bar(101, 94), interval: "1m" as const };
+    const fiveMinute = bar(101, 94);
+    const both = Promise.all([
+      engine.onCandleClosed(oneMinute),
+      engine.onCandleClosed(fiveMinute),
+    ]);
+    release();
+    await both;
+    expect(handedOff).toHaveLength(1);
+  });
+
   it("closes a LONG when the bar's high reaches the target", async () => {
     const { engine, handedOff } = harness([position()]);
     await engine.onCandleClosed(bar(111, 99));

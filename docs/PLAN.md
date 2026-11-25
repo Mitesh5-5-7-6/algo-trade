@@ -924,8 +924,11 @@ the detailed design for this phase and keeps each task's dependencies.
 | 14.13 | Market bias judges an option entry by its direction: a bought put is bearish | COMPLETE | `459e51d` | `packages/core/src/derivative.ts` `directionalSide` (option type off the traded contract, derivative signals only); `packages/engines/src/risk/risk-engine.ts` check 3 uses it. `packages/engines/src/risk/risk-engine.test.ts` 40/40 — the bought-put cases fail without the fix. Found 2026-11-23: four put entries refused on a −2% session. Strict integration not yet run |
 | 14.14 | Boot reconciliation rejects a paper order the paper book has no record of | COMPLETE | `459e51d` | `packages/engines/src/order/order-manager.ts` `reconcile`: paper + `found:false` → REJECTED and `ORDER_REJECTED`; live unchanged. `packages/engines/src/order/order-manager.test.ts`. Found 2026-11-23: a 20 Nov square-off order stuck PLACED blocked its position's exit and tripped reconciliation at five boots. Strict integration not yet run |
 
-**14.13–14.14 were found by the 2026-11-23 paper review**, on the running
-paper path, and come before 14.7's sessions for the same reason as 14.8.
+| 14.15 | One exit per position when two bars breach at once: the exit claim is taken before the durable check is awaited | COMPLETE | see git log | `packages/engines/src/exit/exit-engine.ts` `claim`, used by bar, square-off and manual exits. `packages/engines/src/exit/exit-engine.test.ts` "exits once when two bars reach the stop at the same moment" fails without the fix. Found 2026-11-25: the 1m and 5m bars of BANKNIFTY 64100 CE closed together at 12:55, both stop exits filled, and the second opened a short call. Strict integration not yet run |
+
+**14.13–14.15 were found by the 2026-11-23 and 2026-11-25 paper reviews**, on
+the running paper path, and come before 14.7's sessions for the same reason as
+14.8.
 
 **14.8–14.12 were found by the 2026-10-30 architecture audit** and come before
 14.7's sessions: 14.8 and 14.9 change what the paper pipeline does, so sessions
