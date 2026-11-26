@@ -59,6 +59,43 @@ export type CardLive =
 
 export type LiveTradeCard = TradeCard & { live?: CardLive };
 
+/**
+ * The three-part target the Exit Engine runs (PLAN.md 14.17): the way from
+ * the buy price to the final target in equal thirds. From the live position
+ * when there is one — those are the levels the engine judges, an index
+ * strategy's in index points — else from the card's own numbers.
+ *
+ * `stopAtEntry`: the stop has been moved to the buy price, which the engine
+ * does only once T1 is reached and the chance of T2 was good enough to hold.
+ */
+export interface CardCheckpoints {
+  t1: number;
+  t2: number;
+  t3: number;
+  /** The symbol the levels are in: the option, or the index a strategy holds. */
+  on: string;
+  stopAtEntry: boolean;
+}
+
+export function cardCheckpoints(card: LiveTradeCard): CardCheckpoints | null {
+  const live = card.live?.state === "OPEN" ? card.live : null;
+  const entry = live?.avgEntryPrice ?? card.entry;
+  const target = live === null ? card.target : live.target;
+  const on = live?.symbol ?? card.contract ?? card.underlying;
+  if (entry === null || target === null || target === entry) return null;
+  const third = (target - entry) / 3;
+  const long = target > entry;
+  const stop = live?.stopLoss ?? null;
+  return {
+    t1: entry + third,
+    t2: entry + 2 * third,
+    t3: target,
+    on,
+    stopAtEntry:
+      stop !== null && (long ? stop >= entry - 0.005 : stop <= entry + 0.005),
+  };
+}
+
 /** How long ago a price arrived, in the fewest words: "5s", "3m", "22h". */
 export function age(ts: number | null | undefined, now: number): string {
   if (ts === null || ts === undefined) return "no price yet";

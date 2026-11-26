@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bareSymbol,
+  cardCheckpoints,
   cardTime,
   describeBasis,
   price,
@@ -83,5 +84,67 @@ describe("live state on the dashboard (2026-11-20)", () => {
     expect(describeExit("TAKE_PROFIT")).toBe("Target hit");
     expect(describeExit("SESSION_CLOSE")).toBe("Squared off at 15:12");
     expect(describeExit(null)).toBe("Closed");
+  });
+});
+
+/**
+ * The three-part target on the card (PLAN.md 14.17), on the operator's own
+ * example: NIFTY 25750 PE bought at 218.01, final target 348.72.
+ */
+describe("the card's T1 / T2 / T3", () => {
+  const option = card({
+    basis: "OPTION_STRATEGY",
+    underlying: "NSE:NIFTY50-INDEX",
+    contract: "NSE:NIFTY26D0125750PE",
+    entry: 217.95,
+    stopLoss: 163.46,
+    target: 348.72,
+    index: null,
+  });
+
+  it("splits the way from the buy price to the target in equal thirds", () => {
+    const levels = cardCheckpoints({
+      ...option,
+      live: {
+        state: "OPEN",
+        symbol: "NSE:NIFTY26D0125750PE",
+        qty: 325,
+        avgEntryPrice: 218.01,
+        ltp: 230,
+        ltpAt: 1,
+        unrealizedPnl: 0,
+        stopLoss: 163.46,
+        target: 348.72,
+        stale: false,
+      },
+    });
+    expect(levels?.t1).toBeCloseTo(261.58, 2);
+    expect(levels?.t2).toBeCloseTo(305.15, 2);
+    expect(levels?.t3).toBe(348.72);
+    expect(levels?.stopAtEntry).toBe(false);
+  });
+
+  it("says when the stop has moved to the buy price after T1", () => {
+    const levels = cardCheckpoints({
+      ...option,
+      live: {
+        state: "OPEN",
+        symbol: "NSE:NIFTY26D0125750PE",
+        qty: 325,
+        avgEntryPrice: 218.01,
+        ltp: 265,
+        ltpAt: 1,
+        unrealizedPnl: 0,
+        stopLoss: 218.01,
+        target: 348.72,
+        stale: false,
+      },
+    });
+    expect(levels?.stopAtEntry).toBe(true);
+  });
+
+  it("uses the card's own numbers before the order fills, and needs a target", () => {
+    expect(cardCheckpoints(option)?.t3).toBe(348.72);
+    expect(cardCheckpoints({ ...option, target: null })).toBeNull();
   });
 });

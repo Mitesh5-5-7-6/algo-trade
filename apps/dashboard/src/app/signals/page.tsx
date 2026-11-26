@@ -9,6 +9,7 @@ import { LevelBar, useNow } from "@/components/level-bar";
 import {
   age,
   bareSymbol,
+  cardCheckpoints,
   cardTime,
   describeBasis,
   describeExit,
@@ -59,11 +60,14 @@ export default function SignalsPage() {
   );
 }
 
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
 function Card({ card }: { card: LiveTradeCard }) {
   const what =
     card.contract === null
       ? bareSymbol(card.underlying)
       : bareSymbol(card.contract);
+  const checkpoints = cardCheckpoints(card);
   return (
     <section className="panel trade-card">
       <div className="trade-card-head">
@@ -101,6 +105,21 @@ function Card({ card }: { card: LiveTradeCard }) {
                 ` (${price(card.targetPoints)}\u00a0pts)`}
             </td>
           </tr>
+          {checkpoints !== null && (
+            <tr>
+              <td>T1 · T2 · T3 (final)</td>
+              <td className="num mono">
+                {price(round2(checkpoints.t1))} · {price(round2(checkpoints.t2))}{" "}
+                · {price(round2(checkpoints.t3))}
+                {checkpoints.on !== card.contract && (
+                  <div className="hint">{bareSymbol(checkpoints.on)} levels</div>
+                )}
+                {checkpoints.stopAtEntry && (
+                  <div className="pos">T1 reached: stop moved to the buy price</div>
+                )}
+              </td>
+            </tr>
+          )}
           <tr>
             <td>Reward : risk</td>
             <td className="num mono">
@@ -126,6 +145,13 @@ function Card({ card }: { card: LiveTradeCard }) {
         </tbody>
       </table>
       <Odds card={card} />
+      {checkpoints !== null && (
+        <p className="hint">
+          One buy, one exit. At T1 and at T2 the chance of reaching the next
+          level is checked: below 40% everything is sold there; otherwise the
+          position is held and the stop moves to the buy price.
+        </p>
+      )}
       <p className="hint">{card.reason}</p>
       <p className="hint">{describeBasis(card)}.</p>
       {card.note !== null && <p className="hint">{card.note}.</p>}

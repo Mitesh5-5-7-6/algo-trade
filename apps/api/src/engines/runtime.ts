@@ -876,7 +876,15 @@ export async function startEngineRuntime(deps: {
   // decision reads memory and never waits on another service (D16). Until a
   // table arrives the checkpoints are off; a failed fetch keeps the last one
   // and is retried ten minutes later.
-  let checkpointOdds: CheckpointOddsTable | null = null;
+  // Configured but not yet fetched (or refused): an EMPTY table, not none.
+  // The checkpoints then still run — no chance is known, so the position
+  // holds, and T1 still moves the stop to the buy price. Without this a
+  // failed fetch switched the protection off too (paper, 2026-11-26: a put
+  // reached ₹249.90 against T1 ₹227.40, then closed at ₹164.12).
+  let checkpointOdds: CheckpointOddsTable | null =
+    deps.fetchCheckpointOdds === undefined
+      ? null
+      : { builtAt: 0, sessions: 0, rows: [] };
   let checkpointDay = "";
   let checkpointTriedAt = 0;
   const refreshCheckpointOdds = async (now: number): Promise<void> => {
