@@ -72,27 +72,53 @@ export interface CardCheckpoints {
   t1: number;
   t2: number;
   t3: number;
+  /** SL1 / SL2 on the way to the stop, while the stop is still below the buy price. */
+  sl1: number | null;
+  sl2: number | null;
+  stop: number | null;
   /** The symbol the levels are in: the option, or the index a strategy holds. */
   on: string;
+  /** The stop has moved up: past the buy price (after T1) or past T1 (after T2). */
   stopAtEntry: boolean;
+  stopPastT1: boolean;
+  /** A rebound trade (14.19 rule 3): its target was lowered to T1. */
+  rebound: boolean;
 }
 
 export function cardCheckpoints(card: LiveTradeCard): CardCheckpoints | null {
   const live = card.live?.state === "OPEN" ? card.live : null;
   const entry = live?.avgEntryPrice ?? card.entry;
-  const target = live === null ? card.target : live.target;
+  // A rebound trade's live target is its T1; the levels stay those of the
+  // strategy's own target, which only an option strategy's card has in the
+  // same units as its position.
+  const rebound =
+    live !== null &&
+    card.basis === "OPTION_STRATEGY" &&
+    live.target !== null &&
+    card.target !== null &&
+    Math.abs(live.target - card.target) > 0.01 * Math.abs(card.target);
+  const target = rebound ? card.target : (live?.target ?? card.target);
   const on = live?.symbol ?? card.contract ?? card.underlying;
   if (entry === null || target === null || target === entry) return null;
   const third = (target - entry) / 3;
   const long = target > entry;
-  const stop = live?.stopLoss ?? null;
+  const sign = long ? 1 : -1;
+  const stop = live === null ? card.stopLoss : live.stopLoss;
+  const t1 = entry + third;
+  // SL1 / SL2 exist only while the stop is still on the loss side.
+  const lossSide = stop !== null && sign * (entry - stop) > 0;
+  const riskPart = lossSide ? Math.abs(entry - stop) / 3 : 0;
   return {
-    t1: entry + third,
+    t1,
     t2: entry + 2 * third,
     t3: target,
+    sl1: lossSide ? entry - sign * riskPart : null,
+    sl2: lossSide ? entry - sign * 2 * riskPart : null,
+    stop,
     on,
-    stopAtEntry:
-      stop !== null && (long ? stop >= entry - 0.005 : stop <= entry + 0.005),
+    stopAtEntry: stop !== null && sign * (stop - entry) >= -0.005,
+    stopPastT1: stop !== null && sign * (stop - t1) >= -0.005,
+    rebound,
   };
 }
 

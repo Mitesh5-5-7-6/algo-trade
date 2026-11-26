@@ -69,8 +69,10 @@ import {
   CheckpointOddsTableSchema,
   istDateKey,
   optionTypeForSide,
+  pivotLevels,
   startOfDayIST,
   type CheckpointOddsTable,
+  type PivotLevels,
 } from "@neelkanth/core";
 import { createStrategyRegistry } from "@neelkanth/strategies";
 import { loadInstrumentMaster } from "./load-instruments.js";
@@ -909,11 +911,55 @@ export async function startEngineRuntime(deps: {
     }
   };
 
+  // --- Today's floor pivots per index (PLAN.md 14.19, rule 3) ---
+  // From the previous session's stored 5m bars, once a day. A rebound trade
+  // is a call bought at S1 or a put at R1; without pivots none is detected.
+  const pivotsByIndex = new Map<string, PivotLevels>();
+  let pivotsDay = "";
+  const refreshPivots = async (now: number): Promise<void> => {
+    const day = istDateKey(now);
+    if (pivotsDay === day) return;
+    pivotsDay = day;
+    const todayStart = startOfDayIST(now);
+    for (const symbol of ["NSE:NIFTY50-INDEX", "NSE:NIFTYBANK-INDEX"]) {
+      try {
+        const bars = await candles.findRange(
+          symbol,
+          "5m",
+          todayStart - 7 * 86_400_000,
+          todayStart,
+        );
+        const last = bars.at(-1);
+        if (last === undefined) continue;
+        const lastDay = istDateKey(last.ts);
+        const session = bars.filter((b) => istDateKey(b.ts) === lastDay);
+        pivotsByIndex.set(
+          symbol,
+          pivotLevels({
+            high: Math.max(...session.map((b) => b.high)),
+            low: Math.min(...session.map((b) => b.low)),
+            close: last.close,
+          }),
+        );
+      } catch (error) {
+        pivotsDay = ""; // try again on the next tick
+        onError(error, { where: "refreshPivots", symbol });
+      }
+    }
+  };
+
   // --- Exit Engine: stops, targets, and the intraday square-off ---
   const exitEngine = new ExitEngine({
     ports: {
       readCheckpointOdds: () => checkpointOdds,
       readPrice: (symbol) => lastPrices.get(symbol) ?? null,
+      readPivots: (underlying) => pivotsByIndex.get(underlying) ?? null,
+      // A rebound trade's T1 (14.19): in memory for the next bar, durably
+      // for a restart — as the stop is.
+      updateTarget: async (positionId, target) => {
+        positionEngine.setTarget(positionId, target);
+        await positions.setTarget(positionId, target);
+      },
       readOpenPositions: () => positionEngine.getOpenPositions(),
       readSession: () => Promise.resolve(state.session),
       persistSignal: (signal) => signals.insert(signal),
@@ -1568,8 +1614,9 @@ export async function startEngineRuntime(deps: {
       // session is still open enough for risk to approve the exits. Runs on the
       // session tick rather than on MARKET_CLOSE — by the close it is too late,
       // the Risk Engine's session check would block every exit order.
-      // Cheap when today's table is held; never awaited by an exit.
+      // Cheap when today's table and pivots are held; never awaited by an exit.
       void refreshCheckpointOdds(now);
+      void refreshPivots(now);
       if (evaluation.phase === "open") {
         await exitEngine.onSessionTick(
           now,

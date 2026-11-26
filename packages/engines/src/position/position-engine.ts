@@ -83,6 +83,16 @@ export class PositionEngine {
     }
   }
 
+  /** Move a live position's target, held where every consumer reads it (14.19). */
+  setTarget(positionId: string, target: number): void {
+    for (const [key, position] of this.positions) {
+      if (position.positionId === positionId) {
+        this.positions.set(key, { ...position, target });
+        return;
+      }
+    }
+  }
+
   getPosition(strategyId: string, symbol: string): Position | null {
     const position = this.positions.get(PositionEngine.key(strategyId, symbol));
     return position && position.status === "OPEN" ? position : null;

@@ -1,6 +1,7 @@
 import type {
   CheckpointOddsTable,
   ExitRules,
+  PivotLevels,
   Position,
   SessionContext,
   Signal,
@@ -53,6 +54,10 @@ export interface ExitPorts {
   readCheckpointOdds?(): CheckpointOddsTable | null;
   /** The last price of a symbol — the index, for an option's checkpoint. */
   readPrice?(symbol: string): number | null;
+  /** Today's floor pivots for an index, from its previous session (14.19). */
+  readPivots?(underlying: string): PivotLevels | null;
+  /** Move a live position's target, durably — a rebound trade's T1 (14.19). */
+  updateTarget?(positionId: string, target: number): Promise<void>;
 }
 
 /**
@@ -66,4 +71,6 @@ export type ExitTrigger =
   | "square_off"
   | "manual"
   /** A three-part target's checkpoint, whose next part was unlikely (14.17). */
-  | "checkpoint";
+  | "checkpoint"
+  /** SL1 or SL2 crossed and a bounce was unlikely: a smaller loss now (14.19). */
+  | "early_stop";

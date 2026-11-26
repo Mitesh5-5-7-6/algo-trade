@@ -1,10 +1,12 @@
 import {
   CHECKPOINT_ASSUMED_DELTA,
   CHECKPOINT_MIN_CHANCE,
+  CHECKPOINT_STOP_BUFFER,
   checkpointChance,
   checkpointLevels,
   checkpointUnderlying,
   intervalMs,
+  isReboundEntry,
   type Position,
   type Signal,
 } from "@neelkanth/core";
@@ -30,6 +32,8 @@ const EXIT_REASON: Record<ExitTrigger, ExitReason> = {
   manual: "MANUAL_EMERGENCY",
   // Profit taken at T1 or T2 because the next part was unlikely (14.17).
   checkpoint: "TAKE_PROFIT",
+  // Out at SL1 or SL2 before the full stop (14.19): still a stop-loss exit.
+  early_stop: "STOP_LOSS",
 };
 
 /**
@@ -67,6 +71,9 @@ export interface ExitEngineDeps {
 
 /** An exit is a market order; SELL closes a LONG, BUY closes a SHORT. */
 const MINUTE_MS = 60_000;
+
+/** A rebound trade is recognised only this close to its fill (14.19). */
+const REBOUND_WINDOW_MS = 10 * MINUTE_MS;
 
 function closingSide(position: Position): "BUY" | "SELL" {
   return position.side === "LONG" ? "SELL" : "BUY";
@@ -123,6 +130,10 @@ export class ExitEngine {
   private prune(open: readonly Position[]): void {
     const live = new Set(open.map((p) => p.positionId));
     for (const id of this.exiting) if (!live.has(id)) this.exiting.delete(id);
+    for (const map of [this.passed, this.stopsJudged])
+      for (const id of map.keys()) if (!live.has(id)) map.delete(id);
+    for (const set of [this.reboundChecked, this.rebound])
+      for (const id of set) if (!live.has(id)) set.delete(id);
   }
 
   /**
@@ -148,7 +159,13 @@ export class ExitEngine {
           const early = await this.checkpoint(position, candle);
           if (early !== null) {
             if (!(await this.claim(position.positionId))) continue;
-            await this.exit(position, "checkpoint", candle.close, candle.ts, early);
+            await this.exit(
+              position,
+              early.trigger,
+              candle.close,
+              candle.ts,
+              early.note,
+            );
             continue;
           }
           // Judged against the levels the bar OPENED with; only now may the
@@ -297,73 +314,138 @@ export class ExitEngine {
     return false;
   }
 
-  /** Checkpoints a position has passed this session: 1 after T1, 2 after T2. */
+  /** Target checkpoints passed: 1 after T1, 2 after T2. */
   private readonly passed = new Map<string, number>();
+  /** Stop-side checkpoints judged: 1 after SL1, 2 after SL2 (14.19). */
+  private readonly stopsJudged = new Map<string, number>();
+  /** Positions whose rebound test has run, and those it marked (14.19). */
+  private readonly reboundChecked = new Set<string>();
+  private readonly rebound = new Set<string>();
 
   /**
-   * The three-part target (PLAN.md 14.17). One entry, never added to; the way
-   * to the target split into equal thirds. When this bar reaches the next
-   * checkpoint, the chance of the part after it decides: below the threshold,
-   * the reason to exit everything now (returned); otherwise the stop moves to
-   * the entry and the position holds (null).
+   * The three-part target and its stop-side mirror (PLAN.md 14.17, 14.19).
+   * One entry, never added to, never partly sold: what this returns is a
+   * reason to exit everything now; null is "hold".
    *
-   * Off without an odds table (replay, the golden record). No chance for a
-   * case → hold: the gate only ever exits early.
+   * - Rule 3, once, at entry: a call bought at the pivot S1 (a put at R1) is
+   *   a rebound trade, and its target becomes T1.
+   * - Rule 1, before T1: the way to the stop in thirds. Crossing SL1 or SL2
+   *   asks for the chance of a bounce — one part back toward the entry before
+   *   the final stop. Unlikely → out now, a smaller loss. Otherwise wait.
+   * - Rules 14.17 and 2: reaching T1 or T2 asks for the chance of the next
+   *   one. Unlikely → out now. Otherwise hold, and the stop moves a little
+   *   past the level left behind (the entry at T1, T1 at T2), so a fall back
+   *   exits in profit.
    *
-   * Which checkpoints are passed is held in memory; after a restart a stop
-   * already at the entry says T1 was passed. T2 may then be judged a second
-   * time, which can only end in the same two answers.
+   * Off without an odds table (replay, the golden record). No chance known
+   * for a case → hold; the gates only ever exit early. Progress is held in
+   * memory; after a restart the stop's position says which targets passed.
    */
   private async checkpoint(
     position: Position,
     candle: EventPayload<"CANDLE_CLOSED">,
-  ): Promise<string | null> {
+  ): Promise<{ trigger: "checkpoint" | "early_stop"; note: string } | null> {
     const table = this.deps.ports.readCheckpointOdds?.() ?? null;
     if (table === null) return null;
-    const levels = checkpointLevels(position);
     const where = checkpointUnderlying(position);
-    if (levels === null || where === null) return null;
+    if (where === null) return null;
 
+    const id = position.positionId;
     const long = position.side === "LONG";
+    const sign = long ? 1 : -1;
     const entry = position.avgEntryPrice;
-    const stopAtEntry =
-      position.stopLoss !== undefined &&
-      (long ? position.stopLoss >= entry : position.stopLoss <= entry);
-    let passed = this.passed.get(position.positionId) ?? (stopAtEntry ? 1 : 0);
+    const stop = position.stopLoss;
+    const barClose = candle.ts + intervalMs(candle.interval);
+    const index = this.deps.ports.readPrice?.(where.underlying) ?? null;
+    const spot = where.option ? index : candle.close;
+    const minutesSinceOpen =
+      ((barClose + 19_800_000) % 86_400_000) / 60_000 - (9 * 60 + 15);
+    const chanceOf = (part: number, back: number): number | null =>
+      spot === null || spot <= 0
+        ? null
+        : checkpointChance(table, {
+            underlying: where.underlying,
+            direction: where.direction,
+            minutesSinceOpen,
+            movePct: (where.option ? part / CHECKPOINT_ASSUMED_DELTA : part) / spot,
+            back,
+          });
+    const pct = (c: number) => `${String(Math.round(c * 100))}%`;
+    const levels = checkpointLevels(position);
+
+    // Rule 3: judged once, on the first bar after the fill.
+    if (!this.reboundChecked.has(id)) {
+      this.reboundChecked.add(id);
+      const pivots = this.deps.ports.readPivots?.(where.underlying) ?? null;
+      const underlyingNow = index ?? (where.option ? null : candle.close);
+      if (
+        levels !== null &&
+        pivots !== null &&
+        underlyingNow !== null &&
+        this.deps.ports.updateTarget !== undefined &&
+        barClose - position.openedAt <= REBOUND_WINDOW_MS &&
+        isReboundEntry(where.direction, underlyingNow, pivots)
+      ) {
+        this.rebound.add(id);
+        // The ordinary target check exits at T1 from the next bar on.
+        await this.deps.ports.updateTarget(id, levels.t1);
+        return null;
+      }
+    }
+
+    // Where the stop sits says which targets have passed (after a restart).
+    const derived =
+      levels === null || stop === undefined
+        ? 0
+        : sign * (stop - levels.t1) >= 0
+          ? 2
+          : sign * (stop - entry) >= 0
+            ? 1
+            : 0;
+    let passed = this.passed.get(id) ?? derived;
+
+    // Rule 1: the stop side, while the stop is still on the loss side.
+    if (passed === 0 && stop !== undefined && sign * (entry - stop) > 0) {
+      const riskPart = Math.abs(entry - stop) / 3;
+      const fell = (level: number) =>
+        long ? candle.low <= level : candle.high >= level;
+      let judged = this.stopsJudged.get(id) ?? 0;
+      while (judged < 2 && fell(entry - sign * (judged + 1) * riskPart)) {
+        judged += 1;
+        this.stopsJudged.set(id, judged);
+        // A bounce is one part back toward the entry before the final stop:
+        // two parts away from SL1, one from SL2.
+        const chance = chanceOf(riskPart, judged === 1 ? 2 : 1);
+        if (chance !== null && chance < CHECKPOINT_MIN_CHANCE)
+          return {
+            trigger: "early_stop",
+            note: `SL${String(judged)} crossed, chance of a bounce ${pct(chance)}`,
+          };
+      }
+    }
+
+    // The target side (14.17, rule 2). A rebound trade has T1 as its target.
+    if (this.rebound.has(id) || levels === null) return null;
+    const part = Math.abs(levels.t3 - entry) / 3;
     const reached = (level: number) =>
       long ? candle.high >= level : candle.low <= level;
-
-    // One third of the way, on the index the move is measured on.
-    const third = Math.abs(levels.t3 - entry) / 3;
-    const spot = where.option
-      ? (this.deps.ports.readPrice?.(where.underlying) ?? null)
-      : candle.close;
-    const minutesSinceOpen =
-      ((candle.ts + intervalMs(candle.interval) + 19_800_000) % 86_400_000) /
-        60_000 -
-      (9 * 60 + 15);
-
     while (passed < 2 && reached(passed === 0 ? levels.t1 : levels.t2)) {
-      const part = passed + 1; // the checkpoint just reached: T1 or T2
-      const chance =
-        spot === null || spot <= 0
-          ? null
-          : checkpointChance(table, {
-              underlying: where.underlying,
-              direction: where.direction,
-              minutesSinceOpen,
-              movePct:
-                (where.option ? third / CHECKPOINT_ASSUMED_DELTA : third) / spot,
-              // The stop sits at the entry: one part back from T1, two from T2.
-              back: part,
-            });
+      const n = passed + 1; // the checkpoint just reached: T1 or T2
+      // Holding moves the stop just past the level left behind: one part back.
+      const chance = chanceOf(part, 1);
       if (chance !== null && chance < CHECKPOINT_MIN_CHANCE) {
-        this.passed.set(position.positionId, part);
-        return `checkpoint T${String(part)}, chance of T${String(part + 1)} ${String(Math.round(chance * 100))}%`;
+        this.passed.set(id, n);
+        return {
+          trigger: "checkpoint",
+          note: `checkpoint T${String(n)}, chance of T${String(n + 1)} ${pct(chance)}`,
+        };
       }
-      passed = part;
-      this.passed.set(position.positionId, passed);
-      if (!stopAtEntry) await this.deps.ports.updateStopLoss(position.positionId, entry);
+      passed = n;
+      this.passed.set(id, n);
+      const newStop =
+        (n === 1 ? entry : levels.t1) + sign * part * CHECKPOINT_STOP_BUFFER;
+      if (stop === undefined || sign * (newStop - stop) > 0)
+        await this.deps.ports.updateStopLoss(id, newStop);
     }
     return null;
   }

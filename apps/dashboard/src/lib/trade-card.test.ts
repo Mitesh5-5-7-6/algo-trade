@@ -148,3 +148,51 @@ describe("the card's T1 / T2 / T3", () => {
     expect(cardCheckpoints({ ...option, target: null })).toBeNull();
   });
 });
+describe("the card's stop side and rules (14.19)", () => {
+  const option = card({
+    basis: "OPTION_STRATEGY",
+    underlying: "NSE:NIFTY50-INDEX",
+    contract: "NSE:NIFTY26D0125750PE",
+    entry: 218.01,
+    stopLoss: 163.46,
+    target: 348.72,
+    index: null,
+  });
+  const live = (stopLoss: number, target = 348.72) => ({
+    ...option,
+    live: {
+      state: "OPEN" as const,
+      symbol: "NSE:NIFTY26D0125750PE",
+      qty: 325,
+      avgEntryPrice: 218.01,
+      ltp: 230,
+      ltpAt: 1,
+      unrealizedPnl: 0,
+      stopLoss,
+      target,
+      stale: false,
+    },
+  });
+
+  it("shows SL1 and SL2 while the stop is below the buy price", () => {
+    const levels = cardCheckpoints(live(163.46));
+    expect(levels?.sl1).toBeCloseTo(199.83, 2);
+    expect(levels?.sl2).toBeCloseTo(181.64, 2);
+    expect(levels?.stopAtEntry).toBe(false);
+  });
+
+  it("drops SL1 / SL2 once the stop moved above the buy price, then above T1", () => {
+    const afterT1 = cardCheckpoints(live(222.37));
+    expect(afterT1?.sl1).toBeNull();
+    expect(afterT1?.stopAtEntry).toBe(true);
+    expect(afterT1?.stopPastT1).toBe(false);
+    expect(cardCheckpoints(live(265.94))?.stopPastT1).toBe(true);
+  });
+
+  it("names a rebound trade and keeps the strategy's own thirds", () => {
+    const levels = cardCheckpoints(live(163.46, 261.58));
+    expect(levels?.rebound).toBe(true);
+    expect(levels?.t3).toBe(348.72);
+    expect(levels?.t1).toBeCloseTo(261.58, 2);
+  });
+});

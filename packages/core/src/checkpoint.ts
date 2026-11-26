@@ -27,6 +27,48 @@ export const CHECKPOINT_MIN_SAMPLES = 30;
 /** How a premium move maps to the index, for an option position. */
 export const CHECKPOINT_ASSUMED_DELTA = 0.5;
 
+/**
+ * Where the stop goes when a target checkpoint holds (14.19, rule 2): a
+ * little ABOVE the level left behind — the buy price at T1, T1 at T2 — so a
+ * fall back exits in profit, charges covered. "A little" is this share of
+ * one part: entry 40, target 100 → part 20 → T1 moves the stop to 42.
+ */
+export const CHECKPOINT_STOP_BUFFER = 0.1;
+
+/** How near the pivot S1 (or R1) makes an entry a rebound trade (14.19, rule 3). */
+export const REBOUND_PIVOT_BAND = 0.0025;
+
+/** Classic floor pivots from the previous session's high, low and close. */
+export interface PivotLevels {
+  pivot: number;
+  s1: number;
+  r1: number;
+}
+
+export function pivotLevels(prev: {
+  high: number;
+  low: number;
+  close: number;
+}): PivotLevels {
+  const pivot = (prev.high + prev.low + prev.close) / 3;
+  return { pivot, s1: 2 * pivot - prev.high, r1: 2 * pivot - prev.low };
+}
+
+/**
+ * A rebound trade (14.19, rule 3): a bullish entry with the index at or just
+ * above S1 — bought after a fall, into support — or a bearish one at or just
+ * below R1. Rebounds are often short, so its target becomes T1.
+ */
+export function isReboundEntry(
+  direction: "UP" | "DOWN",
+  spot: number,
+  pivots: PivotLevels,
+): boolean {
+  return direction === "UP"
+    ? spot <= pivots.s1 * (1 + REBOUND_PIVOT_BAND)
+    : spot >= pivots.r1 * (1 - REBOUND_PIVOT_BAND);
+}
+
 export interface CheckpointLevels {
   t1: number;
   t2: number;

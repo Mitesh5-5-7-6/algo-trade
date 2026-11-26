@@ -42,6 +42,11 @@ export class PositionsRepository {
     await this.collection.updateOne({ positionId }, { $set: { stopLoss } });
   }
 
+  /** Move a live position's target — a rebound trade's T1 (PLAN.md 14.19). */
+  async setTarget(positionId: string, target: number): Promise<void> {
+    await this.collection.updateOne({ positionId }, { $set: { target } });
+  }
+
   async findOpen(): Promise<Position[]> {
     const docs = await this.collection
       .find({ status: "OPEN" }, { projection: { _id: 0 } })

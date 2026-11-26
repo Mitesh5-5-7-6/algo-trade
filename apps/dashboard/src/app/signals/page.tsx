@@ -114,9 +114,31 @@ function Card({ card }: { card: LiveTradeCard }) {
                 {checkpoints.on !== card.contract && (
                   <div className="hint">{bareSymbol(checkpoints.on)} levels</div>
                 )}
-                {checkpoints.stopAtEntry && (
-                  <div className="pos">T1 reached: stop moved to the buy price</div>
+                {checkpoints.rebound && (
+                  <div className="hint">
+                    Rebound trade (near pivot support or resistance): the
+                    target is T1
+                  </div>
                 )}
+                {checkpoints.stopPastT1 ? (
+                  <div className="pos">T2 reached: stop moved above T1</div>
+                ) : (
+                  checkpoints.stopAtEntry && (
+                    <div className="pos">
+                      T1 reached: stop moved above the buy price
+                    </div>
+                  )
+                )}
+              </td>
+            </tr>
+          )}
+          {checkpoints?.sl1 != null && checkpoints.sl2 !== null && (
+            <tr>
+              <td>SL1 · SL2 · stop</td>
+              <td className="num mono">
+                {price(round2(checkpoints.sl1))} ·{" "}
+                {price(round2(checkpoints.sl2))} ·{" "}
+                {price(round2(checkpoints.stop ?? 0))}
               </td>
             </tr>
           )}
@@ -147,9 +169,11 @@ function Card({ card }: { card: LiveTradeCard }) {
       <Odds card={card} />
       {checkpoints !== null && (
         <p className="hint">
-          One buy, one exit. At T1 and at T2 the chance of reaching the next
-          level is checked: below 40% everything is sold there; otherwise the
-          position is held and the stop moves to the buy price.
+          One buy, one exit. At T1 and T2 the chance of reaching the next level
+          is checked: below 40% everything is sold there; otherwise it holds
+          and the stop moves a little above the level left behind (the buy
+          price, then T1). At SL1 and SL2 the chance of a bounce is checked:
+          below 40% it exits early, for a smaller loss.
         </p>
       )}
       <p className="hint">{card.reason}</p>

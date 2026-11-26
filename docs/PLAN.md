@@ -932,6 +932,23 @@ the detailed design for this phase and keeps each task's dependencies.
 
 | 14.18 | The card shows T1 / T2 / T3; T1 moves the stop to the entry even when the odds table was not fetched | COMPLETE | `45f065e` | `apps/dashboard/src/lib/trade-card.ts` `cardCheckpoints` (from the live position), shown on `apps/dashboard/src/app/signals/page.tsx`; `trade-card.test.ts` 8/8. `apps/api/src/engines/runtime.ts`: configured, the table starts empty, not absent. Found 2026-11-26: the table fetch is refused by Cloudflare's bot check ("Just a moment…") from Render, so a put that reached T1 (₹249.90 vs ₹227.40) closed at ₹164.12. The fetch itself needs the research service on Render's private network (operator) |
 
+| 14.19 | Stop side mirrors the targets (SL1/SL2 bounce check), the stop climbs past each target held, a rebound trade's target is T1 | COMPLETE | see git log | Operator rules and decisions 2026-11-26, below. `packages/engines/src/exit/exit-engine.ts` `checkpoint`; `packages/core/src/checkpoint.ts` (`pivotLevels`, `isReboundEntry`, `CHECKPOINT_STOP_BUFFER`); `apps/api/src/engines/runtime.ts` (pivots from the previous session's 5m bars, `updateTarget`); the card shows SL1 · SL2 · stop and the rule states. `packages/engines/src/exit/checkpoint.test.ts` 14/14 on the operator's 25750 PE; dashboard 11/11. Strict integration not yet run |
+
+**14.19 — operator rules 2026-11-26** (entry 40, stop 20, target 100 → T1 60,
+T2 80; SL1 33.3, SL2 26.7):
+
+1. Stop side: crossing SL1 or SL2 (thirds of the way to the stop, before T1)
+   asks for the chance of a bounce — one part back toward the entry before
+   the final stop. Below 40% → exit now (`STOP_LOSS`, "SL1 crossed, chance
+   of a bounce n%"). Otherwise wait. Each level judged once.
+2. Holding at T1 moves the stop a little ABOVE the entry; holding at T2, a
+   little above T1 — 10% of a part (T1 → 42, T2 → 62), so a fall back exits
+   in profit. The T1 and T2 chances are now asked with the stop one part
+   back.
+3. A call bought within 0.25% of today's floor-pivot S1 (a put near R1),
+   judged on the first bar after the fill, is a rebound trade: its target
+   becomes T1, persisted on the position.
+
 **14.17 — three-part target (operator decisions 2026-11-25, final).** One
 entry, never added to and never partly sold.
 
