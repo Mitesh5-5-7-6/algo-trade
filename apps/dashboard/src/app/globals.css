@@ -445,6 +445,26 @@ table.data th.num {
   font-size: 13px;
   letter-spacing: 0.04em;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  /* Held, not tapped (2026-11-26): no long-press menu or text selection. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.btn-pause .hold-progress {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  background: rgba(238, 182, 83, 0.25);
+}
+.btn-pause.holding .hold-progress {
+  width: 100%;
+  transition: width 1s linear;
+}
+.btn-pause .kill-sub {
+  color: var(--amber);
 }
 .btn-kill {
   position: relative;

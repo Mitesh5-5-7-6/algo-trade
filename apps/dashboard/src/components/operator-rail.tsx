@@ -48,6 +48,30 @@ export function OperatorRail() {
     }
   }, []);
 
+  // PAUSE is held for a second rather than tapped (operator decision
+  // 2026-11-26): on a phone it sits under the last page of the menu, and a
+  // scrolling finger paused all trading at 15:30 that day. Still a single
+  // gesture — stopping stays easy, never gated.
+  const [pauseHolding, setPauseHolding] = useState(false);
+  const pauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const beginPauseHold = useCallback(() => {
+    if (!tradingEnabled) return;
+    setPauseHolding(true);
+    pauseTimer.current = setTimeout(() => {
+      setPauseHolding(false);
+      pause.mutate();
+    }, 1000);
+  }, [tradingEnabled, pause]);
+
+  const cancelPauseHold = useCallback(() => {
+    setPauseHolding(false);
+    if (pauseTimer.current !== null) {
+      clearTimeout(pauseTimer.current);
+      pauseTimer.current = null;
+    }
+  }, []);
+
   return (
     <aside className="rail">
       <h2 className="panel-title">Operator Controls</h2>
@@ -61,13 +85,19 @@ export function OperatorRail() {
 
       <button
         type="button"
-        className="btn-pause"
+        className={`btn-pause${pauseHolding ? " holding" : ""}`}
         disabled={!tradingEnabled || pause.isPending}
-        onClick={() => {
-          pause.mutate();
+        onPointerDown={beginPauseHold}
+        onPointerUp={cancelPauseHold}
+        onPointerLeave={cancelPauseHold}
+        onPointerCancel={cancelPauseHold}
+        onContextMenu={(e) => {
+          e.preventDefault();
         }}
       >
+        <span className="hold-progress" />
         {pause.isPending ? "PAUSING…" : "⏸ PAUSE ALL TRADING"}
+        <span className="kill-sub">HOLD 1 SECOND</span>
       </button>
 
       <button

@@ -934,6 +934,8 @@ the detailed design for this phase and keeps each task's dependencies.
 
 | 14.19 | Stop side mirrors the targets (SL1/SL2 bounce check), the stop climbs past each target held, a rebound trade's target is T1 | COMPLETE | see git log | Operator rules and decisions 2026-11-26, below. `packages/engines/src/exit/exit-engine.ts` `checkpoint`; `packages/core/src/checkpoint.ts` (`pivotLevels`, `isReboundEntry`, `CHECKPOINT_STOP_BUFFER`); `apps/api/src/engines/runtime.ts` (pivots from the previous session's 5m bars, `updateTarget`); the card shows SL1 · SL2 · stop and the rule states. `packages/engines/src/exit/checkpoint.test.ts` 14/14 on the operator's 25750 PE; dashboard 11/11. Strict integration not yet run |
 
+| 14.20 | PAUSE is held for a second, not tapped; the dashboard login lasts 8 h idle (was 30 min) | COMPLETE | see git log | Operator decisions 2026-11-26. `apps/dashboard/src/components/operator-rail.tsx` (hold, as KILL), `apps/api/src/auth/config.ts` `SESSION_IDLE_TTL_SECONDS`. Found 2026-11-26: trading was paused at 15:30 after a clean reconciliation — the one-tap PAUSE sits under the phone menu's last page. The 12 h ceiling and step-up stand |
+
 **14.19 — operator rules 2026-11-26** (entry 40, stop 20, target 100 → T1 60,
 T2 80; SL1 33.3, SL2 26.7):
 
