@@ -930,6 +930,8 @@ the detailed design for this phase and keeps each task's dependencies.
 
 | 14.17 | Three-part target with an odds gate at T1 and T2 | COMPLETE | see git log | `packages/core/src/checkpoint.ts` (levels, table, lookup); `apps/api/src/odds/checkpoint-odds.ts` + `GET /checkpoint-odds` on the research service; `packages/engines/src/exit/exit-engine.ts` `checkpoint`; `apps/api/src/engines/runtime.ts` fetches the table daily. Tests: `packages/engines/src/exit/checkpoint.test.ts` 6/6 on the operator's 25750 PE example, `apps/api/src/odds/checkpoint-odds.test.ts` 4/4; core 140, engines 392, API 824 passed. Real data (`apps/api/scripts/checkpoint-odds-preview.mts`): 17,728 bars, 238 sessions, built in 320 ms. Strict integration not yet run |
 
+| 14.18 | The card shows T1 / T2 / T3; T1 moves the stop to the entry even when the odds table was not fetched | COMPLETE | `45f065e` | `apps/dashboard/src/lib/trade-card.ts` `cardCheckpoints` (from the live position), shown on `apps/dashboard/src/app/signals/page.tsx`; `trade-card.test.ts` 8/8. `apps/api/src/engines/runtime.ts`: configured, the table starts empty, not absent. Found 2026-11-26: the table fetch is refused by Cloudflare's bot check ("Just a moment…") from Render, so a put that reached T1 (₹249.90 vs ₹227.40) closed at ₹164.12. The fetch itself needs the research service on Render's private network (operator) |
+
 **14.17 — three-part target (operator decisions 2026-11-25, final).** One
 entry, never added to and never partly sold.
 
