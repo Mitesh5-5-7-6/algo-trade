@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api-client";
 import { describeVerdict, pct } from "@/lib/odds";
@@ -34,6 +35,13 @@ export default function SignalsPage() {
     queryFn: api.tradeCards,
     refetchInterval: 5_000,
   });
+  // The Phase 14 test subjects trade the index ×1–3 to exercise the pipeline;
+  // hidden by default (operator decision 2026-11-27), one click to show.
+  const [showSubjects, setShowSubjects] = useState(false);
+  const subjects = (cards.data ?? []).filter((c) => isTestSubject(c.strategyId));
+  const shown = (cards.data ?? []).filter(
+    (c) => showSubjects || !isTestSubject(c.strategyId),
+  );
 
   return (
     <>
@@ -46,13 +54,30 @@ export default function SignalsPage() {
       </p>
       {cards.isError && <p className="login-error">{message(cards.error)}</p>}
       {cards.isPending && <p className="hint">Loading today&apos;s signals…</p>}
-      {cards.data !== undefined && cards.data.length === 0 && (
+      {subjects.length > 0 && (
+        <p className="hint" style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => {
+              setShowSubjects((v) => !v);
+            }}
+          >
+            {showSubjects
+              ? `Hide the ${String(subjects.length)} test-subject signals`
+              : `Show the ${String(subjects.length)} test-subject signals`}
+          </button>{" "}
+          The Phase 14 test subjects (ORB, EMA crossover) trade the index
+          itself, a few units, to test the system.
+        </p>
+      )}
+      {cards.data !== undefined && shown.length === 0 && (
         <section className="panel">
           <p className="hint">No approved entry yet today.</p>
         </section>
       )}
       <div className="trade-cards">
-        {cards.data?.map((card) => (
+        {shown.map((card) => (
           <Card key={card.signalId} card={card} />
         ))}
       </div>
@@ -61,6 +86,10 @@ export default function SignalsPage() {
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/** The Phase 14 test subjects, as `apps/api/src/paper/subject.ts` names them. */
+const isTestSubject = (strategyId: string): boolean =>
+  strategyId.startsWith("subject_");
 
 function Card({ card }: { card: LiveTradeCard }) {
   const what =

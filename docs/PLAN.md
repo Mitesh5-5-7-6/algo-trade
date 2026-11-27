@@ -936,6 +936,34 @@ the detailed design for this phase and keeps each task's dependencies.
 
 | 14.20 | PAUSE is held for a second, not tapped; the dashboard login lasts 8 h idle (was 30 min) | COMPLETE | see git log | Operator decisions 2026-11-26. `apps/dashboard/src/components/operator-rail.tsx` (hold, as KILL), `apps/api/src/auth/config.ts` `SESSION_IDLE_TTL_SECONDS`. Found 2026-11-26: trading was paused at 15:30 after a clean reconciliation — the one-tap PAUSE sits under the phone menu's last page. The 12 h ceiling and step-up stand |
 
+| 14.21 | The Signals page hides the Phase 14 test subjects by default, one click to show | COMPLETE | see git log | Operator decision 2026-11-27. `apps/dashboard/src/app/signals/page.tsx` (`strategyId` starting `subject_`, as `apps/api/src/paper/subject.ts` names them) |
+| 14.22 | Signal review: measure on stored history what separates winning option signals from losing ones; then trade only the best 2–3 a day | READY | — | Operator decision 2026-11-27: research first. Design below |
+
+**14.22 — signal review (operator decision 2026-11-27, research first).**
+Evidence so far, 20–27 Nov paper, 13 option trades (−₹75,644 without the
+19 Nov windfall): wins came on trend days, losses on reversal days; trading
+only with the day's direction (11 trades, −₹59,938), not buying at the day's
+extreme (removes winners and losers alike) and a cap of 3 a day with a stop
+after 2 losses (−₹77,816 → −₹74,460) do not separate them. Thirteen trades
+cannot choose a filter; the history can.
+
+1. Signals: run the option strategies' own decision on the stored 5m index
+   bars (29 Sep 2025 – 18 Nov 2026, ~280 sessions). Replay refuses derivative
+   strategies (no contract prices), so a decisions-only run records each
+   entry's time and direction on the index. Limits stated in the report: no
+   futures VWAP and no India VIX are stored.
+2. Outcome per signal, on the index at delta 0.5: the strategy's premium
+   stop and target as index distances; target first, stop first, or neither
+   by the square-off.
+3. Features at signal time (gap, move already run in ATR, morning chop,
+   distance from the previous close and pivots, time of day), each a
+   registered hypothesis through the existing validation gate (Holm,
+   minimum 30, out-of-sample). The report names what passed — possibly
+   nothing.
+4. Only then a live review: a score from the passing features; the best 2–3
+   a day that clear it are traded, the rest shown as "skipped by review" with
+   the reason.
+
 **14.19 — operator rules 2026-11-26** (entry 40, stop 20, target 100 → T1 60,
 T2 80; SL1 33.3, SL2 26.7):
 
