@@ -991,6 +991,31 @@ keeps running as test data. The research continues on the buying side, and
 the option chain is kept from now on (14.23) so option strategies can be
 tested on real premiums, OI and IV rather than an index approximation.
 
+**14.22 payoff and pro-framework findings, 2026-11-28**
+(`apps/api/scripts/pro-lab.mts`; costs and decay set by `LAB_COST` /
+`LAB_DECAY`):
+
+- Before costs and decay the live Momentum rule HAS a small edge that holds
+  out of sample: PF 1.12 in sample, 1.09 out (+0.013–0.021% of the index a
+  trade). Weekly ATM decay and charges turn it into PF 0.61–0.69.
+- Exits reshape, they do not add: time stops, breakeven/trail and stops on
+  the index chart (close back inside the breakout) cut the average loss to a
+  third but the win rate falls with it; no exit variant reaches PF 1 after
+  costs.
+- The vehicle matters most: at half the decay (1-step ITM) PF out of sample
+  0.77; at a quarter (monthly expiry) 0.86; with lower charges 0.88.
+- The operator's professional framework (PDH/PDL breakout and first pullback,
+  20 EMA, average-price stand-in for VWAP, RSI 60/40, ADX > 25, chop and
+  expiry-afternoon skips, chart stops): PF 0.49–0.91 out of sample over 14
+  months, though 1.66–6.29 on the 8 sessions of 17–27 Nov (7 and 4 trades) —
+  recent days alone mislead.
+- Open-drive (from the 17–27 Nov charts: the day's extreme made in the first
+  15–30 minutes and never revisited), 0.5% by 09:45: PF 0.34 Sep 2025 – Jun
+  2026, 1.92 Jun – Nov 2026 (25 trades, 60% wins) at monthly decay. Works in
+  the current trending phase, failed before it: a candidate for a forward
+  test in paper, not evidence.
+- Not testable yet: option-chain OI (kept from 30 Nov, 14.23) and India VIX.
+
 | 14.23 | Keep the option chain (NIFTY, BANKNIFTY; 21 strikes; price, OI, change in OI, IV, volume, bid/ask) every 5 minutes of the session | COMPLETE | see git log | Operator decision 2026-11-28. `apps/api/src/engines/option-chain-archiver.ts` (one per underlying per clock-aligned slot, never awaited by trading) + `.test.ts` 3/3; `packages/db/src/option-chain-snapshots-repository.ts` (`option_chain_snapshots`, unique on underlying + instant); wired in `apps/api/src/engines/runtime.ts`. ~150 documents a day |
 
 **14.19 — operator rules 2026-11-26** (entry 40, stop 20, target 100 → T1 60,
