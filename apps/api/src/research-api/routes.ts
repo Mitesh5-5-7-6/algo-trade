@@ -1,8 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Db } from "mongodb";
 import { z } from "zod";
-import { istDateKey, isTradingDayIST } from "@neelkanth/core";
-import { DEFAULT_GLOBAL_SETTINGS } from "@neelkanth/db";
+import { istDateKey, istDayStart, isTradingDayIST } from "@neelkanth/core";
+import { DEFAULT_GLOBAL_SETTINGS, NewsItemsRepository } from "@neelkanth/db";
+import { dayContextFor } from "./news/day-context.js";
 import { UnauthorizedError, ValidationError } from "../errors.js";
 import { OddsRefusal } from "../odds/refusal.js";
 import {
@@ -79,6 +80,40 @@ const ScanBody = z
     save: z.boolean().default(false),
   })
   .strict();
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** `GET /day-context?date=` — an IST date; today when omitted. */
+const DayContextQuery = z
+  .object({
+    date: z.string().regex(DATE_KEY, "an IST date, YYYY-MM-DD").optional(),
+  })
+  .strict();
+
+/** An IST date, or an instant in epoch ms. */
+const DateOrInstant = z.union([
+  z.string().regex(DATE_KEY),
+  z.string().regex(/^\d{1,15}$/),
+]);
+
+/** `GET /news?symbol=&from=&to=&limit=` — newest first, 200 at most. */
+const NewsQuery = z
+  .object({
+    symbol: z.string().min(1).optional(),
+    from: DateOrInstant.optional(),
+    to: DateOrInstant.optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+
+/**
+ * A query bound as epoch ms: an instant as given; an IST date as its start
+ * (`from`) or the end of the day, inclusive (`to`).
+ */
+function instantOf(value: string, endOfDay: boolean): number {
+  if (!DATE_KEY.test(value)) return Number(value);
+  return istDayStart(value) + (endOfDay ? 86_400_000 : 0);
+}
 
 function parse<T>(
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
@@ -205,6 +240,32 @@ export function registerResearchRoutes(
 
   /** The daily bars the scan can judge on, per symbol. */
   app.get("/scan/coverage", () => storedCoverage(deps.db, "1d"));
+
+  // What the day holds (operator decision 2026-11-28): the calendar, the US
+  // overnight move and the morning read, built on demand when the date has
+  // no context yet. The trading process reads it as context only.
+  app.get("/day-context", async (request) => {
+    const query = parse(DayContextQuery, request.query);
+    return dayContextFor(
+      deps.db,
+      query.date ?? istDateKey(deps.now()),
+      deps.now(),
+    );
+  });
+
+  // The headlines kept, newest first: by heavyweight and window.
+  app.get("/news", async (request) => {
+    const query = parse(NewsQuery, request.query);
+    const from =
+      query.from === undefined ? undefined : instantOf(query.from, false);
+    const to = query.to === undefined ? undefined : instantOf(query.to, true);
+    return new NewsItemsRepository(deps.db).find({
+      ...(query.symbol === undefined ? {} : { symbol: query.symbol }),
+      ...(from === undefined ? {} : { from }),
+      ...(to === undefined ? {} : { to }),
+      limit: query.limit,
+    });
+  });
 
   app.post("/scan", async (request) => {
     const body = parse(ScanBody, request.body);

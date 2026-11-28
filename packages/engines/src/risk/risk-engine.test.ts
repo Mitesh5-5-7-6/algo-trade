@@ -49,6 +49,9 @@ interface State {
   failReadDailyLoss?: boolean | Error;
   marketView: MarketView;
   instrument: Instrument | null;
+  /** The applied lessons' verdict (PLAN.md 14.28); absent = none in scope. */
+  lesson?: { blocked: boolean; detail: string } | null;
+  lessonAsked?: number;
 }
 
 function harness(init: Partial<State> = {}) {
@@ -101,6 +104,10 @@ function harness(init: Partial<State> = {}) {
     readGlobalLimits: () => Promise.resolve(state.global),
     readStrategyOverride: () => Promise.resolve(state.override),
     readMarketView: () => state.marketView,
+    readLessonVerdict: () => {
+      state.lessonAsked = (state.lessonAsked ?? 0) + 1;
+      return state.lesson ?? null;
+    },
     readInstrument: () => state.instrument,
     persistRiskLog: (log) => {
       logs.push(log);
@@ -237,6 +244,43 @@ describe("RiskEngine — check 3 daily loss (plan/14 §4.3)", () => {
   });
 });
 
+describe("RiskEngine — check 3b applied lessons (PLAN.md 14.28)", () => {
+  it("blocks an entry an applied lesson blocks, naming the lesson", async () => {
+    const detail =
+      "lesson: skip a trade when 60% or more of the heavyweights move against it — 4 of 5 against";
+    const h = harness({ lesson: { blocked: true, detail } });
+    const decision = await h.engine.validate(signal({ side: "BUY" }));
+    expect(decision).toMatchObject({
+      decision: "blocked",
+      failedCheck: "lesson",
+      reason: detail,
+    });
+    expect(h.logs[0]?.checks.at(-1)).toEqual({
+      check: "lesson",
+      passed: false,
+      detail,
+    });
+  });
+
+  it("logs a passing lesson and goes on to size the trade", async () => {
+    const h = harness({ lesson: { blocked: false, detail: "lesson passed" } });
+    expect((await h.engine.validate(signal({ side: "BUY" }))).decision).toBe(
+      "approved",
+    );
+    expect(h.logs[0]?.checks.map((c) => c.check)).toContain("lesson");
+  });
+
+  it("never asks about an exit — getting out is always allowed", async () => {
+    const h = harness({
+      position: longPosition,
+      lesson: { blocked: true, detail: "x" },
+    });
+    const decision = await h.engine.validate(signal({ side: "SELL" }));
+    expect(decision).not.toMatchObject({ failedCheck: "lesson" });
+    expect(h.state.lessonAsked ?? 0).toBe(0);
+  });
+});
+
 describe("RiskEngine — check 3 market bias (plan/14 §4)", () => {
   it("blocks a BUY into a bearish market", async () => {
     const h = harness({ marketView: view("BEARISH") });
@@ -319,7 +363,9 @@ describe("RiskEngine — check 3 market bias (plan/14 §4)", () => {
 
     it("still blocks a bought call into a bearish market", async () => {
       const h = harness({ marketView: view("BEARISH") });
-      const decision = await h.engine.validate(signal({ ...call, side: "BUY" }));
+      const decision = await h.engine.validate(
+        signal({ ...call, side: "BUY" }),
+      );
       expect(decision).toMatchObject({
         decision: "blocked",
         failedCheck: "marketBias",

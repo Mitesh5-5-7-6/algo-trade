@@ -1,0 +1,107 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "USD",
+          "symbol": "^GSPC",
+          "exchangeName": "SNP",
+          "fullExchangeName": "SNP",
+          "instrumentType": "INDEX",
+          "firstTradeDate": -1325583000,
+          "regularMarketTime": 1795804719,
+          "hasPrePostMarketData": false,
+          "gmtoffset": -18000,
+          "timezone": "EST",
+          "exchangeTimezoneName": "America/New_York",
+          "regularMarketPrice": 7297.49,
+          "regularMarketChangePercent": 1.597,
+          "fulldayPrice": 7297.49,
+          "fulldayChange": 114.71,
+          "fulldayChangePercent": 1.597,
+          "fiftyTwoWeekHigh": 7844.52,
+          "fiftyTwoWeekLow": 6316.91,
+          "regularMarketDayHigh": 7304.1,
+          "regularMarketDayLow": 7211.46,
+          "regularMarketVolume": 1715427000,
+          "longName": "S&P 500",
+          "shortName": "S&P 500",
+          "chartPreviousClose": 7175.83,
+          "priceHint": 2,
+          "currentTradingPeriod": {
+            "pre": {
+              "timezone": "EST",
+              "end": 1795789800,
+              "start": 1795770000,
+              "gmtoffset": -18000
+            },
+            "regular": {
+              "timezone": "EST",
+              "end": 1795802400,
+              "start": 1795789800,
+              "gmtoffset": -18000
+            },
+            "post": {
+              "timezone": "EST",
+              "end": 1795827600,
+              "start": 1795802400,
+              "gmtoffset": -18000
+            }
+          },
+          "dataGranularity": "1d",
+          "range": "5d",
+          "validRanges": [
+            "1d",
+            "5d",
+            "1mo",
+            "3mo",
+            "6mo",
+            "1y",
+            "2y",
+            "5y",
+            "10y",
+            "ytd",
+            "max"
+          ]
+        },
+        "timestamp": [
+          1795185000, 1795444200, 1795530600, 1795617000, 1795789800
+        ],
+        "indicators": {
+          "quote": [
+            {
+              "open": [
+                7150.39013671875, 7227.41015625, 7172.330078125, 7060.330078125,
+                7262.60986328125
+              ],
+              "volume": [
+                6679680000, 5608530000, 5244060000, 5520150000, 2936150000
+              ],
+              "low": [
+                6882.66015625, 7152.66015625, 7138.93017578125,
+                6970.10986328125, 7211.4599609375
+              ],
+              "close": [
+                6910.39013671875, 7237.169921875, 7201.08984375,
+                7182.77978515625, 7297.490234375
+              ],
+              "high": [
+                7198.669921875, 7295.60009765625, 7223.9501953125,
+                7199.31005859375, 7304.10009765625
+              ]
+            }
+          ],
+          "adjclose": [
+            {
+              "adjclose": [
+                6910.39013671875, 7237.169921875, 7201.08984375,
+                7182.77978515625, 7297.490234375
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}

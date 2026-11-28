@@ -619,6 +619,11 @@ PLAN §22's News track, given tasks.
 
 - **D1 — Official sources only.** Exchange announcements (NSE, BSE) and SEBI
   circulars. No third-party commentary in version 1.
+  **Revised 2026-11-28 by the operator:** public RSS **headlines** from news
+  sites are also collected — the title and link only, never the article —
+  each with its source and link, for the morning read (PLAN.md Phase 20,
+  20.7). Official sources stay preferred; NSE refused an automated read the
+  same day, so RBI's press-release feed is the official source in use.
 - **D2 — Provenance on every item:** source, URL, publication time, ingestion
   time, and the symbols it is mapped to.
 - **D3 — Never a trigger.** Announcements feed the knowledge base (the agent's
@@ -636,13 +641,13 @@ PLAN §22's News track, given tasks.
 
 ## 10. Not adopted from the reference
 
-| Reference skill                     | Why not                                                                                                                      |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Entry timer, exit planner, budget   | Already exist, in production form: the Strategy Runner, the Exit Engine, `sizeFno` / `sizeEquity`.                           |
-| Broker (as a skill)                 | The order path is the Order Manager and the Broker contract. Its gates are adopted as 15.16, its fingerprint idea with them. |
-| Analyst (company fundamentals)      | Feeds nothing in an intraday index-options system.                                                                           |
-| Pelosi (Congress trade disclosures) | Not ported. Indian disclosures (insider trading, takeovers, bulk and block deals) only if a strategy ever needs them.        |
-| Yahoo Finance data                  | Unofficial. FYERS and the exchanges are the only data sources.                                                               |
+| Reference skill                     | Why not                                                                                                                                                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Entry timer, exit planner, budget   | Already exist, in production form: the Strategy Runner, the Exit Engine, `sizeFno` / `sizeEquity`.                                                                                                                                                                       |
+| Broker (as a skill)                 | The order path is the Order Manager and the Broker contract. Its gates are adopted as 15.16, its fingerprint idea with them.                                                                                                                                             |
+| Analyst (company fundamentals)      | Feeds nothing in an intraday index-options system.                                                                                                                                                                                                                       |
+| Pelosi (Congress trade disclosures) | Not ported. Indian disclosures (insider trading, takeovers, bulk and block deals) only if a strategy ever needs them.                                                                                                                                                    |
+| Yahoo Finance data                  | Unofficial. FYERS and the exchanges are the only data sources. **Exception, operator 2026-11-28:** the US indices' daily closes (S&P 500, Nasdaq Composite) for the overnight flag only — FYERS does not carry them, Stooq answered with a bot check and FRED timed out. |
 
 ---
 

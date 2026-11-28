@@ -11,6 +11,8 @@ export const RiskCheckNameSchema = z.enum([
   "session",
   "duplicate",
   "marketBias",
+  /** An applied lesson (PLAN.md 14.28) — present only when the operator applied one. */
+  "lesson",
   "dailyLoss",
   "positionSize",
 ]);

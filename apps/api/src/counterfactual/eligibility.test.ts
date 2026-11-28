@@ -17,7 +17,7 @@ describe("strategy eligibility (6.2, D1)", () => {
 
   it("accounts for every registered strategy", () => {
     expect(rows.map((r) => r.type)).toEqual(createStrategyRegistry().types());
-    expect(rows).toHaveLength(8);
+    expect(rows).toHaveLength(9); // OPEN_DRIVE joined at 14.24
   });
 
   it("evaluates the three that trade the analysed instrument", () => {
@@ -39,6 +39,7 @@ describe("strategy eligibility (6.2, D1)", () => {
       INDEX_OPTION_SENTIMENT_FADE: "DERIVATIVE",
       INDEX_OPTION_PCR_OI: "OPTION_CHAIN",
       OPTION_MOMENTUM_SCALPER: "OPTION_CHAIN",
+      OPEN_DRIVE: "DERIVATIVE",
     });
     for (const r of rows.filter((x) => !x.eligible))
       expect(r.exclusion?.reason).toContain(r.type);

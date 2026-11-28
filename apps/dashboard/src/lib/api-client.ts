@@ -1,4 +1,26 @@
-import type { Order, Position, StrategyConfig } from "@neelkanth/core";
+import type {
+  AppliedLesson,
+  Lesson,
+  Order,
+  Position,
+  StrategyConfig,
+} from "@neelkanth/core";
+
+/** What an applied lesson has done in paper since it was applied (PLAN.md 14.28). */
+export interface LessonForward {
+  judged: number;
+  blocked: number;
+  passed: number;
+  traded: number;
+  closed: number;
+  wins: number;
+  netPnl: number;
+}
+export interface LessonsResponse {
+  lessons: Lesson[];
+  researchError: string | null;
+  applied: Array<AppliedLesson & { forward: LessonForward }>;
+}
 import { API_BASE } from "./config";
 import type { ActivityEntry } from "./data";
 import type { OddsCoverage, OddsRequest, OddsResponse } from "./odds";
@@ -263,6 +285,21 @@ export const api = {
   exitPosition: (positionId: string, stepUpPassword: string) =>
     apiFetch<{ positionId: string; exiting: boolean }>(
       `/positions/${encodeURIComponent(positionId)}/exit`,
+      { method: "POST", body: JSON.stringify({ stepUpPassword }) },
+    ),
+
+  // --- Lessons (PLAN.md 14.28): judged by research, applied by the operator ---
+  lessons: () => apiFetch<LessonsResponse>("/lessons"),
+  /** ⚠ step-up: apply a lesson that passed its test to paper. */
+  applyLesson: (lessonId: string, stepUpPassword: string) =>
+    apiFetch<AppliedLesson>(`/lessons/${encodeURIComponent(lessonId)}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ stepUpPassword }),
+    }),
+  /** ⚠ step-up: stop an applied lesson. */
+  stopLesson: (lessonId: string, stepUpPassword: string) =>
+    apiFetch<{ lessonId: string; status: string }>(
+      `/lessons/${encodeURIComponent(lessonId)}/stop`,
       { method: "POST", body: JSON.stringify({ stepUpPassword }) },
     ),
 

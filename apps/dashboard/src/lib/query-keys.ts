@@ -22,6 +22,7 @@ export const qk = {
   oddsCoverage: ["research", "odds", "coverage"] as const,
   scanCoverage: ["research", "scan", "coverage"] as const,
   tradeCards: ["trade-cards"] as const,
+  lessons: ["lessons"] as const,
 };
 
 export type QueryKey = Exclude<

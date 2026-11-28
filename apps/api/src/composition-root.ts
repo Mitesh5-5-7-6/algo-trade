@@ -33,6 +33,7 @@ import {
 } from "./engines/redis-meter.js";
 import { registerControlPlane } from "./control-plane/index.js";
 import { registerResearchRelay } from "./control-plane/research-relay.js";
+import { registerLessonRoutes } from "./learning/routes.js";
 import {
   createStepUpVerifier,
   LoginRateLimiter,
@@ -60,6 +61,7 @@ import { createDailyMessages } from "./notifications/daily.js";
 import { BrokerTokenWatch, type TokenLookup } from "./engines/token-watch.js";
 import {
   researchCheckpointOddsClient,
+  researchDayContextClient,
   researchOddsClient,
 } from "./signals/research-odds-client.js";
 import { createMorningStart } from "./broker/morning-start.js";
@@ -376,6 +378,11 @@ export async function bootstrap(
             url: config.RESEARCH_API_URL,
             token: config.RESEARCH_API_TOKEN,
           }),
+          // The day's events, the US overnight and the morning read (20.10).
+          fetchDayContext: researchDayContextClient({
+            url: config.RESEARCH_API_URL,
+            token: config.RESEARCH_API_TOKEN,
+          }),
         }),
     // Task 15.3: the bars a late feed missed. Its own limiter — never the
     // order path's — at one request every 1.5 s, under the 50 a minute
@@ -676,6 +683,18 @@ export async function bootstrap(
   // A relay only: no research code and no research database in this process.
   // Unconfigured, its routes answer 503 and nothing else changes.
   registerResearchRelay(server, {
+    research:
+      config.RESEARCH_API_URL !== undefined &&
+      config.RESEARCH_API_TOKEN !== undefined
+        ? { url: config.RESEARCH_API_URL, token: config.RESEARCH_API_TOKEN }
+        : null,
+  });
+
+  // The Lessons page (PLAN.md 14.28): judged lessons from the research
+  // service, applied to paper by the operator behind step-up.
+  registerLessonRoutes(server, {
+    db: mongo.db,
+    verifyStepUp: createStepUpVerifier(users),
     research:
       config.RESEARCH_API_URL !== undefined &&
       config.RESEARCH_API_TOKEN !== undefined

@@ -6,6 +6,7 @@ import type {
   RiskLog,
   RiskRules,
   SessionPhase,
+  Signal,
 } from "@neelkanth/core";
 import type { PublishFn } from "../market-data/ports.js";
 
@@ -57,6 +58,14 @@ export interface RiskPorts {
    * computing one on the critical path.
    */
   readMarketView(): MarketView;
+  /**
+   * The operator's applied lessons on this entry (PLAN.md 14.28): synchronous,
+   * read from what the runtime already computed for the signal. Null when no
+   * applied lesson is in scope. Absent, there are no lessons.
+   */
+  readLessonVerdict?(
+    signal: Signal,
+  ): { blocked: boolean; detail: string } | null;
   /**
    * The contract this symbol names, for its lot size. Null when the symbol
    * master has no such row — which the sizing step must treat as a reason to

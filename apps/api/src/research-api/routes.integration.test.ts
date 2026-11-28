@@ -416,3 +416,121 @@ describe("the research service's scan (18.5)", () => {
     ]);
   }, 60_000);
 });
+
+describe("the research service's day context and headlines (operator decision 2026-11-28)", () => {
+  const get = (url: string, headers: Record<string, string> = AUTH) =>
+    app.inject({ method: "GET", url, headers });
+  const headline = (
+    newsId: string,
+    publishedAt: number,
+    symbols: string[],
+  ) => ({
+    newsId,
+    source: "economictimes",
+    feed: "et-markets",
+    url: `https://economictimes.indiatimes.com/${newsId}.cms`,
+    title: `headline ${newsId}`,
+    publishedAt,
+    ingestedAt: publishedAt,
+    symbols,
+    topics: [],
+  });
+
+  beforeEach(async () => {
+    if (probe?.reachable !== true) return;
+    for (const name of [
+      COLLECTIONS.newsItems,
+      COLLECTIONS.marketEvents,
+      COLLECTIONS.overnightMoves,
+      COLLECTIONS.morningReads,
+      COLLECTIONS.dayContexts,
+    ])
+      await connection.db.collection(name).deleteMany({});
+  });
+
+  it("answers no one without the shared secret", async () => {
+    for (const url of ["/day-context?date=2026-12-10", "/news"]) {
+      const response = await get(url, { authorization: "Bearer wrong" });
+      expect(response.statusCode, url).toBe(401);
+    }
+  });
+
+  it("builds a date's context on demand from what is stored, and keeps it", async () => {
+    await connection.db.collection(COLLECTIONS.marketEvents).insertOne({
+      date: "2026-12-10",
+      kind: "FOMC",
+      title: "US FOMC decision of Wed 2026-12-09",
+      symbols: [],
+      source: "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+    });
+    await connection.db.collection(COLLECTIONS.overnightMoves).insertOne({
+      date: "2026-12-10",
+      usDate: "2026-12-09",
+      spxChangePct: -1.2,
+      ndxChangePct: -1.8,
+      source: "yahoo-chart",
+    });
+    const response = await get("/day-context?date=2026-12-10");
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      date: "2026-12-10",
+      builtAt: 5_000,
+      events: [
+        {
+          date: "2026-12-10",
+          kind: "FOMC",
+          title: "US FOMC decision of Wed 2026-12-09",
+          symbols: [],
+          source:
+            "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+        },
+      ],
+      overnight: {
+        date: "2026-12-10",
+        usDate: "2026-12-09",
+        spxChangePct: -1.2,
+        ndxChangePct: -1.8,
+        source: "yahoo-chart",
+      },
+      flags: [],
+      stockTone: [],
+      headlinesRead: 0,
+      ai: null,
+      notes: ["no morning read stored for 2026-12-10"],
+    });
+    expect(
+      await connection.db
+        .collection(COLLECTIONS.dayContexts)
+        .countDocuments({ date: "2026-12-10" }),
+    ).toBe(1);
+    // A date with nothing stored is empty, and says why.
+    const bare = await get("/day-context?date=2026-12-11");
+    expect(bare.json<{ notes: string[] }>().notes).toEqual([
+      "no US overnight move stored for 2026-12-11 (Yahoo not fetched or did not answer, or a US holiday)",
+      "no morning read stored for 2026-12-11",
+    ]);
+    expect((await get("/day-context?date=11-12-2026")).statusCode).toBe(400);
+    expect((await get("/day-context?day=2026-12-11")).statusCode).toBe(400);
+  });
+
+  it("lists headlines newest first, by stock and IST window, 200 at most", async () => {
+    const at = (iso: string) => Date.parse(iso);
+    await connection.db.collection(COLLECTIONS.newsItems).insertMany([
+      headline("a", at("2026-11-26T04:00:00Z"), ["NSE:SBIN-EQ"]),
+      headline("b", at("2026-11-27T04:00:00Z"), []),
+      headline("c", at("2026-11-27T20:00:00Z"), ["NSE:SBIN-EQ"]), // 28 Nov 01:30 IST
+    ]);
+    const ids = async (url: string) =>
+      (await get(url)).json<{ newsId: string }[]>().map((n) => n.newsId);
+    expect(await ids("/news")).toEqual(["c", "b", "a"]);
+    expect(await ids("/news?symbol=NSE:SBIN-EQ")).toEqual(["c", "a"]);
+    expect(await ids("/news?from=2026-11-27&to=2026-11-27")).toEqual(["b"]);
+    expect(
+      await ids(`/news?from=${String(at("2026-11-27T00:00:00Z"))}`),
+    ).toEqual(["c", "b"]);
+    expect(await ids("/news?limit=1")).toEqual(["c"]);
+    expect((await get("/news?limit=201")).statusCode).toBe(400);
+    expect((await get("/news?symbol=")).statusCode).toBe(400);
+    expect((await get("/news")).json<object[]>()[0]).not.toHaveProperty("_id");
+  });
+});

@@ -89,6 +89,35 @@ export function researchCheckpointOddsClient(options: {
   };
 }
 
+/**
+ * The research service's day context (PLAN.md 20.10): the day's events, the
+ * US overnight and the morning read. Fetched by the runtime off the critical
+ * path; never awaited by an order.
+ */
+export function researchDayContextClient(options: {
+  url: string;
+  token: string;
+  timeoutMs?: number;
+  fetch?: typeof globalThis.fetch;
+}): (date: string) => Promise<unknown> {
+  const send = options.fetch ?? globalThis.fetch;
+  return async (date: string) => {
+    const url = new URL("/day-context", options.url);
+    url.searchParams.set("date", date);
+    const response = await send(url, {
+      headers: { authorization: `Bearer ${options.token}` },
+      signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
+    });
+    const text = await response.text().catch(() => "");
+    const body = parse(text, response);
+    if (response.status !== 200)
+      throw new Error(
+        `day context: the research service answered ${String(response.status)}: ${JSON.stringify(body).slice(0, 200)}`,
+      );
+    return body;
+  };
+}
+
 /** The JSON body, or a short excerpt naming who answered when it is not JSON. */
 function parse(text: string, response: Response): unknown {
   try {
@@ -101,7 +130,10 @@ function parse(text: string, response: Response): unknown {
       })
       .filter((v) => v !== null)
       .join(", ");
-    const excerpt = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    const excerpt = text
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     return {
       error: {
         message: `not JSON${via === "" ? "" : ` (${via})`}: ${excerpt.slice(0, 120) || "empty body"}`,

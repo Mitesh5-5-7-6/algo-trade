@@ -22,8 +22,10 @@ import {
   type RedisConnections,
 } from "@neelkanth/redis";
 import {
+  AppliedLessonsRepository,
   CandlesRepository,
   OrdersRepository,
+  SignalContextsRepository,
   PaperBrokerOrdersRepository,
   PaperReconciliationsRepository,
   PnlSnapshotsRepository,
@@ -68,6 +70,7 @@ import {
   type StrategyPorts,
 } from "@neelkanth/engines";
 import {
+  ALL_HEAVYWEIGHTS,
   CheckpointOddsTableSchema,
   istDateKey,
   optionTypeForSide,
@@ -86,6 +89,7 @@ import { catchUpSession } from "./session-catch-up.js";
 import { buildTradeCard, optionUnderlyingOf } from "../signals/trade-card.js";
 import { oddsForCard, type AskOdds } from "../signals/card-odds.js";
 import type { RuntimeControls } from "../control-plane/controls.js";
+import { INDEX_OF, LessonDesk } from "../learning/lesson-desk.js";
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
 /**
@@ -223,6 +227,11 @@ export async function startEngineRuntime(deps: {
    * Absent, the checkpoints are off and exits are stop and target alone.
    */
   fetchCheckpointOdds?: () => Promise<unknown>;
+  /**
+   * The research service's day context — events, the US overnight, the
+   * morning read (PLAN.md 20.10). Absent, lessons needing it say "unknown".
+   */
+  fetchDayContext?: (date: string) => Promise<unknown>;
 }): Promise<EngineRuntime> {
   const { redis, logger } = deps;
   const db = deps.mongo.db;
@@ -278,6 +287,8 @@ export async function startEngineRuntime(deps: {
       symbols: readonly string[];
       /** The strategy's own capital (2026-11-18), when it has one. */
       allocatedCapital?: number;
+      /** Its type, which an applied lesson is scoped by (PLAN.md 14.28). */
+      type?: string;
     }
   >();
   const settings = await settingsRepo.getGlobal();
@@ -452,6 +463,9 @@ export async function startEngineRuntime(deps: {
         ...traded,
         ...settings.indexSymbols,
         ...settings.breadthSymbols,
+        // The indices' heavyweights, for DATA only (PLAN.md 14.25): a signal's
+        // conditions count how many move with it.
+        ...ALL_HEAVYWEIGHTS,
         ...trackedContracts,
         // Every symbol a position is open in, whatever the ATM strike is now
         // (2026-11-19): after a restart only the current ATM strikes were
@@ -654,6 +668,32 @@ export async function startEngineRuntime(deps: {
     onError,
   });
 
+  // --- The learning system's trading side (PLAN.md 14.26, 14.28) ---
+  const appliedLessons = new AppliedLessonsRepository(db);
+  const signalContexts = new SignalContextsRepository(db);
+  await Promise.all([
+    appliedLessons.ensureIndexes(),
+    signalContexts.ensureIndexes(),
+  ]);
+  const lessonDesk = new LessonDesk({
+    findBars: (symbol, from, to) => candles.findRange(symbol, "5m", from, to),
+    readPrice: (symbol) => lastPrices.get(symbol) ?? null,
+    nearestExpiry: (underlying, now) =>
+      instruments.nearestOption(
+        underlying,
+        lastPrices.get(INDEX_OF[underlying] ?? "") ?? 1,
+        "CE",
+        now,
+      )?.expiry ?? null,
+    ...(deps.fetchDayContext === undefined
+      ? {}
+      : { fetchDayContext: deps.fetchDayContext }),
+    readActiveLessons: () => appliedLessons.findActive(),
+    persistContext: (context) => signalContexts.insert(context),
+    onError,
+  });
+  await lessonDesk.refreshLessons();
+
   // --- Risk Engine ---
   const riskPorts: RiskPorts = {
     readSession: () => Promise.resolve<SessionPhase>(state.session.phase),
@@ -720,6 +760,7 @@ export async function startEngineRuntime(deps: {
     readStrategyOverride: (strategyId) =>
       Promise.resolve(enabledConfigs.get(strategyId)?.riskRules ?? null),
     readMarketView: () => marketBias.current(),
+    readLessonVerdict: (signal) => lessonDesk.verdictFor(signal),
     readInstrument: instrumentLookup(deps.mode, (symbol) =>
       instruments.get(symbol),
     ),
@@ -803,6 +844,19 @@ export async function startEngineRuntime(deps: {
     publish,
   };
   const handoff = async (signal: Signal): Promise<void> => {
+    // An entry's conditions, judged against the applied lessons and kept —
+    // before risk, so a blocked signal's conditions are kept too (14.26).
+    const held = positionEngine
+      .getOpenPositions()
+      .some(
+        (p) => p.strategyId === signal.strategyId && p.symbol === signal.symbol,
+      );
+    if (!held)
+      lessonDesk.judge(
+        signal,
+        enabledConfigs.get(signal.strategyId)?.type ?? "UNKNOWN",
+        Date.now(),
+      );
     const decision = await risk.validate(signal); // synchronous critical path
     if (decision.decision === "approved") {
       const result = await orderManager.place(signal, decision);
@@ -925,7 +979,8 @@ export async function startEngineRuntime(deps: {
     underlyings: ["NIFTY", "BANKNIFTY"],
     everyMs: 5 * 60_000,
     read: async (underlying) => {
-      const snapshot = (await deps.broker.readOptionChain?.(underlying)) ?? null;
+      const snapshot =
+        (await deps.broker.readOptionChain?.(underlying)) ?? null;
       // The strategies' cache gets the fresh chain too: one fetch, two uses.
       if (snapshot !== null)
         deps.liveState.optionChains.set(underlying, snapshot);
@@ -1285,6 +1340,7 @@ export async function startEngineRuntime(deps: {
   for (const config of await strategiesRepo.findEnabled()) {
     enabledConfigs.set(config.strategyId, {
       symbols: config.symbols,
+      type: config.type,
       ...(config.riskRules === undefined
         ? {}
         : { riskRules: config.riskRules }),
@@ -1470,6 +1526,7 @@ export async function startEngineRuntime(deps: {
     async enableStrategy(config) {
       enabledConfigs.set(config.strategyId, {
         symbols: config.symbols,
+        type: config.type,
         ...(config.riskRules === undefined
           ? {}
           : { riskRules: config.riskRules }),
@@ -1642,6 +1699,8 @@ export async function startEngineRuntime(deps: {
       // Cheap when today's table and pivots are held; never awaited by an exit.
       void refreshCheckpointOdds(now);
       void refreshPivots(now);
+      void lessonDesk.refreshDay(now);
+      void lessonDesk.refreshLessons(now);
       if (evaluation.phase === "open") void optionChainArchiver.tick(now);
       if (evaluation.phase === "open") {
         await exitEngine.onSessionTick(

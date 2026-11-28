@@ -1,0 +1,146 @@
+{
+  "about": "Scheduled events by the Indian session they affect, 2025-09-01 to 2026-12-31. Every date was read on the page in its source on 2026-11-28; a date that could not be read on a page is left out, never filled from memory. An FOMC decision is announced at 14:00 New York, after the Indian close, so it is stored on the next Indian weekday and its title says so.",
+  "verifiedOn": "2026-11-28",
+  "events": [
+    {
+      "date": "2025-10-01",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (57th meeting, Sep 29 - Oct 1, 2025)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=61332",
+      "evidence": "Date : Oct 01, 2025 / held its 57th meeting from September 29 to October 1, 2025"
+    },
+    {
+      "date": "2025-12-05",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (58th meeting, Dec 3-5, 2025)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=61749",
+      "evidence": "Date : Dec 05, 2025 / held its 58th meeting from December 3 to 5, 2025"
+    },
+    {
+      "date": "2026-02-06",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (59th meeting, Feb 4-6, 2026)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=62169",
+      "evidence": "Date : Feb 06, 2026 / held its 59th meeting from February 4 to 6, 2026"
+    },
+    {
+      "date": "2026-04-08",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (60th meeting, Apr 6-8, 2026)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=62514",
+      "evidence": "Date : Apr 08, 2026 / held its 60th meeting from April 6 to 8, 2026"
+    },
+    {
+      "date": "2026-06-05",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (61st meeting, Jun 3-5, 2026)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=62863",
+      "evidence": "Date : Jun 05, 2026 / held its 61st meeting from June 3 to 5, 2026"
+    },
+    {
+      "date": "2026-08-05",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (62nd meeting, Aug 3-5, 2026)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=63287",
+      "evidence": "Date : Aug 05, 2026 / held its 62nd meeting from August 3 to 5, 2026"
+    },
+    {
+      "date": "2026-10-07",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (63rd meeting, Oct 5-7, 2026)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=63742",
+      "evidence": "Date : Oct 07, 2026 / held its 63rd meeting from October 5 to 7, 2026"
+    },
+    {
+      "date": "2026-12-04",
+      "kind": "RBI_POLICY",
+      "title": "RBI MPC policy decision (scheduled meeting, Dec 2-4, 2026)",
+      "source": "https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx?prid=62422",
+      "evidence": "Meeting Schedule of the Monetary Policy Committee for 2026-2027 (Mar 23, 2026): December 2, 3 and 4, 2026"
+    },
+    {
+      "date": "2026-02-01",
+      "kind": "UNION_BUDGET",
+      "title": "Union Budget 2026-27 presented in the Lok Sabha",
+      "source": "https://newsonair.gov.in/fm-nirmala-sitharaman-presents-union-budget-2026-27-in-lok-sabha-today/",
+      "evidence": "February 1, 2026 10:29 AM: Finance Minister Nirmala Sitharaman will present the Union Budget 2026-27 in the Lok Sabha today. (indiabudget.gov.in and pib.gov.in refused the fetch; newsonair.gov.in is All India Radio News, Prasar Bharati)"
+    },
+    {
+      "date": "2025-09-18",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2025-09-17, 14:00 New York (meeting Sep 16-17) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2025 FOMC Meetings: September 16-17*"
+    },
+    {
+      "date": "2025-10-30",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2025-10-29, 14:00 New York (meeting Oct 28-29) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2025 FOMC Meetings: October 28-29"
+    },
+    {
+      "date": "2025-12-11",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2025-12-10, 14:00 New York (meeting Dec 9-10) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2025 FOMC Meetings: December 9-10*"
+    },
+    {
+      "date": "2026-01-29",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-01-28, 14:00 New York (meeting Jan 27-28) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: January 27-28"
+    },
+    {
+      "date": "2026-03-19",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-03-18, 14:00 New York (meeting Mar 17-18) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: March 17-18*"
+    },
+    {
+      "date": "2026-04-30",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-04-29, 14:00 New York (meeting Apr 28-29) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: April 28-29"
+    },
+    {
+      "date": "2026-06-18",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-06-17, 14:00 New York (meeting Jun 16-17) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: June 16-17*"
+    },
+    {
+      "date": "2026-07-30",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-07-29, 14:00 New York (meeting Jul 28-29) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: July 28-29"
+    },
+    {
+      "date": "2026-09-17",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-09-16, 14:00 New York (meeting Sep 15-16) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: September 15-16*"
+    },
+    {
+      "date": "2026-10-29",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-10-28, 14:00 New York (meeting Oct 27-28) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: October 27-28"
+    },
+    {
+      "date": "2026-12-10",
+      "kind": "FOMC",
+      "title": "US FOMC decision of Wed 2026-12-09, 14:00 New York (scheduled meeting Dec 8-9) - the Indian session after it",
+      "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "evidence": "2026 FOMC Meetings: December 8-9*"
+    }
+  ]
+}
