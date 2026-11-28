@@ -7,6 +7,7 @@ export * from "./positions-repository.js";
 export * from "./signals-repository.js";
 export * from "./risk-logs-repository.js";
 export * from "./risk-events-repository.js";
+export * from "./option-chain-snapshots-repository.js";
 export * from "./pnl-snapshots-repository.js";
 export * from "./candles-repository.js";
 export * from "./trades-repository.js";

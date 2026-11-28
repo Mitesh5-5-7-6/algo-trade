@@ -46,6 +46,8 @@ export const COLLECTIONS = {
   riskLogs: "risk_logs",
   /** Non-signal safety events, including paper broker reconciliation mismatches. */
   riskEvents: "risk_events",
+  /** The option chain every 5 minutes, kept for research (PLAN.md 14.23). */
+  optionChainSnapshots: "option_chain_snapshots",
   notifications: "notifications",
   /**
    * Trade cards (decided by the operator 2026-11-18): what to trade for each

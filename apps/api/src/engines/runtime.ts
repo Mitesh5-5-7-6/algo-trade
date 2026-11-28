@@ -29,6 +29,7 @@ import {
   PnlSnapshotsRepository,
   PositionsRepository,
   RiskEventsRepository,
+  OptionChainSnapshotsRepository,
   RiskLogsRepository,
   SettingsRepository,
   SignalsRepository,
@@ -40,6 +41,7 @@ import {
 } from "@neelkanth/db";
 import type { Broker, HistoryProvider } from "@neelkanth/broker";
 import { fyersNormalizer } from "./fyers-normalizer.js";
+import { OptionChainArchiver } from "./option-chain-archiver.js";
 import {
   portfolioForStrategy,
   EquityCurveTracker,
@@ -911,6 +913,25 @@ export async function startEngineRuntime(deps: {
     }
   };
 
+  // --- The option chain, kept every 5 minutes for research (PLAN.md 14.23) ---
+  const optionChainArchive = new OptionChainSnapshotsRepository(db);
+  optionChainArchive.ensureIndexes().catch((error: unknown) => {
+    onError(error, { where: "optionChainArchive.ensureIndexes" });
+  });
+  const optionChainArchiver = new OptionChainArchiver({
+    underlyings: ["NIFTY", "BANKNIFTY"],
+    everyMs: 5 * 60_000,
+    read: async (underlying) => {
+      const snapshot = (await deps.broker.readOptionChain?.(underlying)) ?? null;
+      // The strategies' cache gets the fresh chain too: one fetch, two uses.
+      if (snapshot !== null)
+        deps.liveState.optionChains.set(underlying, snapshot);
+      return snapshot;
+    },
+    keep: (snapshot) => optionChainArchive.insert(snapshot),
+    onError,
+  });
+
   // --- Today's floor pivots per index (PLAN.md 14.19, rule 3) ---
   // From the previous session's stored 5m bars, once a day. A rebound trade
   // is a call bought at S1 or a put at R1; without pivots none is detected.
@@ -1617,6 +1638,7 @@ export async function startEngineRuntime(deps: {
       // Cheap when today's table and pivots are held; never awaited by an exit.
       void refreshCheckpointOdds(now);
       void refreshPivots(now);
+      if (evaluation.phase === "open") void optionChainArchiver.tick(now);
       if (evaluation.phase === "open") {
         await exitEngine.onSessionTick(
           now,

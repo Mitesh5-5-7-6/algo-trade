@@ -983,7 +983,15 @@ study (conditions at the live rule's signals) finds no condition that holds
 in both periods: trading with the first half hour lifts the win rate 3–4
 points, still at a loss; the buckets that look good out of sample lost in
 sample on small counts. The live rule's paper losses are its history, not
-bad luck. Next: an operator decision on direction (report of 2026-11-28).
+bad luck. Crabel's expansion setups do not rescue it either: after an NR7
+day PF 1.05 in sample, 0.68 out; after an inside day 0.75 / 0.36.
+
+Operator decision 2026-11-28: **buying only** — no option selling. Paper
+keeps running as test data. The research continues on the buying side, and
+the option chain is kept from now on (14.23) so option strategies can be
+tested on real premiums, OI and IV rather than an index approximation.
+
+| 14.23 | Keep the option chain (NIFTY, BANKNIFTY; 21 strikes; price, OI, change in OI, IV, volume, bid/ask) every 5 minutes of the session | COMPLETE | see git log | Operator decision 2026-11-28. `apps/api/src/engines/option-chain-archiver.ts` (one per underlying per clock-aligned slot, never awaited by trading) + `.test.ts` 3/3; `packages/db/src/option-chain-snapshots-repository.ts` (`option_chain_snapshots`, unique on underlying + instant); wired in `apps/api/src/engines/runtime.ts`. ~150 documents a day |
 
 **14.19 — operator rules 2026-11-26** (entry 40, stop 20, target 100 → T1 60,
 T2 80; SL1 33.3, SL2 26.7):

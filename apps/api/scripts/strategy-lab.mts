@@ -80,6 +80,9 @@ function rsi(values: number[], period: number): number[] {
 
 type Family = (day: Day, sym: string, oos: boolean, all: { closes: number[]; offset: number }) => Trade[];
 
+/** Yesterday was NR7 (narrowest range of 7 days) / an inside day — Crabel's expansion setups. */
+const quietYesterday = new Map<string, { nr7: boolean; inside: boolean }>();
+
 /** The live Momentum rule on the index: an N-bar breakout beyond the EMA (no VWAP: no futures stored). */
 const momentum = (exitAtT1: boolean): Family => (day, sym, oos, all) => {
   const nifty = sym.includes("NIFTY50");
@@ -107,6 +110,8 @@ const momentum = (exitAtT1: boolean): Family => (day, sym, oos, all) => {
       "time": m < hm(11, 0) ? "before 11:00" : m < hm(13, 0) ? "11:00-13:00" : "after 13:00",
       "already run from the open": run < 0.003 ? "<0.3%" : run < 0.007 ? "0.3-0.7%" : ">0.7%",
       "day's range so far": range < 0.005 ? "<0.5%" : range < 0.01 ? "0.5-1%" : ">1%",
+      "yesterday NR7": quietYesterday.get(`${sym}|${day.date}`)?.nr7 ? "yes" : "no",
+      "yesterday inside day": quietYesterday.get(`${sym}|${day.date}`)?.inside ? "yes" : "no",
     };
   };
   day.bars.forEach((b, i) => {
@@ -194,6 +199,16 @@ try {
       prev = bars.at(-1)!.close;
     }
     const closes = days.flatMap((d) => d.bars.map((b) => b.close));
+    days.forEach((day, k) => {
+      if (k < 7) return;
+      const hl = (d: Day) => ({ h: Math.max(...d.bars.map((b) => b.high)), l: Math.min(...d.bars.map((b) => b.low)) });
+      const y = hl(days[k - 1]!), yy = hl(days[k - 2]!);
+      const ranges = days.slice(k - 7, k).map((d) => { const r = hl(d); return r.h - r.l; });
+      quietYesterday.set(`${sym}|${day.date}`, {
+        nr7: ranges[6]! <= Math.min(...ranges),
+        inside: y.h <= yy.h && y.l >= yy.l,
+      });
+    });
     const split = Math.floor(days.length * 0.6);
     console.log(`${sym}: ${String(days.length)} sessions ${days[0]?.date} → ${days.at(-1)?.date}; out-of-sample from ${days[split]?.date}`);
     for (const [name, family] of FAMILIES) {
