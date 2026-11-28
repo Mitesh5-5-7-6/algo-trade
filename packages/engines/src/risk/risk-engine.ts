@@ -162,6 +162,27 @@ export class RiskEngine {
         });
       }
 
+      // --- Check 3b: applied lessons (risk-increasing only, PLAN.md 14.28) ---
+      // Only lessons the operator applied, behind step-up; logged only when
+      // one is in scope, so a decision without lessons reads as it always did.
+      if (riskIncreasing && signal.side !== "HOLD") {
+        stage = "lesson";
+        const lesson = this.ports.readLessonVerdict?.(signal) ?? null;
+        if (lesson !== null) {
+          checks.push({
+            check: "lesson",
+            passed: !lesson.blocked,
+            detail: lesson.detail,
+          });
+          if (lesson.blocked)
+            return await this.finish(signal, checks, {
+              decision: "blocked",
+              failedCheck: "lesson",
+              reason: lesson.detail,
+            });
+        }
+      }
+
       // --- Check 4: daily loss (risk-increasing only, plan/14 §4.3, §5) ---
       stage = "dailyLoss";
       if (riskIncreasing) {

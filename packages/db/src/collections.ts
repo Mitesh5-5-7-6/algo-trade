@@ -48,6 +48,12 @@ export const COLLECTIONS = {
   riskEvents: "risk_events",
   /** The option chain every 5 minutes, kept for research (PLAN.md 14.23). */
   optionChainSnapshots: "option_chain_snapshots",
+  /** Every signal's conditions when it fired (PLAN.md 14.26) — PAPER database. */
+  signalContexts: "signal_contexts",
+  /** Lessons the operator applied to paper (PLAN.md 14.28) — PAPER database. */
+  appliedLessons: "applied_lessons",
+  /** Lessons the judge tested, with their evidence (PLAN.md 14.27) — RESEARCH database. */
+  lessons: "lessons",
   notifications: "notifications",
   /**
    * Trade cards (decided by the operator 2026-11-18): what to trade for each
@@ -127,6 +133,18 @@ export const COLLECTIONS = {
    * out-of-sample record. Untimed, never edited.
    */
   walkForwardResults: "walk_forward_results",
+  /**
+   * The day-context pipeline (operator decision 2026-11-28) — RESEARCH
+   * database only, untimed. Headlines (title and link, never the article),
+   * the event calendar, the US overnight move, the morning read of the
+   * headlines and the day context built from them. Indexes:
+   * `ensureNewsIndexes`.
+   */
+  newsItems: "news_items",
+  marketEvents: "market_events",
+  overnightMoves: "overnight_moves",
+  morningReads: "morning_reads",
+  dayContexts: "day_contexts",
 } as const;
 
 /** Retention windows (plan/07 §6) in seconds; configurable later if needed. */
@@ -436,5 +454,43 @@ export async function ensureIndexes(db: Db): Promise<void> {
     db
       .collection(COLLECTIONS.settings)
       .createIndex({ scope: 1 }, { unique: true }),
+
+    // news_items, market_events, overnight_moves, morning_reads, day_contexts
+    ensureNewsIndexes(db),
+  ]);
+}
+
+/**
+ * The day-context pipeline's indexes, idempotently — called by
+ * `ensureIndexes` and on its own by the research service, which must not
+ * create the trading collections' indexes in the research database.
+ */
+export async function ensureNewsIndexes(db: Db): Promise<void> {
+  await Promise.all([
+    // news_items — one per canonical URL; read newest first, by stock.
+    db
+      .collection(COLLECTIONS.newsItems)
+      .createIndex({ newsId: 1 }, { unique: true }),
+    db.collection(COLLECTIONS.newsItems).createIndex({ publishedAt: -1 }),
+    db
+      .collection(COLLECTIONS.newsItems)
+      .createIndex({ symbols: 1, publishedAt: -1 }),
+    // market_events — the calendar loaded again adds nothing.
+    db
+      .collection(COLLECTIONS.marketEvents)
+      .createIndex(
+        { date: 1, kind: 1, title: 1 },
+        { unique: true, name: "event_identity" },
+      ),
+    // overnight_moves, morning_reads, day_contexts — one per IST date.
+    db
+      .collection(COLLECTIONS.overnightMoves)
+      .createIndex({ date: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.morningReads)
+      .createIndex({ date: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.dayContexts)
+      .createIndex({ date: 1 }, { unique: true }),
   ]);
 }

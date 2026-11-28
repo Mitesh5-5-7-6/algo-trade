@@ -20,3 +20,6 @@ export * from "./strategy-version.js";
 export * from "./pattern.js";
 export * from "./trade-card.js";
 export * from "./checkpoint.js";
+export * from "./day-context.js";
+export * from "./heavyweights.js";
+export * from "./lesson.js";

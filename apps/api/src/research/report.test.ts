@@ -43,7 +43,7 @@ describe("a daily report (8.5, D5)", () => {
     });
     expect(r?.features.symbol).toBe(SYM);
     expect(r?.patterns.length).toBeGreaterThan(0);
-    expect(r?.strategies).toHaveLength(8);
+    expect(r?.strategies).toHaveLength(9); // OPEN_DRIVE joined at 14.24
     expect(r?.trades.length).toBeGreaterThan(0);
     expect(r?.charts.trades).toHaveLength(r?.trades.length ?? -1);
     expect(r?.charts.day.chartId).toBe("2026-01-14|NSE:TESTCO-EQ|day");

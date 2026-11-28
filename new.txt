@@ -41,14 +41,6 @@ licensed vendor only if 1 year proves too short. NSE's free daily F&O
 bhavcopy covers expired options at daily level.
 
 
-
-
-
-
-
-
-
-
 Index data
 - NIFTY 50
 - BANKNIFTY
@@ -56,35 +48,12 @@ Index data
 - SENSEX
 - NIFTY IT, AUTO, PHARMA, METAL, FMCG, ENERGY
 
-
-
-
-
-
-
-
-
-
-
-
-
 Related stock data
 - Reliance, HDFC Bank, ICICI Bank
 - SBI, Infosys, TCS
 - Adani stocks
 - Sector leaders and laggards
 - Historical NIFTY constituents
-
-
-
-
-
-
-
-
-
-
-
 
 
 Candle analysis
@@ -119,28 +88,11 @@ Indian markets don't operate in isolation.
 Research these:
 
 
-
-
-
-
-
-
-
-
 US markets
 - S&P 500
 - Nasdaq
 - Dow Jones
 - US VIX
-
-
-
-
-
-
-
-
-
 
 
 Asian markets
@@ -151,27 +103,10 @@ Asian markets
 
 
 
-
-
-
-
-
-
-
-
 Currency
 - USD/INR
 - Dollar Index
 - Major currency movements
-
-
-
-
-
-
-
-
-
 
 
 Interest rates
@@ -217,27 +152,10 @@ Also, FII cash flows and derivatives positioning have different reporting freque
 4. Commodities and economic conditions
 
 
-
-
-
-
-
-
-
-
 Crude oil
 - Brent crude
 - WTI crude
 - Sudden price spikes
-
-
-
-
-
-
-
-
-
 
 
 Gold
@@ -246,28 +164,10 @@ Gold
 - Global uncertainty
 
 
-
-
-
-
-
-
-
-
-
 Industrial metals
 - Copper
 - Aluminium
 - Zinc
-
-
-
-
-
-
-
-
-
 
 
 Energy
@@ -298,26 +198,9 @@ News categories
 
 
 
-
-
-
-
-
-
-
 Government and RBI
 
 Policy decisions, budgets, taxes, regulations, rate changes.
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -326,46 +209,15 @@ Geopolitical
 War, sanctions, trade restrictions, international agreements.
 
 
-
-
-
-
-
-
-
-
-
-
-
 AI and technology
 
 AI announcements, semiconductor demand, chip restrictions, major technology investments.
 
 
 
-
-
-
-
-
-
-
-
-
-
 Corporate news
 
 Earnings, acquisitions, order wins, management changes, regulatory actions.
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -585,18 +437,6 @@ Sideways sessions
 
 
 01202120222023202420252026
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 Actual counts should be populated from the historical dataset.

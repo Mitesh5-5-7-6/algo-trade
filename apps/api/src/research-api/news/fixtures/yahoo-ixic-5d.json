@@ -1,0 +1,107 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "USD",
+          "symbol": "^IXIC",
+          "exchangeName": "NIM",
+          "fullExchangeName": "Nasdaq GIDS",
+          "instrumentType": "INDEX",
+          "firstTradeDate": 34612200,
+          "regularMarketTime": 1795806959,
+          "hasPrePostMarketData": false,
+          "gmtoffset": -18000,
+          "timezone": "EST",
+          "exchangeTimezoneName": "America/New_York",
+          "regularMarketPrice": 24129.5,
+          "regularMarketChangePercent": 2.305,
+          "fulldayPrice": 24129.5,
+          "fulldayChange": 543.697,
+          "fulldayChangePercent": 2.305,
+          "fiftyTwoWeekHigh": 27722.75,
+          "fiftyTwoWeekLow": 20690.25,
+          "regularMarketDayHigh": 24149.086,
+          "regularMarketDayLow": 23690.596,
+          "regularMarketVolume": 4955552000,
+          "longName": "NASDAQ Composite",
+          "shortName": "NASDAQ Composite",
+          "chartPreviousClose": 23879.2,
+          "priceHint": 2,
+          "currentTradingPeriod": {
+            "pre": {
+              "timezone": "EST",
+              "start": 1795770000,
+              "end": 1795789800,
+              "gmtoffset": -18000
+            },
+            "regular": {
+              "timezone": "EST",
+              "start": 1795789800,
+              "end": 1795802400,
+              "gmtoffset": -18000
+            },
+            "post": {
+              "timezone": "EST",
+              "start": 1795802400,
+              "end": 1795827600,
+              "gmtoffset": -18000
+            }
+          },
+          "dataGranularity": "1d",
+          "range": "5d",
+          "validRanges": [
+            "1d",
+            "5d",
+            "1mo",
+            "3mo",
+            "6mo",
+            "1y",
+            "2y",
+            "5y",
+            "10y",
+            "ytd",
+            "max"
+          ]
+        },
+        "timestamp": [
+          1795185000, 1795444200, 1795530600, 1795617000, 1795789800
+        ],
+        "indicators": {
+          "quote": [
+            {
+              "low": [
+                22513.009765625, 23794.9609375, 23455.83984375, 22632.400390625,
+                23690.599609375
+              ],
+              "close": [
+                22617.73046875, 24089.560546875, 23733.5390625, 23585.80078125,
+                24129.5
+              ],
+              "high": [
+                23837.759765625, 24353.650390625, 23884.740234375,
+                23627.44921875, 24149.08984375
+              ],
+              "open": [
+                23592.669921875, 24269.75, 23745.859375, 22948.48046875,
+                23958.4609375
+              ],
+              "volume": [
+                12469600000, 11346040000, 9222160000, 11362660000, 5545100000
+              ]
+            }
+          ],
+          "adjclose": [
+            {
+              "adjclose": [
+                22617.73046875, 24089.560546875, 23733.5390625, 23585.80078125,
+                24129.5
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}
