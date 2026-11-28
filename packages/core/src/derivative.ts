@@ -27,6 +27,13 @@ export const DerivativeTargetSchema = z.object({
    * reason that they usually expire worthless.
    */
   strikeOffset: z.number().int().default(0),
+  /**
+   * Skip expiries closer than this many days (PLAN.md 14.24). A near
+   * expiry's decay is several times a later one's; on 14 months of history
+   * that decay, with charges, erased the option strategies' small edge.
+   * Absent or 0 = the nearest expiry.
+   */
+  minDaysToExpiry: z.number().int().nonnegative().optional(),
 });
 export type DerivativeTarget = z.infer<typeof DerivativeTargetSchema>;
 

@@ -794,6 +794,9 @@ export async function startEngineRuntime(deps: {
             optionTypeForSide(side),
             now,
             target.strikeOffset,
+            // The same expiry `trackAtmContracts` subscribes, or the chosen
+            // contract would have no price (14.24).
+            target.minDaysToExpiry ?? 0,
           ),
     readPrice: (symbol) => lastPrices.get(symbol) ?? null,
     persistSignal: (signal) => signals.insert(signal),
@@ -1055,6 +1058,7 @@ export async function startEngineRuntime(deps: {
                 type,
                 now,
                 target.strikeOffset,
+                target.minDaysToExpiry ?? 0,
               ),
             );
       for (const contract of contracts) {

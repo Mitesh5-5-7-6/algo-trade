@@ -7,6 +7,7 @@ import { indexOptionFlowBreakout } from "./index-option-flow.js";
 import { indexOptionSentimentFade } from "./index-option-sentiment-fade.js";
 import { indexOptionPcrOi } from "./index-option-pcr-oi.js";
 import { indexOptionMomentumScalper } from "./index-option-momentum-scalper.js";
+import { openDrive } from "./open-drive.js";
 
 export * from "./contract.js";
 export * from "./registry.js";
@@ -20,6 +21,7 @@ export * from "./index-option-sentiment-fade.js";
 export * from "./index-option-pcr-oi.js";
 export * from "./index-option-momentum-scalper.js";
 export * from "./index-option-profiles.js";
+export * from "./open-drive.js";
 
 /** The built-in strategy library — trend, breakout, mean reversion, and
  *  index-option flow models. */
@@ -32,6 +34,7 @@ export const BUILTIN_STRATEGIES = [
   indexOptionSentimentFade,
   indexOptionPcrOi,
   indexOptionMomentumScalper,
+  openDrive,
 ] as const;
 
 /** Register the built-in strategy library into a registry (plan/15 §4). */
@@ -44,6 +47,7 @@ export function registerBuiltinStrategies(registry: StrategyRegistry): void {
   registry.register(indexOptionSentimentFade);
   registry.register(indexOptionPcrOi);
   registry.register(indexOptionMomentumScalper);
+  registry.register(openDrive);
 }
 
 /** A registry pre-loaded with the built-in strategies. */

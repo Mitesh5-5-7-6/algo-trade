@@ -31,6 +31,8 @@ export const IndexOptionMomentumScalperParamsSchema = z.object({
   maxResistanceOiRatio: z.number().positive().default(2.5),
   confirmationBars: z.union([z.literal(0), z.literal(1)]).default(0),
   strikeOffset: z.number().int().default(0),
+  /** Skip expiries closer than this many days; 0 = the nearest (PLAN.md 14.24). */
+  minDaysToExpiry: z.number().int().nonnegative().default(0),
   stopLossPct: z.number().gt(0).lt(1).default(0.2),
   targetPct: z.number().gt(0).default(0.3),
   skipOpenMinutes: z.number().int().nonnegative().default(5),
@@ -167,6 +169,7 @@ export const indexOptionMomentumScalper: StrategyDefinition<
     underlying: p.underlying,
     kind: "OPTION",
     strikeOffset: p.strikeOffset,
+    ...(p.minDaysToExpiry > 0 ? { minDaysToExpiry: p.minDaysToExpiry } : {}),
   }),
   init: (params) => ({
     params,

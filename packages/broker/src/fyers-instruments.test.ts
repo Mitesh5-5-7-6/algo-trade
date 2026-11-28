@@ -151,6 +151,16 @@ describe("instrument selection", () => {
     expect(picked?.expiry).toBe(NEAR);
   });
 
+  /**
+   * 14.24: a near expiry's decay erased the option strategies' edge, so a
+   * strategy may ask for an expiry at least N days away. NEAR is 11.6 days
+   * from NOW, FAR 18.5.
+   */
+  it("skips an expiry closer than minDaysToExpiry", () => {
+    expect(master.nearestOption("NIFTY", 24_500, "CE", NOW, 0, 5)?.expiry).toBe(NEAR);
+    expect(master.nearestOption("NIFTY", 24_500, "CE", NOW, 0, 12)?.expiry).toBe(FAR);
+  });
+
   it("moves the offset out-of-the-money — up for calls, down for puts", () => {
     expect(master.nearestOption("NIFTY", 24_500, "CE", NOW, 1)?.strike).toBe(
       24_600,

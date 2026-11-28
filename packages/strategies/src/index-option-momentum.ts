@@ -60,6 +60,8 @@ export const IndexOptionMomentumParamsSchema = z.object({
   breakoutBars: z.number().int().positive().default(12),
   /** 0 = at the money; positive moves out of the money. */
   strikeOffset: z.number().int().default(0),
+  /** Skip expiries closer than this many days; 0 = the nearest (PLAN.md 14.24). */
+  minDaysToExpiry: z.number().int().nonnegative().default(0),
   /** Stop as a fraction of premium paid. */
   stopLossPct: z.number().gt(0).lt(1).default(0.3),
   /** Target as a fraction of premium paid. */
@@ -102,6 +104,7 @@ export const indexOptionMomentum: StrategyDefinition<
     underlying: p.underlying,
     kind: "OPTION",
     strikeOffset: p.strikeOffset,
+    ...(p.minDaysToExpiry > 0 ? { minDaysToExpiry: p.minDaysToExpiry } : {}),
   }),
   init: (params) => ({
     params,

@@ -13,6 +13,8 @@ export const IndexOptionPcrOiParamsSchema = z.object({
   interval: CandleIntervalSchema.default("5m"),
   emaPeriod: z.number().int().positive().default(21),
   strikeOffset: z.number().int().default(0),
+  /** Skip expiries closer than this many days; 0 = the nearest (PLAN.md 14.24). */
+  minDaysToExpiry: z.number().int().nonnegative().default(0),
   bullishPcrMin: z.number().positive().default(1.05),
   bearishPcrMax: z.number().positive().default(0.75),
   minOiChangePct: z.number().nonnegative().max(1).default(0.05),
@@ -74,6 +76,7 @@ export const indexOptionPcrOi: StrategyDefinition<
     underlying: p.underlying,
     kind: "OPTION",
     strikeOffset: p.strikeOffset,
+    ...(p.minDaysToExpiry > 0 ? { minDaysToExpiry: p.minDaysToExpiry } : {}),
   }),
   init: (params) => ({
     params,

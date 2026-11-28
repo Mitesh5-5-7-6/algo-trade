@@ -25,6 +25,8 @@ export const IndexOptionSentimentFadeParamsSchema = z.object({
   overbought: z.number().default(70),
   swingLookback: z.number().int().positive().default(10),
   strikeOffset: z.number().int().default(0),
+  /** Skip expiries closer than this many days; 0 = the nearest (PLAN.md 14.24). */
+  minDaysToExpiry: z.number().int().nonnegative().default(0),
   sentimentThreshold: z.number().min(-1).max(1).default(0.35),
   stopLossPct: z.number().gt(0).lt(1).default(0.3),
   targetPct: z.number().gt(0).default(0.6),
@@ -62,6 +64,7 @@ export const indexOptionSentimentFade: StrategyDefinition<
     underlying: p.underlying,
     kind: "OPTION",
     strikeOffset: p.strikeOffset,
+    ...(p.minDaysToExpiry > 0 ? { minDaysToExpiry: p.minDaysToExpiry } : {}),
   }),
   init: (params) => ({
     params,

@@ -139,6 +139,12 @@ export interface InstrumentMaster {
     optionType: OptionType,
     now: number,
     strikeOffset?: number,
+    /**
+     * Skip expiries closer than this many days (PLAN.md 14.24): a near
+     * expiry's time decay is several times a later one's, the cost that
+     * erased the option strategies' small edge. 0 = the nearest expiry.
+     */
+    minDaysToExpiry?: number,
   ): Instrument | null;
   /** How many contracts are indexed — for a boot log worth reading. */
   readonly size: number;
@@ -199,9 +205,16 @@ export function createInstrumentMaster(
       return candidates.find((c) => c.expiry === expiry) ?? null;
     },
 
-    nearestOption(underlying, spot, optionType, now, strikeOffset = 0) {
+    nearestOption(
+      underlying,
+      spot,
+      optionType,
+      now,
+      strikeOffset = 0,
+      minDaysToExpiry = 0,
+    ) {
       const all = optionsByUnderlying.get(underlying) ?? [];
-      const expiry = nearestExpiry(all, now);
+      const expiry = nearestExpiry(all, now + minDaysToExpiry * 86_400_000);
       if (expiry === null) return null;
 
       // One expiry and one side only — mixing expiries would silently pick a

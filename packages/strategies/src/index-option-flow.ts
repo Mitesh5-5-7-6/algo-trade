@@ -24,6 +24,8 @@ export const IndexOptionFlowBreakoutParamsSchema = z.object({
   rsiPeriod: z.number().int().positive().default(14),
   breakoutBars: z.number().int().positive().default(12),
   strikeOffset: z.number().int().default(0),
+  /** Skip expiries closer than this many days; 0 = the nearest (PLAN.md 14.24). */
+  minDaysToExpiry: z.number().int().nonnegative().default(0),
   volumeMultiple: z.number().gt(0).default(1.2),
   sentimentThreshold: z.number().min(-1).max(1).default(0.2),
   stopLossPct: z.number().gt(0).lt(1).default(0.25),
@@ -61,6 +63,7 @@ export const indexOptionFlowBreakout: StrategyDefinition<
     underlying: p.underlying,
     kind: "OPTION",
     strikeOffset: p.strikeOffset,
+    ...(p.minDaysToExpiry > 0 ? { minDaysToExpiry: p.minDaysToExpiry } : {}),
   }),
   init: (params) => ({
     params,
