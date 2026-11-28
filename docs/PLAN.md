@@ -964,6 +964,27 @@ cannot choose a filter; the history can.
    a day that clear it are traded, the rest shown as "skipped by review" with
    the reason.
 
+**14.22 findings, 2026-11-28** (`apps/api/scripts/strategy-lab.mts`, 280
+sessions per index, 29 Sep 2025 – 18 Nov 2026; in-sample the first 60%, out
+of sample from 9 Jun 2026; an ATM option bought, approximated on the index at
+delta 0.5 with 0.02% costs and 0.02%/hour decay). Operator target: 80% of
+traded signals winning.
+
+| Family | In-sample win / PF | Out-of-sample win / PF |
+| --- | --- | --- |
+| A. The live Momentum rule (breakout beyond the EMA) | 40% / 0.69 | 39% / 0.62 |
+| B. Same, exit at T1 | 44% / 0.65 | 41% / 0.58 |
+| C1–C3. 5m RSI(2) mean reversion, small target, wider stop | 48–62% / 0.52–0.58 | 48–64% / 0.55–0.75 |
+| D. Intraday momentum (Gao et al. 2018) | 49% / 1.02 | 33% / 0.44 |
+| E. Gap fade, 0.3%+ | 45% / 0.70 | 37% / 0.47 |
+
+No family is profitable out of sample, and none approaches 80%. The review
+study (conditions at the live rule's signals) finds no condition that holds
+in both periods: trading with the first half hour lifts the win rate 3–4
+points, still at a loss; the buckets that look good out of sample lost in
+sample on small counts. The live rule's paper losses are its history, not
+bad luck. Next: an operator decision on direction (report of 2026-11-28).
+
 **14.19 — operator rules 2026-11-26** (entry 40, stop 20, target 100 → T1 60,
 T2 80; SL1 33.3, SL2 26.7):
 
