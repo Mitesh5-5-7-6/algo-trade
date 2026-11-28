@@ -1016,6 +1016,20 @@ tested on real premiums, OI and IV rather than an index approximation.
   test in paper, not evidence.
 - Not testable yet: option-chain OI (kept from 30 Nov, 14.23) and India VIX.
 
+**14.22 trained review (meta-labeling), 2026-11-28**
+(`apps/api/scripts/meta-lab.mts`): 1,034 past signals of the live Momentum
+rule, 18 conditions known at the signal, L2 logistic regression, costs of the
+new vehicle (1-step ITM, 5+ days). Trained on the first 60%: the top 20–50%
+by score reach PF 0.99–1.06 there and 0.87–0.91 on the last 40% (all signals:
+0.87). Trained on the last 40%: PF 1.35–2.55 there (up to 68% winners), 0.58–
+0.96 on the first 60% (all: 0.92). The review learns its own period and does
+not carry: price-derived conditions do not separate the rule's winners from
+its losers. What is left untested is information the store does not hold
+yet — option-chain OI and IV (kept from 30 Nov, 14.23), India VIX (the FYERS
+fetch on 2026-11-28 answered 401, the token expired after Friday's session;
+retry on a trading morning), market breadth from the heavyweight stocks'
+history, and news.
+
 | 14.24 | Payoff fix on the buying side — option strategies buy 1-step ITM on an expiry 5+ days away; the open-drive strategy as a paper experiment | COMPLETE (code; config applied by script after deploy) | see git log | Operator decisions 2026-11-28. `minDaysToExpiry` on `DerivativeTarget` (`packages/core/src/derivative.ts`), `nearestOption` (`packages/broker/src/fyers-instruments.ts`, test: skips an expiry closer than N days), the runtime's contract choice AND subscription (`apps/api/src/engines/runtime.ts`), the five option strategies' params. `packages/strategies/src/open-drive.ts` + `.test.ts` 6/6. `apps/api/scripts/apply-payoff-fix.mts` (dry run unless `--apply`): strikeOffset -1, minDaysToExpiry 5, premium stop/target ×0.7 to keep the index distance; creates "NIFTY / BANKNIFTY Open-Drive (experiment)". Judge open-drive after 20+ paper trades |
 | 14.23 | Keep the option chain (NIFTY, BANKNIFTY; 21 strikes; price, OI, change in OI, IV, volume, bid/ask) every 5 minutes of the session | COMPLETE | see git log | Operator decision 2026-11-28. `apps/api/src/engines/option-chain-archiver.ts` (one per underlying per clock-aligned slot, never awaited by trading) + `.test.ts` 3/3; `packages/db/src/option-chain-snapshots-repository.ts` (`option_chain_snapshots`, unique on underlying + instant); wired in `apps/api/src/engines/runtime.ts`. ~150 documents a day |
 
